@@ -29,7 +29,8 @@ a frozen semantics version.
 
 This resolves the broad direction of questions 1 and 2 below, but it does not
 settle concrete port schemas, rewrite rules, trace schemas, canonical
-serialization, deterministic rewrite selection, error modeling, or the formal
+serialization, deterministic rewrite selection, function template ID
+serialization, canonical template hashing, error modeling, or the formal
 termination proof.
 
 ## 1. Which details of the Core v0 primitive candidates are normative?
@@ -161,3 +162,76 @@ termination proof.
   organization and long-term trace replay.
 - Recommendation: Keep `transparent-v0` provisional until primitive rules,
   trace schema, canonical serialization, and conformance tests are available.
+
+## 6. How are function templates serialized and hashed?
+
+- Question: What is the final serialization format for template IDs and
+  canonical template hashing?
+- Alternatives:
+  - Stable structural hash of canonical template serialization.
+  - Explicit template IDs assigned by canonical program serialization.
+  - Hybrid explicit ID plus structural hash validation.
+- Advantages:
+  - Structural hash: detects accidental template mismatch.
+  - Explicit ID: easier to read and reference in tools.
+  - Hybrid: supports readable IDs and integrity checks.
+- Disadvantages:
+  - Structural hash: depends on final canonical serialization details.
+  - Explicit ID: requires separate collision and stability rules.
+  - Hybrid: more schema surface.
+- Impact on termination: No direct effect.
+- Impact on execution transparency: Template identity must be visible and
+  stable across fold/unfold and `ApplyEvent` replay.
+- Impact on future compatibility: Changing template ID rules would affect
+  traces, snapshots, and conformance fixtures.
+- Recommendation: Keep open until canonical graph serialization is specified.
+
+## 7. How do snapshots reference template definitions?
+
+- Question: Does each `GraphSnapshot` include template definitions, reference a
+  canonical program section, or use a separate template table?
+- Alternatives:
+  - Include all referenced template definitions in each snapshot.
+  - Reference templates from canonical program data.
+  - Use a trace-level template table.
+- Advantages:
+  - Include all: snapshots are more standalone.
+  - Reference canonical program: avoids repeated body serialization.
+  - Template table: can balance locality and compactness.
+- Disadvantages:
+  - Include all: large snapshots.
+  - Reference canonical program: snapshots require external context.
+  - Template table: more trace schema complexity.
+- Impact on termination: No direct effect.
+- Impact on execution transparency: Snapshots must not merge distinct runtime
+  instances just because they share a template.
+- Impact on future compatibility: Snapshot comparison depends on this choice.
+- Recommendation: Prefer canonical program or trace-level template references,
+  but keep the exact schema open.
+
+## 8. How are Surface function shapes and curried functions desugared?
+
+- Question: What is the exact Surface shape grammar, and how are curried
+  functions represented with one or more visual input ports?
+- Alternatives:
+  - One visual input port per curried argument with desugaring to nested
+    functions.
+  - One input port for the actual Core function argument.
+  - Surface-only multi-port sugar with explicit generated templates.
+- Advantages:
+  - Multi-port view: ergonomic for visual programming.
+  - One Core input: closer to `A -> B`.
+  - Generated templates: can preserve both visual ergonomics and Core
+    simplicity.
+- Disadvantages:
+  - Multi-port view: needs precise correspondence rules.
+  - One Core input: may feel unnatural in visual UI.
+  - Generated templates: adds desugaring complexity.
+- Impact on termination: Desugaring must produce only terminating Core
+  constructs.
+- Impact on execution transparency: Fold/unfold must preserve template,
+  external port, capture, instance, and trace correspondence.
+- Impact on future compatibility: Surface files and visualizers depend on this
+  mapping.
+- Recommendation: Keep Surface shape grammar open until Core template and
+  canonical serialization details are firmer.

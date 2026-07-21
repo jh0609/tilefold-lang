@@ -61,6 +61,11 @@ trace semantics.
 | `logical-id` | `causal` |
 | `mutable-state` | `forbidden` |
 | `effects` | `forbidden` |
+| `function-template` | `immutable-canonical-core-graph` |
+| `closure` | `template-id-plus-explicit-captures` |
+| `runtime-instance` | `per-apply-logical-instance` |
+| `apply-atomicity` | `activate-instance-with-canonical-graph-patch` |
+| `surface-function-block` | `folded-view-of-template` |
 
 ## Design Points
 
@@ -70,6 +75,11 @@ trace semantics.
 | Deterministic rewrite selection | Semantics | Open | Open within strict call-by-value readiness | total order by rule and logical ID; dependency-derived schedule; explicit policy parameter | Changes trace order and possibly which error appears first | Must preserve the termination argument | Must be fixed or recorded for trace conformance | Current docs require deterministic canonical trace generation |
 | Binding representation | Semantics | Provisional | `explicit-ports` | de Bruijn indices; named variables; implicit lexical scope | Changes graph shape and trace subjects | Explicit ports make dependencies visible for termination analysis | Canonical serialization must preserve port identity | Core has no variable names |
 | Function capture representation | Semantics | Provisional | `boundary-ports` | hidden closure environment; explicit environment record; global references | Hidden captures would affect meaning outside the graph | Boundary ports expose dependencies for totality checks | Traces and snapshots must show captures | Hidden environments are rejected for Core v0 direction |
+| Function template representation | Semantics | Provisional | immutable canonical Core graph | duplicate body per closure; host-language function object; mutable graph object | Changes graph identity, snapshot reconstruction, and template sharing behavior | Immutable templates make repeated applications easier to reason about | Conformance compares logical template identity, not physical sharing | Template has parameter, result, capture boundaries, and internal Core graph |
+| Closure representation | Semantics | Provisional | template ID plus explicit captures | hidden host closure; copied graph with substituted captures; global capture table | Changes capture visibility and value provenance | Explicit captures expose dependencies for totality checks | Trace must identify closure ID, template ID, and capture values | Closure is an immutable logical value |
+| Runtime instance identity | Semantics | Provisional | per-`Apply` logical instance | reuse template graph directly; inline expansion without instance identity; host stack frame only | Changes snapshots, trace subjects, and debugging behavior | Separate instances avoid hidden shared execution state | Conformance targets logical instance identity | Instance IDs are derived from `Apply` event and template element IDs |
+| Apply atomicity | Semantics | Provisional | activate instance with canonical graph patch | one event per copied node; compute full function result in one event; hidden host call | Changes rewrite count, graph patches, and trace granularity | Body rewrites still expose terminating structure | Golden traces need exactly one activation event per `Apply` | Mechanical construction is compressed into the `ApplyEvent` patch |
+| Surface function block folding | Visualization | Provisional | folded view of template | runtime rewrite; separate Core primitive; purely editor-only object with no template link | If treated as rewrite it would alter traces; if unlinked it would break unfold correspondence | No direct termination effect when view-only | Fold/unfold must preserve standard trace and instance identity | Shape appearance remains visualization metadata |
 | Copy visibility | Semantics | Provisional | `explicit` | implicit sharing; surface-only branching; automatic internal duplication | Changes graph and trace event structure | Explicit `Copy` can be counted in measures | Conformance can compare `Copy` events | Surface branching desugars to Core `Copy` |
 | Drop visibility | Semantics | Provisional | `explicit` | implicit garbage; surface-only unused input handling | Changes graph and trace event structure | Explicit `Drop` can support resource and termination accounting | Conformance can compare `Drop` events | Surface unused inputs desugar to Core `Drop` |
 | Copy output identity | Semantics | Provisional | `explicit-distinct-logical-values` | same logical ID aliases; physical sharing only; linear use without copy | Affects value provenance and downstream trace subjects | Distinct IDs avoid mutation-like alias observations | Trace comparison must account for created logical IDs | Payload sharing is an engine detail only |

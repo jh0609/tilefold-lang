@@ -58,6 +58,38 @@ Each event should identify:
 
 The exact schema is not fixed yet.
 
+## ApplyEvent
+
+An `ApplyEvent` records the semantic activation of a function runtime instance.
+It is the standard trace event for an `Apply` rewrite.
+
+An `ApplyEvent` must record:
+
+- template ID,
+- closure ID,
+- instance ID,
+- argument value,
+- capture values,
+- external port correspondence.
+
+The event activates the logical runtime instance for the function body. It must
+not serialize the full function body for every application. The canonical
+program and function template data, together with the `ApplyEvent`, must be
+enough to reconstruct the instance graph deterministically.
+
+Template node copying, port object creation, edge object creation, memory
+allocation, map updates, and cache construction are mechanical implementation
+steps. They are not separate semantic trace events. They are represented, when
+observable, as part of the canonical graph patch for the `ApplyEvent`.
+
+An `ApplyEvent` does not imply that the function result has already been
+computed. Function body rewrites such as `Succ`, `NatRec`, `Copy`, `Drop`, and
+nested `Apply` remain separate standard trace events.
+
+For an identity function with no internal calculation nodes, the `ApplyEvent`
+may record a graph patch that rewires the argument to result use sites while
+preserving the argument value ID.
+
 ## Stable Logical IDs
 
 Trace records must use stable logical identifiers, not memory addresses or
@@ -111,6 +143,10 @@ A visualizer or debugger should be able to show an execution through the folded
 interface, then unfold the block and relate the same execution to the internal
 core graph. This requires stable mapping between external ports, internal ports,
 values, and rewrite events.
+
+For Surface function blocks, folding and unfolding are view operations, not
+execution rewrites. Summary, standard, and diagnostic views must be derived from
+the same standard trace rather than separate semantic traces.
 
 ## Replay and Undo
 

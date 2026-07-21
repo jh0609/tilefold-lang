@@ -57,14 +57,23 @@ implemented in this stage.
 A folded block is a named abstraction over a Tilefold Core graph. It is not a
 new primitive operation with hidden behavior.
 
-Folding compresses an existing core graph behind a higher-level interface.
-Unfolding restores the corresponding core graph. A folded block and its unfolded
-core graph must expose the same external interface and observable execution
-meaning.
+For function blocks, the folded Surface shape is a view of a function template:
+an immutable canonical Core graph with typed input and output ports, a capture
+interface, and an internal Core graph. Folding compresses that template behind a
+higher-level interface. Unfolding restores inspection of the corresponding
+internal Core graph. A folded block and its unfolded Core graph must expose the
+same external interface and observable execution meaning.
 
 Any implementation of folded blocks must preserve the ability to inspect the
 internal graph and relate external ports, values, and trace events back to that
 internal graph.
+
+Folding or unfolding a Surface function block is not an execution rewrite. It
+must preserve template identity, external port correspondence, capture
+correspondence, types, runtime instance identity, and the standard trace.
+
+Shape color, coordinates, icons, outlines, and visual form are visualization
+metadata, not Core semantics.
 
 ## Execution Transparency
 

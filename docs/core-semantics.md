@@ -74,6 +74,45 @@ payloads, or a combination remains a schema design question. Whichever
 representation is chosen, value identity and provenance must be observable in
 the standard trace.
 
+## Function Templates, Closures, and Runtime Instances
+
+A function template is the immutable canonical Core graph for a defined
+function. It contains a parameter boundary, result boundary, capture boundary,
+and internal Core graph. The template is not modified by execution. Applying the
+same function multiple times shares the same template definition.
+
+A closure is an immutable logical function value. It consists of a template ID
+and explicit capture value connections. Captures are not hidden host-language
+environment entries; they are exposed through the function boundary ports and
+edges.
+
+Copying a closure creates distinct logical closure values. Those values may
+share the same immutable template and physical payload, but only when that
+sharing does not alter observable semantics, logical identity, or provenance.
+
+Each `Apply` creates an independent logical runtime instance. Instance-internal
+nodes and ports have IDs derived deterministically from the `Apply` event and
+template element IDs. Different instances have separate logical identity and
+execution state even if they share one immutable template.
+
+Physical template sharing is an implementation detail. It must not make
+separate runtime instances appear merged in graph snapshots or traces.
+
+The `Apply` rewrite activates the function body's logical runtime instance. It
+does not immediately compute the whole function result. Body rewrites such as
+`Succ`, `NatRec`, `Copy`, `Drop`, and nested `Apply` remain separate semantic
+rewrites and standard trace events.
+
+Mechanical construction needed to realize the instance, such as memory
+allocation, template data copying, port object allocation, edge object
+allocation, map updates, or cache construction, is compressed into the canonical
+graph patch for the `Apply` event rather than exposed as separate semantic
+events.
+
+For an identity function with no internal calculation nodes, the `Apply` event
+may rewire the argument to the result use sites while preserving the argument
+value ID.
+
 ## Core v0 Calculation Model
 
 Core v0 evaluates strict call-by-value functional graphs.
@@ -133,6 +172,11 @@ The `transparent-v0` profile records these current choices:
 - `logical-id = causal`
 - `mutable-state = forbidden`
 - `effects = forbidden`
+- `function-template = immutable-canonical-core-graph`
+- `closure = template-id-plus-explicit-captures`
+- `runtime-instance = per-apply-logical-instance`
+- `apply-atomicity = activate-instance-with-canonical-graph-patch`
+- `surface-function-block = folded-view-of-template`
 
 These values classify the current design direction. They do not implement or
 freeze primitive port schemas or rewrite rules.
