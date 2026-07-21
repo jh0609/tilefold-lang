@@ -5,13 +5,13 @@
 (generate_opam_files true)
 
 (source
- (github tilefold-lang/tilefold-lang))
+ (github jh0609/tilefold-lang))
 
 (authors "Tilefold contributors")
 
 (maintainers "Tilefold contributors")
 
-(license "UNLICENSED")
+(license "LicenseRef-UNLICENSED")
 
 (package
  (name tilefold)
@@ -19,5 +19,4 @@
  (description
   "OCaml reference engine for the Tilefold visual programming language.")
  (depends
-  (ocaml (>= 5.1))
-  (dune (>= 3.11))))
+  (ocaml (>= 5.1))))
