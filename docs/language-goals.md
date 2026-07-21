@@ -48,7 +48,9 @@ Tilefold distinguishes at least these concepts:
 - values: runtime data represented in the graph or trace by stable logical
   identifiers and canonical data.
 
-The exact primitive tile set is not fixed in this stage.
+Core v0 has a provisional calculation model and primitive candidate list, but
+the exact rewrite rules and trace schema for those candidates are not
+implemented in this stage.
 
 ## Fold and Unfold
 
@@ -93,6 +95,11 @@ unbounded `goto`. Repetition should be represented by terminating constructs,
 such as structural folds over finite data, if and when those constructs are
 added.
 
+The current Core v0 direction is a System T-inspired total higher-order
+functional graph language with strict call-by-value evaluation, natural numbers,
+function types, and primitive recursion over natural numbers. Tilefold does not
+yet claim exact equivalence with System T.
+
 Runtime and memory bounds are separate resource-model concerns. The initial
 foundation does not fix a resource model.
 
@@ -109,7 +116,7 @@ This stage does not define or implement:
 - performance optimizations,
 - arbitrary recursion,
 - concrete `.tfold` file syntax,
-- a final primitive tile list,
+- final rewrite rules for Core v0 primitive candidates,
 - coordinates, colors, iconography, animation timing, or graphical layout.
 
 Visualization metadata is intentionally outside the execution engine.

@@ -85,6 +85,8 @@ The representation must support at least:
 - explaining final results,
 - replaying execution,
 - comparing traces,
+- showing that `Copy` outputs have distinct logical IDs but common source
+  provenance,
 - relating folded-block interface values to internal graph values.
 
 The precise granularity of provenance is open.

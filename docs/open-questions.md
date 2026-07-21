@@ -4,36 +4,57 @@ This document records unsettled design choices. Do not implement a guessed
 answer as language semantics before the choice is resolved in the OCaml
 reference engine, tests, and documentation.
 
-## 1. What is the first Tilefold Core primitive tile set?
+## Resolved Direction for Core v0
 
-- Question: Which primitive tiles belong in the first executable Tilefold Core?
+The first Core calculation model is now planned as a System T-inspired total
+higher-order functional graph language with:
+
+- initial type forms `Nat` and `A -> B`,
+- strict call-by-value evaluation,
+- immutable logical values,
+- no variable names,
+- explicit function boundary ports for inputs and captured values,
+- explicit `Copy` and `Drop` in Core,
+- no shared mutable state, cells, or effects in Core v0.
+
+The current primitive candidate list is `Nat(n)`, `Succ`, `Function`, `Apply`,
+`NatRec`, `Copy`, and `Drop`.
+
+This resolves the broad direction of questions 1 and 2 below, but it does not
+settle concrete port schemas, rewrite rules, trace schemas, canonical
+serialization, or the formal termination proof.
+
+## 1. Which details of the Core v0 primitive candidates are normative?
+
+- Question: Which exact port schemas, typing rules, and rewrite rules define
+  the Core v0 primitive candidates?
 - Alternatives:
-  - A minimal dataflow subset with constants, pure functions, and result tiles.
-  - A small typed expression subset with explicit evaluation tiles.
-  - A graph-rewrite-first subset with only structural rules and no rich values.
+  - Specify all seven candidates together.
+  - Specify a smaller executable subset first, then add the remaining
+    candidates.
+  - Specify typing and validation first, then rewrite behavior.
 - Advantages:
-  - Dataflow subset: easier to demonstrate typed visual programming.
-  - Expression subset: easier to compare with conventional language semantics.
-  - Graph-rewrite subset: keeps the first semantics close to the abstract
-    machine.
+  - All together: gives a coherent initial model.
+  - Smaller subset: reduces proof and testing scope.
+  - Typing first: lets graph validation mature before execution.
 - Disadvantages:
-  - Dataflow subset: may accidentally bake in evaluation assumptions too early.
-  - Expression subset: may bias Tilefold toward text-language structure.
-  - Graph-rewrite subset: may be too abstract for early user-facing examples.
-- Impact on termination: The smaller and more structural the set, the easier it
-  is to prove termination.
-- Impact on execution transparency: A rewrite-first subset may make trace
-  events clearer; expression-like tiles may require careful desugaring traces.
-- Impact on future compatibility: Early primitive choices are hard to remove
-  once conformance tests depend on them.
-- Recommendation: Start with the smallest set that can validate graph shape,
-  type compatibility, and one or two non-recursive rewrites, but do not finalize
-  the concrete list in this stage.
+  - All together: larger initial semantics surface.
+  - Smaller subset: may delay testing of function and recursion interactions.
+  - Typing first: may postpone executable examples.
+- Impact on termination: `NatRec` is the central termination-sensitive
+  candidate; its rule must be structurally bounded by a `Nat`.
+- Impact on execution transparency: Every primitive needs trace-visible
+  consumed, created, changed, and provenance behavior.
+- Impact on future compatibility: Once golden traces exist, port schemas and
+  rule identities are expensive to change.
+- Recommendation: Specify `Nat(n)`, `Succ`, `Copy`, and `Drop` first, then add
+  `Function`, `Apply`, and `NatRec` with explicit tests for strict
+  call-by-value and termination.
 
-## 2. How are values represented during execution?
+## 2. How are immutable logical values represented?
 
-- Question: Are runtime values graph nodes, trace payloads, machine-state
-  entries, or some combination?
+- Question: Given that values are immutable and have stable logical IDs, are
+  they graph nodes, trace payloads, machine-state entries, or some combination?
 - Alternatives:
   - Values are explicit graph nodes.
   - Values live in machine state and are referenced by graph IDs.
@@ -60,8 +81,10 @@ reference engine, tests, and documentation.
 - Question: When multiple rewrites are available, how does the abstract machine
   choose the next one?
 - Alternatives:
-  - A total order over rewrite rules and matched logical IDs.
-  - A dependency-driven schedule derived from graph topology.
+  - A total order over rewrite rules and matched logical IDs within strict
+    call-by-value readiness.
+  - A dependency-driven schedule derived from graph topology while preserving
+    strict call-by-value.
   - A policy parameter recorded in the trace.
 - Advantages:
   - Total order: simple and reproducible.
@@ -76,8 +99,9 @@ reference engine, tests, and documentation.
 - Impact on execution transparency: The policy must be explicit in every trace.
 - Impact on future compatibility: A policy parameter gives flexibility but makes
   exact trace compatibility more complex.
-- Recommendation: Begin with one deterministic policy, documented as part of
-  the semantics version, before introducing policy variants.
+- Recommendation: Begin with one deterministic strict call-by-value policy,
+  documented as part of the semantics version, before introducing policy
+  variants.
 
 ## 4. What exact information belongs in a standard trace event?
 
