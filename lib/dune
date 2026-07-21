@@ -1,0 +1,3 @@
+(library
+ (name tilefold)
+ (public_name tilefold))
