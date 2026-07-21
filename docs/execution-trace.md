@@ -6,6 +6,16 @@ Tilefold Trace is the standard public record of execution. It exists so that
 execution can be inspected, replayed, compared across engines, and explained by
 visualizers without making the visualizer part of the semantics.
 
+Every standard trace must record the semantics version once a semantics version
+is assigned. During experimental work, traces must record the semantics profile
+identifier, such as `transparent-v0`, and every semantics configuration value
+that can affect validation, rewrite order, trace structure, final results, or
+errors.
+
+Engine implementation configuration may be recorded for diagnostics, but it
+must not be required to explain observable semantics. Visualization
+configuration is outside the standard trace.
+
 ## GraphSnapshot
 
 A `GraphSnapshot` records a canonical representation of a graph at a point in
@@ -35,6 +45,7 @@ Each event should identify:
 
 - the event index,
 - the semantics version,
+- the semantics profile identifier when executing an experimental profile,
 - the execution policy,
 - the applied rule,
 - the matched graph region or logical subject,

@@ -4,6 +4,10 @@ This document records unsettled design choices. Do not implement a guessed
 answer as language semantics before the choice is resolved in the OCaml
 reference engine, tests, and documentation.
 
+Design choices that can affect observable semantics are tracked in
+`docs/design-space.md`. Open questions in this file should stay aligned with
+that design-space table.
+
 ## Resolved Direction for Core v0
 
 The first Core calculation model is now planned as a System T-inspired total
@@ -20,9 +24,13 @@ higher-order functional graph language with:
 The current primitive candidate list is `Nat(n)`, `Succ`, `Function`, `Apply`,
 `NatRec`, `Copy`, and `Drop`.
 
+This direction is recorded as the provisional profile `transparent-v0`, not as
+a frozen semantics version.
+
 This resolves the broad direction of questions 1 and 2 below, but it does not
 settle concrete port schemas, rewrite rules, trace schemas, canonical
-serialization, or the formal termination proof.
+serialization, deterministic rewrite selection, error modeling, or the formal
+termination proof.
 
 ## 1. Which details of the Core v0 primitive candidates are normative?
 
@@ -103,9 +111,10 @@ serialization, or the formal termination proof.
   documented as part of the semantics version, before introducing policy
   variants.
 
-## 4. What exact information belongs in a standard trace event?
+## 4. How should `transparent-v0` represent traces and snapshots?
 
-- Question: How much graph and provenance data must each `RewriteEvent` carry?
+- Question: How much graph, snapshot, and provenance data must each
+  `transparent-v0` execution record?
 - Alternatives:
   - Full before-and-after snapshots for every step.
   - Compact graph patches plus periodic snapshots.
@@ -126,27 +135,29 @@ serialization, or the formal termination proof.
 - Recommendation: Specify a canonical compact event model, then allow optional
   snapshots as checkpoints once replay requirements are formalized.
 
-## 5. What is the first semantics versioning scheme?
+## 5. When does a provisional profile become a frozen semantics version?
 
-- Question: How should Tilefold identify semantic changes?
+- Question: How should Tilefold promote a provisional or experimental profile
+  into a frozen semantics version?
 - Alternatives:
-  - Integer sequence, such as `1`, `2`, `3`.
-  - Calendar-like versions.
-  - Semantic-version-like strings for the language semantics.
+  - Freeze `transparent-v0` directly once its rules are specified and tested.
+  - Create a new profile from `transparent-v0`, then freeze that profile.
+  - Keep `transparent-v0` permanently experimental and assign a separate
+    versioned profile for standard execution.
 - Advantages:
-  - Integer sequence: clear ordering and minimal interpretation.
-  - Calendar-like versions: communicates release timing.
-  - Semantic-version-like strings: familiar compatibility signals.
+  - Direct freeze: preserves continuity.
+  - New profile: avoids carrying provisional naming into the standard.
+  - Permanently experimental: makes research status unambiguous.
 - Disadvantages:
-  - Integer sequence: does not describe compatibility magnitude.
-  - Calendar-like versions: time-based labels may not match semantic meaning.
-  - Semantic-version-like strings: may imply API compatibility rules that are
-    not yet defined.
+  - Direct freeze: the name may imply an early transparent design forever.
+  - New profile: requires migration and comparison documentation.
+  - Permanently experimental: may confuse users if it remains the only runnable
+    profile for a while.
 - Impact on termination: Versioning does not prove termination, but it labels
   which termination argument applies.
 - Impact on execution transparency: Every trace should record the exact
-  semantics version.
+  semantics version or experimental profile identifier.
 - Impact on future compatibility: The scheme affects conformance test
   organization and long-term trace replay.
-- Recommendation: Use a simple explicit semantics identifier initially, then
-  document compatibility rules before assigning a stable `1.0`-style version.
+- Recommendation: Keep `transparent-v0` provisional until primitive rules,
+  trace schema, canonical serialization, and conformance tests are available.

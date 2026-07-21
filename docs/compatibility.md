@@ -48,6 +48,19 @@ do not alter observable behavior.
 
 The initial version string is not assigned in this stage.
 
+## Experimental Semantics Profiles
+
+Before a semantics version is frozen, Tilefold may compare provisional or
+experimental semantics profiles such as `transparent-v0`.
+
+Experimental profile execution is not standard execution. It must record the
+profile identifier and the semantics configuration values used. A profile
+change must not happen silently under the same semantics version.
+
+Conformance tests for an experimental profile must state the profile identifier
+as well as any relevant profile settings. Once a profile is frozen into a
+semantics version, standard conformance should refer to that semantics version.
+
 ## Canonical Serialization
 
 Canonical serialization is required for deterministic traces and conformance

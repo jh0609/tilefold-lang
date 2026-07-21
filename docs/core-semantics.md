@@ -11,6 +11,12 @@ is not yet specified to be exactly System T. The design direction is to preserve
 Tilefold's graph-based visibility while using a small total functional core as
 the first calculation model.
 
+The current Core v0 direction is recorded as the provisional semantics profile
+`transparent-v0`. A profile is not the same thing as a frozen semantics version:
+`transparent-v0` can be used to compare and refine design choices before a
+future semantics version is assigned. See `docs/design-space.md` and
+`docs/decisions/0002-experimental-semantics-profiles.md`.
+
 The intended layer boundary is:
 
 ```text
@@ -114,6 +120,22 @@ serialization are not implemented in this stage.
 
 `Drop` makes the discard of an otherwise unused value explicit in Core. It is
 the desugaring target for surface-level unused inputs.
+
+The `transparent-v0` profile records these current choices:
+
+- `evaluation = strict-call-by-value`
+- `binding = explicit-ports`
+- `capture = boundary-ports`
+- `copy = explicit-distinct-logical-values`
+- `drop = explicit`
+- `primitive-expansion = exposed`
+- `nat-representation = compact`
+- `logical-id = causal`
+- `mutable-state = forbidden`
+- `effects = forbidden`
+
+These values classify the current design direction. They do not implement or
+freeze primitive port schemas or rewrite rules.
 
 ## Atomic Rewriting
 

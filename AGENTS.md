@@ -19,6 +19,11 @@ language.
 - Do not allow unvalidated graphs to enter execution APIs.
 - Public protocols must not depend on any particular visualization
   implementation.
+- Keep semantics configuration, engine implementation configuration, and
+  visualization configuration separate. Semantics configuration may affect
+  standard trace and results. Engine configuration must not affect observable
+  semantics. Visualization configuration must not enter Core graphs or standard
+  traces.
 
 ## Semantics and Trace Discipline
 
