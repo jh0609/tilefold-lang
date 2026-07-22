@@ -68,12 +68,18 @@ when nodes and edges are otherwise identical. Pixel position, layout, hardware
 ID, and discovery order are not substitutes for this canonical ordered list.
 
 The first runtime vertical slice is conformance-relevant for validated graphs
-using `Unit`, `Nat`, `Succ`, `Drop`, `Parameter`, and `Result`. Conforming
-engines must agree with the OCaml reference on initialization materialization,
-input type errors, ready epoch assignment, fallback selection by
-`default_node_order`, `Succ` and `Drop` rewrite events, event indexes,
-`Completed` results, and `Stuck` reasons for this subset. Literal creation is
-not a rewrite event.
+using `Unit`, `Nat`, `Succ`, `Copy`, `Drop`, `Parameter`, and `Result`.
+Conforming engines must agree with the OCaml reference on initialization
+materialization, input type errors, ready epoch assignment, fallback selection
+by `default_node_order`, `Succ`, `Copy`, and `Drop` rewrite events, event
+indexes, `Completed` results, `Stuck` reasons, and typed runtime errors for
+this subset. Literal creation is not a rewrite event.
+
+For `Copy`, conformance includes consuming one input logical value, creating two
+distinct output logical values, preserving payload equality, using `left` and
+`right` `Rewrite_output` origins, recording created values in `[left; right]`
+order, and assigning the same next ready epoch to downstream nodes made ready
+by the same `Copy` rewrite.
 
 ## Same Trace vs Same Observable Result
 

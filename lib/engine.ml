@@ -19,6 +19,13 @@ type stuck_reason = {
   result_missing : bool;
 }
 
+type runtime_error =
+  | Unsupported_copy_payload_type of {
+      node_id : CG.Node_id.t;
+      typ : Core_type.t;
+    }
+  | Runtime_invariant_violation of string
+
 type port_binding = {
   port_ref : CG.port_ref;
   value : Runtime_value.t;
@@ -82,6 +89,7 @@ type step_result =
     }
   | Completed of Runtime_value.t
   | Stuck of stuck_reason
+  | Runtime_error of runtime_error
 
 type run_result =
   | Run_completed of {
@@ -90,6 +98,10 @@ type run_result =
     }
   | Run_stuck of {
       reason : stuck_reason;
+      trace : Rewrite_event.t list;
+    }
+  | Run_error of {
+      error : runtime_error;
       trace : Rewrite_event.t list;
     }
 
@@ -137,6 +149,10 @@ let is_ready graph bindings executed_nodes node_id =
         match binding_for bindings node_id CG.Port_key.input with
         | Some value -> Core_type.equal (Runtime_value.typ value) expected
         | None -> false)
+    | Some { kind = CG.Copy expected; _ } -> (
+        match binding_for bindings node_id CG.Port_key.input with
+        | Some value -> Core_type.equal (Runtime_value.typ value) expected
+        | None -> false)
     | Some _ -> false
 
 let ready_candidate graph epoch node_id =
@@ -180,21 +196,25 @@ let select_ready candidates =
 let deliver_to_target graph state target value =
   match node_by_id graph target.CG.node_id with
   | Some { kind = CG.Result _; _ } ->
-      Ok { state with Machine.result_value = Some value }
+      if Option.is_some state.Machine.result_value then
+        Error "result boundary already has a value"
+      else Ok { state with Machine.result_value = Some value }
   | Some _ ->
-      Ok { state with bindings = { port_ref = target; value } :: state.bindings }
+      if Option.is_some (binding_for state.Machine.bindings target.node_id target.port_key)
+      then
+        Error
+          ("target input already has a value: " ^ CG.Node_id.to_string target.node_id
+         ^ "." ^ CG.Port_key.to_string target.port_key)
+      else Ok { state with bindings = { port_ref = target; value } :: state.bindings }
   | None ->
-      Error
-        (Initial_delivery_invariant_violation
-           ("missing delivery target node: " ^ CG.Node_id.to_string target.node_id))
+      Error ("missing delivery target node: " ^ CG.Node_id.to_string target.node_id)
 
 let deliver_output graph state node_id port_key value =
   match outgoing_edge graph node_id port_key with
   | None ->
       Error
-        (Initial_delivery_invariant_violation
-           ("missing outgoing edge from " ^ CG.Node_id.to_string node_id ^ "."
-          ^ CG.Port_key.to_string port_key))
+        ("missing outgoing edge from " ^ CG.Node_id.to_string node_id ^ "."
+       ^ CG.Port_key.to_string port_key)
   | Some edge -> deliver_to_target graph state edge.target value
 
 let empty_machine graph =
@@ -242,6 +262,8 @@ let initialize graph ~input =
       let parameter = CG.Validated_graph.parameter_node graph in
       let result =
         deliver_output graph initial parameter.id CG.Port_key.value input_value
+        |> Result.map_error (fun message ->
+               Initial_delivery_invariant_violation message)
       in
       let result =
         match result with
@@ -257,6 +279,8 @@ let initialize graph ~input =
                        match Runtime_value.origin value with
                        | Program_literal node_id ->
                            deliver_output graph state node_id CG.Port_key.value value
+                           |> Result.map_error (fun message ->
+                                  Initial_delivery_invariant_violation message)
                        | Execution_input | Rewrite_output _ ->
                            Error
                              (Initial_delivery_invariant_violation
@@ -333,26 +357,102 @@ let rewrite_succ machine candidate =
           let machine = remove_ready machine candidate.node_id in
           let machine = mark_executed machine candidate.node_id in
           let machine = append_event machine event in
-          let delivered =
-            deliver_output machine.Machine.graph machine candidate.node_id CG.Port_key.result created
-          in
-          let machine =
-            match delivered with
-            | Ok machine -> machine
-            | Error _ -> machine
-          in
-          let machine =
-            {
-              machine with
-              Machine.ready_candidates =
-                refresh_ready_candidates machine.Machine.graph machine.Machine.bindings
-                  machine.Machine.executed_nodes machine.Machine.ready_candidates
-                  machine.Machine.next_event_index;
-            }
-          in
-          Rewritten { machine; event }
+          (match
+             deliver_output machine.Machine.graph machine candidate.node_id
+               CG.Port_key.result created
+           with
+          | Error message -> Runtime_error (Runtime_invariant_violation message)
+          | Ok machine ->
+              let machine =
+                {
+                  machine with
+                  Machine.ready_candidates =
+                    refresh_ready_candidates machine.Machine.graph machine.Machine.bindings
+                      machine.Machine.executed_nodes machine.Machine.ready_candidates
+                      machine.Machine.next_event_index;
+                }
+              in
+              Rewritten { machine; event })
       | Runtime_value.Unit -> Stuck (stuck_reason machine))
   | None -> Stuck (stuck_reason machine)
+
+let copy_payload candidate expected input_value =
+  match (expected, Runtime_value.payload input_value) with
+  | Core_type.Unit, Runtime_value.Unit -> Ok Runtime_value.Unit
+  | Core_type.Nat, Runtime_value.Nat nat -> Ok (Runtime_value.Nat nat)
+  | Core_type.Arrow _, _ ->
+      Error (Unsupported_copy_payload_type { node_id = candidate.node_id; typ = expected })
+  | _ ->
+      Error
+        (Runtime_invariant_violation
+           ("Copy input payload does not match declared type at "
+          ^ CG.Node_id.to_string candidate.node_id))
+
+let copy_created_value event_index node_id port_key payload =
+  Runtime_value.create
+    ~id:(Runtime_value.rewrite_output_id event_index node_id port_key)
+    ~payload
+    ~origin:(Runtime_value.Rewrite_output { event_index; node_id; port_key })
+
+let rewrite_copy machine candidate expected =
+  match binding_for machine.Machine.bindings candidate.node_id CG.Port_key.input with
+  | None -> Stuck (stuck_reason machine)
+  | Some input_value -> (
+      match copy_payload candidate expected input_value with
+      | Error error -> Runtime_error error
+      | Ok payload ->
+          let event_index = machine.Machine.next_event_index in
+          let left =
+            copy_created_value event_index candidate.node_id CG.Port_key.left payload
+          in
+          let right =
+            copy_created_value event_index candidate.node_id CG.Port_key.right payload
+          in
+          if Runtime_value.Value_id.equal (Runtime_value.id left) (Runtime_value.id right)
+          then Runtime_error (Runtime_invariant_violation "Copy output ID collision")
+          else if
+            Runtime_value.Value_id.equal (Runtime_value.id left)
+              (Runtime_value.id input_value)
+            || Runtime_value.Value_id.equal (Runtime_value.id right)
+                 (Runtime_value.id input_value)
+          then Runtime_error (Runtime_invariant_violation "Copy output ID aliases input")
+          else
+            let event =
+              {
+                Rewrite_event.index = event_index;
+                rule = Rewrite_event.Copy;
+                subject = candidate.node_id;
+                ready_epoch = candidate.ready_epoch;
+                consumed = [ Runtime_value.id input_value ];
+                created = [ left; right ];
+              }
+            in
+            let machine = remove_ready machine candidate.node_id in
+            let machine = mark_executed machine candidate.node_id in
+            let machine = append_event machine event in
+            match
+              deliver_output machine.Machine.graph machine candidate.node_id
+                CG.Port_key.left left
+            with
+            | Error message -> Runtime_error (Runtime_invariant_violation message)
+            | Ok machine -> (
+                match
+                  deliver_output machine.Machine.graph machine candidate.node_id
+                    CG.Port_key.right right
+                with
+                | Error message -> Runtime_error (Runtime_invariant_violation message)
+                | Ok machine ->
+                    let machine =
+                      {
+                        machine with
+                        Machine.ready_candidates =
+                          refresh_ready_candidates machine.Machine.graph
+                            machine.Machine.bindings machine.Machine.executed_nodes
+                            machine.Machine.ready_candidates
+                            machine.Machine.next_event_index;
+                      }
+                    in
+                    Rewritten { machine; event }))
 
 let rewrite_drop machine candidate =
   match binding_for machine.Machine.bindings candidate.node_id CG.Port_key.input with
@@ -393,6 +493,7 @@ let step machine =
           match node_by_id machine.Machine.graph candidate.node_id with
           | Some { kind = CG.Succ; _ } -> rewrite_succ machine candidate
           | Some { kind = CG.Drop _; _ } -> rewrite_drop machine candidate
+          | Some { kind = CG.Copy expected; _ } -> rewrite_copy machine candidate expected
           | _ -> Stuck (stuck_reason machine)))
 
 let run machine =
@@ -401,6 +502,8 @@ let run machine =
     | Completed value ->
         Run_completed { value; trace = Machine.trace_events machine }
     | Stuck reason -> Run_stuck { reason; trace = Machine.trace_events machine }
+    | Runtime_error error ->
+        Run_error { error; trace = Machine.trace_events machine }
     | Rewritten { machine; _ } -> loop machine
   in
   loop machine
@@ -413,3 +516,9 @@ let initialization_error_to_string = function
       "unsupported runtime input type: " ^ Core_type.to_string typ
   | Initial_delivery_invariant_violation message ->
       "initial delivery invariant violation: " ^ message
+
+let runtime_error_to_string = function
+  | Unsupported_copy_payload_type { node_id; typ } ->
+      "unsupported Copy payload type at " ^ CG.Node_id.to_string node_id ^ ": "
+      ^ Core_type.to_string typ
+  | Runtime_invariant_violation message -> "runtime invariant violation: " ^ message

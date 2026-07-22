@@ -29,6 +29,8 @@ module Port_key = struct
   let value = "value"
   let input = "input"
   let result = "result"
+  let left = "left"
+  let right = "right"
   let equal = String.equal
   let compare = String.compare
   let to_string value = value
@@ -56,6 +58,7 @@ type node_kind =
   | Result of Core_type.t
   | Succ
   | Drop of Core_type.t
+  | Copy of Core_type.t
 
 type node = {
   id : Node_id.t;
@@ -88,13 +91,19 @@ let ports_of_node_kind = function
   | Result typ -> [ port Port_key.value Input typ ]
   | Succ ->
       [
-        port Port_key.input Input Nat;
-        port Port_key.result Output Nat;
+        port Port_key.input Input Core_type.Nat;
+        port Port_key.result Output Core_type.Nat;
       ]
   | Drop typ -> [ port Port_key.input Input typ ]
+  | Copy typ ->
+      [
+        port Port_key.input Input typ;
+        port Port_key.left Output typ;
+        port Port_key.right Output typ;
+      ]
 
 let is_executable_node_kind = function
-  | Succ | Drop _ -> true
+  | Succ | Drop _ | Copy _ -> true
   | Unit_literal | Nat_literal _ | Parameter _ | Result _ -> false
 
 module Raw_graph = struct

@@ -354,6 +354,8 @@ The first implemented validation subset fixes these node-derived schemas:
 - `Parameter A`: `value` output of type `A`.
 - `Result B`: `value` input of type `B`.
 - `Succ`: `input` input of type `Nat`, `result` output of type `Nat`.
+- `Copy A`: `input` input of type `A`, `left` output of type `A`, `right`
+  output of type `A`.
 - `Drop A`: `input` input of type `A`.
 
 For this subset, a valid template body has exactly one `Parameter` boundary and
@@ -362,38 +364,45 @@ port must have exactly one incoming edge and every output port must have
 exactly one outgoing edge, so implicit fan-out, unused outputs, duplicated
 input connections, and unconnected boundary inputs are validation errors.
 
-The current executable node kinds are `Succ` and `Drop _`. `Unit_literal`,
-`Nat_literal _`, `Parameter _`, and `Result _` are non-executable. The validator
-requires `default_node_order` to include every executable node exactly once and
-to exclude non-executable nodes.
+The current executable node kinds are `Succ`, `Copy _`, and `Drop _`.
+`Unit_literal`, `Nat_literal _`, `Parameter _`, and `Result _` are
+non-executable. The validator requires `default_node_order` to include every
+executable node exactly once and to exclude non-executable nodes.
 
-This validator does not implement graph cycle rules, reachability, `Copy`,
-`Function`, `Apply`, `NatRec`, `PrioritySpine`, or full trace schemas. The
-first runtime slice implements only `Succ` and `Drop` rewrites. See
+This validator does not implement graph cycle rules, reachability, `Function`,
+`Apply`, `NatRec`, `PrioritySpine`, or full trace schemas. The first runtime
+slice implements `Succ`, `Copy` for `Unit` and `Nat`, and `Drop` rewrites. See
 `docs/decisions/0008-explicit-port-graph-and-validation-boundary.md`,
 `docs/decisions/0009-canonical-default-node-order.md`, and
-`docs/decisions/0010-first-runtime-interpreter-vertical-slice.md`.
+`docs/decisions/0010-first-runtime-interpreter-vertical-slice.md`, followed by
+`docs/decisions/0011-copy-rewrite-and-linear-duplication.md`.
 
 `Unit` and `Nat(n)` are value constructors, not executable rewrite nodes. Their
 runtime logical values are materialized during machine initialization or
 function instance activation.
 
-`Copy` has the following intended observable meaning:
+`Copy A` has the following observable meaning in the implemented slice:
 
-- it consumes or observes one input logical value according to the final rewrite
-  schema,
+- it consumes one input logical value of type `A`,
 - it creates two output logical values with distinct logical IDs,
-- both outputs share common source provenance,
+- the outputs are delivered through explicit `left` and `right` ports,
+- created values are recorded in canonical output order `[left; right]`,
+- both outputs carry `Rewrite_output` provenance for the producing event and
+  their output port,
 - later computation using one output must not affect the other output,
 - physical payload sharing is allowed only when it is unobservable.
+
+The current interpreter supports `Copy Unit` and `Copy Nat`. `Copy (Arrow _)`
+is intentionally unsupported until closure duplication is specified.
 
 `Drop` makes the discard of an otherwise unused value explicit in Core. It is
 the desugaring target for surface-level unused inputs.
 
 In the first executable slice, `Succ` consumes a `Nat` runtime value and creates
-a new `Nat(Nat.succ n)` value with `Rewrite_output` origin. `Drop A` consumes a
-runtime value of type `A` and creates no value. Each rule emits one
-`RewriteEvent`.
+a new `Nat(Nat.succ n)` value with `Rewrite_output` origin. `Copy A` consumes
+one runtime value and creates two distinct logical output values in canonical
+port order `[left; right]`. `Drop A` consumes a runtime value of type `A` and
+creates no value. Each rule emits one `RewriteEvent`.
 
 The `transparent-v0` profile records these current choices:
 
@@ -432,11 +441,14 @@ The `transparent-v0` profile records these current choices:
 - `port-schema = derived-from-node-kind`
 - `raw-and-validated-graph = distinct-abstract-types`
 - `runtime-input = validated-graph-only`
-- `initial-implementation-scope = Unit + Nat + Succ + Drop + Parameter/Result boundaries`
+- `initial-implementation-scope = Unit + Nat + Succ + Copy + Drop + Parameter/Result boundaries`
 - `canonical-node-order = explicit-ordered-executable-node-list`
 - `runtime-value = immutable-logical-value-with-typed-origin`
 - `runtime-logical-id = deterministic-provisional-id`
-- `implemented-rewrite-subset = Succ + Drop`
+- `implemented-rewrite-subset = Succ + Copy + Drop`
+- `copy-semantics = consume-one-create-two-distinct-linear-values`
+- `copy-output-order = explicit-canonical-port-order(left, right)`
+- `copy-ready-epoch = producing-event-index-plus-one`
 - `step-completion-policy = rewritten-then-completed-on-next-step`
 - `stuck-reporting = unexecuted-nodes-and-result-missing-flag`
 

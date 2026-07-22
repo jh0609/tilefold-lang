@@ -1,6 +1,7 @@
 type rule =
   | Succ
   | Drop
+  | Copy
 
 type t = {
   index : int;

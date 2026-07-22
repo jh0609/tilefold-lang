@@ -59,10 +59,12 @@ used as fallback scheduling metadata. This is recorded in
 `docs/decisions/0009-canonical-default-node-order.md`.
 
 The first runtime vertical slice is now implemented for validated graphs with
-`Unit`, `Nat`, `Succ`, `Drop`, `Parameter`, and `Result`. It materializes input
-and literals, executes `Succ` and `Drop`, records minimal rewrite events, and
-reports `Completed` or `Stuck`. This is recorded in
-`docs/decisions/0010-first-runtime-interpreter-vertical-slice.md`.
+`Unit`, `Nat`, `Succ`, `Copy`, `Drop`, `Parameter`, and `Result`. It
+materializes input and literals, executes `Succ`, `Copy`, and `Drop`, records
+minimal rewrite events, and reports `Completed`, `Stuck`, or typed runtime
+errors. This started in
+`docs/decisions/0010-first-runtime-interpreter-vertical-slice.md` and was
+extended by `docs/decisions/0011-copy-rewrite-and-linear-duplication.md`.
 
 ## 1. Which details of the Core v0 primitive candidates are normative?
 
@@ -87,9 +89,10 @@ reports `Completed` or `Stuck`. This is recorded in
   consumed, created, changed, and provenance behavior.
 - Impact on future compatibility: Once golden traces exist, port schemas and
   rule identities are expensive to change.
-- Recommendation: The first implemented rewrite subset is `Succ` and `Drop`.
-  Keep `Copy`, `Function`, `Apply`, and `NatRec` open until their validation,
-  trace behavior, and termination arguments are specified.
+- Recommendation: The first implemented rewrite subset is `Succ`, `Copy`, and
+  `Drop`, with `Copy` currently limited to `Unit` and `Nat` runtime payloads.
+  Keep `Copy (Arrow _)`, `Function`, `Apply`, and `NatRec` open until closure
+  validation, trace behavior, and termination arguments are specified.
 
 ## 2. How are immutable logical values represented?
 

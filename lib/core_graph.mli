@@ -23,6 +23,8 @@ module Port_key : sig
   val value : t
   val input : t
   val result : t
+  val left : t
+  val right : t
   val equal : t -> t -> bool
   val compare : t -> t -> int
   val to_string : t -> string
@@ -44,6 +46,7 @@ type node_kind =
   | Result of Core_type.t
   | Succ
   | Drop of Core_type.t
+  | Copy of Core_type.t
 
 type node = {
   id : Node_id.t;

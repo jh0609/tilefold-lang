@@ -17,6 +17,13 @@ type stuck_reason = {
   result_missing : bool;
 }
 
+type runtime_error =
+  | Unsupported_copy_payload_type of {
+      node_id : Core_graph.Node_id.t;
+      typ : Core_type.t;
+    }
+  | Runtime_invariant_violation of string
+
 module Machine : sig
   type t
 
@@ -34,6 +41,7 @@ type step_result =
     }
   | Completed of Runtime_value.t
   | Stuck of stuck_reason
+  | Runtime_error of runtime_error
 
 type run_result =
   | Run_completed of {
@@ -42,6 +50,10 @@ type run_result =
     }
   | Run_stuck of {
       reason : stuck_reason;
+      trace : Rewrite_event.t list;
+    }
+  | Run_error of {
+      error : runtime_error;
       trace : Rewrite_event.t list;
     }
 
@@ -53,3 +65,4 @@ val initialize :
 val step : Machine.t -> step_result
 val run : Machine.t -> run_result
 val initialization_error_to_string : initialization_error -> string
+val runtime_error_to_string : runtime_error -> string

@@ -104,6 +104,9 @@ Decision 0009 extends raw and validated graph data with mandatory
 Decision 0010 uses `Validated_graph.t` as the only runtime input for the first
 interpreter vertical slice.
 
+Decision 0011 extends this validation boundary with the executable `Copy`
+node and its derived `input`, `left`, and `right` port schema.
+
 ## Validation Rules
 
 The validator collects multiple errors when possible and returns them in a

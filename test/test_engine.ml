@@ -42,6 +42,7 @@ let run_completed machine =
   match Engine.run machine with
   | Engine.Run_completed { value; trace } -> (value, trace)
   | Engine.Run_stuck _ -> assert false
+  | Engine.Run_error _ -> assert false
 
 let payload_nat_string value =
   match Runtime_value.payload value with
@@ -128,6 +129,89 @@ let stuck_cycle () =
     ]
   in
   Raw_graph.of_lists ~nodes ~edges ~default_node_order:[ node_id "succ" ]
+  |> validate_ok
+
+let copy_nat_graph ?(order = [ "copy"; "succ"; "drop" ])
+    ?(edges =
+      [
+        edge "e-param-copy" (pref "param" "value") (pref "copy" "input");
+        edge "e-copy-left-succ" (pref "copy" "left") (pref "succ" "input");
+        edge "e-succ-result" (pref "succ" "result") (pref "result" "value");
+        edge "e-copy-right-drop" (pref "copy" "right") (pref "drop" "input");
+      ])
+    ?(param_type = Core_type.Nat) ?(result_type = Core_type.Nat) () =
+  let nodes =
+    [
+      node "param" (Parameter param_type);
+      node "copy" (Copy param_type);
+      node "succ" Succ;
+      node "drop" (Drop param_type);
+      node "result" (Result result_type);
+    ]
+  in
+  Raw_graph.of_lists ~nodes ~edges
+    ~default_node_order:(List.map node_id order)
+  |> validate_ok
+
+let copy_unit_graph () =
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "copy" (Copy Core_type.Unit);
+      node "drop" (Drop Core_type.Unit);
+      node "result" (Result Core_type.Unit);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-copy" (pref "param" "value") (pref "copy" "input");
+      edge "e-copy-left-drop" (pref "copy" "left") (pref "drop" "input");
+      edge "e-copy-right-result" (pref "copy" "right") (pref "result" "value");
+    ]
+  in
+  Raw_graph.of_lists ~nodes ~edges
+    ~default_node_order:[ node_id "copy"; node_id "drop" ]
+  |> validate_ok
+
+let copy_arrow_graph () =
+  let arrow = Core_type.Arrow (Core_type.Unit, Core_type.Nat) in
+  let nodes =
+    [
+      node "param" (Parameter arrow);
+      node "copy" (Copy arrow);
+      node "drop" (Drop arrow);
+      node "result" (Result arrow);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-copy" (pref "param" "value") (pref "copy" "input");
+      edge "e-copy-left-drop" (pref "copy" "left") (pref "drop" "input");
+      edge "e-copy-right-result" (pref "copy" "right") (pref "result" "value");
+    ]
+  in
+  Raw_graph.of_lists ~nodes ~edges
+    ~default_node_order:[ node_id "copy"; node_id "drop" ]
+  |> validate_ok
+
+let stuck_copy_self_cycle () =
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop-unit" (Drop Core_type.Unit);
+      node "copy" (Copy Core_type.Nat);
+      node "result" (Result Core_type.Nat);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop-unit" "input");
+      edge "e-copy-left-cycle" (pref "copy" "left") (pref "copy" "input");
+      edge "e-copy-right-result" (pref "copy" "right") (pref "result" "value");
+    ]
+  in
+  Raw_graph.of_lists ~nodes ~edges
+    ~default_node_order:[ node_id "copy"; node_id "drop-unit" ]
   |> validate_ok
 
 let assert_rules expected trace =
@@ -264,3 +348,146 @@ let () =
   let graph = entry_unit_to_nat ~literal:max_int_nat () in
   let value, _trace = run_completed (init_ok graph Runtime_value.Unit) in
   assert (payload_nat_string value = Z.to_string (Z.succ (Z.of_string max_int_nat)))
+
+let () =
+  let machine = init_ok (copy_nat_graph ()) (Runtime_value.Nat (nat "3")) in
+  match Engine.step machine with
+  | Engine.Rewritten { machine; event } ->
+      assert (Rewrite_event.rule_to_string event.Rewrite_event.rule = "Copy");
+      assert (event.Rewrite_event.ready_epoch = 0);
+      assert (
+        List.map Runtime_value.Value_id.to_string event.Rewrite_event.consumed
+        = [ "input" ]);
+      assert (List.length event.Rewrite_event.created = 2);
+      let left = List.nth event.Rewrite_event.created 0 in
+      let right = List.nth event.Rewrite_event.created 1 in
+      assert (Runtime_value.payload_equal (Runtime_value.payload left) (Runtime_value.Nat (nat "3")));
+      assert (Runtime_value.payload_equal (Runtime_value.payload right) (Runtime_value.Nat (nat "3")));
+      assert (not (Runtime_value.Value_id.equal (Runtime_value.id left) (Runtime_value.id right)));
+      assert (not (Runtime_value.Value_id.equal (Runtime_value.id left) Runtime_value.execution_input_id));
+      assert (not (Runtime_value.Value_id.equal (Runtime_value.id right) Runtime_value.execution_input_id));
+      assert (
+        Runtime_value.origin left
+        = Runtime_value.Rewrite_output
+            { event_index = 0; node_id = node_id "copy"; port_key = Port_key.left });
+      assert (
+        Runtime_value.origin right
+        = Runtime_value.Rewrite_output
+            { event_index = 0; node_id = node_id "copy"; port_key = Port_key.right });
+      assert (
+        List.map
+          (fun candidate ->
+            (Node_id.to_string candidate.Engine.node_id, candidate.Engine.ready_epoch))
+          (Engine.Machine.ready_candidates machine)
+        = [ ("succ", 1); ("drop", 1) ])
+  | _ -> assert false
+
+let () =
+  let value, trace = run_completed (init_ok (copy_nat_graph ()) (Runtime_value.Nat (nat "3"))) in
+  assert (payload_nat_string value = "4");
+  assert_rules [ "Copy"; "Succ"; "Drop" ] trace;
+  assert_subjects [ "copy"; "succ"; "drop" ] trace;
+  assert_indexes [ 0; 1; 2 ] trace;
+  assert_epochs [ 0; 1; 1 ] trace
+
+let () =
+  let value, trace =
+    run_completed
+      (init_ok (copy_nat_graph ~order:[ "copy"; "drop"; "succ" ] ())
+         (Runtime_value.Nat (nat "3")))
+  in
+  assert (payload_nat_string value = "4");
+  assert_rules [ "Copy"; "Drop"; "Succ" ] trace;
+  assert_epochs [ 0; 1; 1 ] trace
+
+let () =
+  let value, trace = run_completed (init_ok (copy_unit_graph ()) Runtime_value.Unit) in
+  assert (Runtime_value.payload value = Runtime_value.Unit);
+  assert_rules [ "Copy"; "Drop" ] trace;
+  let copy_event = List.hd trace in
+  assert (List.length copy_event.Rewrite_event.created = 2);
+  assert (
+    List.map
+      (fun value ->
+        match Runtime_value.payload value with
+        | Runtime_value.Unit -> "Unit"
+        | Runtime_value.Nat _ -> "Nat")
+      copy_event.Rewrite_event.created
+    = [ "Unit"; "Unit" ])
+
+let () =
+  (match Engine.initialize (copy_arrow_graph ()) ~input:Runtime_value.Unit with
+  | Error (Engine.Unsupported_runtime_input_type (Core_type.Arrow (Core_type.Unit, Core_type.Nat))) ->
+      ()
+  | _ -> assert false);
+  assert (
+    Engine.runtime_error_to_string
+      (Engine.Unsupported_copy_payload_type
+         {
+           node_id = node_id "copy";
+           typ = Core_type.Arrow (Core_type.Unit, Core_type.Nat);
+         })
+    = "unsupported Copy payload type at copy: Unit -> Nat")
+
+let () =
+  let reversed_edges =
+    [
+      edge "e-copy-right-drop" (pref "copy" "right") (pref "drop" "input");
+      edge "e-succ-result" (pref "succ" "result") (pref "result" "value");
+      edge "e-copy-left-succ" (pref "copy" "left") (pref "succ" "input");
+      edge "e-param-copy" (pref "param" "value") (pref "copy" "input");
+    ]
+  in
+  let value, trace =
+    run_completed
+      (init_ok (copy_nat_graph ~edges:reversed_edges ()) (Runtime_value.Nat (nat "3")))
+  in
+  assert (payload_nat_string value = "4");
+  let copy_event = List.hd trace in
+  assert (
+    List.map
+      (fun value ->
+        match Runtime_value.origin value with
+        | Runtime_value.Rewrite_output { port_key; _ } -> Port_key.to_string port_key
+        | _ -> assert false)
+      copy_event.Rewrite_event.created
+    = [ "left"; "right" ])
+
+let () =
+  let graph = copy_nat_graph () in
+  let value_a, trace_a = run_completed (init_ok graph (Runtime_value.Nat (nat "3"))) in
+  let value_b, trace_b = run_completed (init_ok graph (Runtime_value.Nat (nat "3"))) in
+  assert (Runtime_value.equal value_a value_b);
+  assert (List.map Rewrite_event.to_string trace_a = List.map Rewrite_event.to_string trace_b);
+  assert (
+    List.map
+      (fun event ->
+        List.map Runtime_value.to_string event.Rewrite_event.created)
+      trace_a
+    =
+    List.map
+      (fun event ->
+        List.map Runtime_value.to_string event.Rewrite_event.created)
+      trace_b)
+
+let () =
+  let max_int_nat = string_of_int max_int in
+  let value, trace =
+    run_completed
+      (init_ok (copy_nat_graph ()) (Runtime_value.Nat (nat max_int_nat)))
+  in
+  assert (payload_nat_string value = Z.to_string (Z.succ (Z.of_string max_int_nat)));
+  let copy_event = List.hd trace in
+  assert (
+    List.for_all
+      (fun value -> Runtime_value.payload_equal (Runtime_value.payload value) (Runtime_value.Nat (nat max_int_nat)))
+      copy_event.Rewrite_event.created)
+
+let () =
+  let machine = init_ok (stuck_copy_self_cycle ()) Runtime_value.Unit in
+  match Engine.run machine with
+  | Engine.Run_stuck { reason; trace } ->
+      assert_rules [ "Drop" ] trace;
+      assert (List.map Node_id.to_string reason.Engine.unexecuted_nodes = [ "copy" ]);
+      assert (reason.Engine.result_missing = true)
+  | _ -> assert false

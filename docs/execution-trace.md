@@ -80,7 +80,7 @@ Each event should identify:
 The exact schema is not fixed yet.
 
 The first executable slice implements a minimal typed `RewriteEvent` subset for
-`Succ` and `Drop`. It records:
+`Succ`, `Copy`, and `Drop`. It records:
 
 - sequential event index starting at `0`,
 - rule,
@@ -88,6 +88,13 @@ The first executable slice implements a minimal typed `RewriteEvent` subset for
 - ready epoch,
 - consumed runtime value IDs,
 - created runtime values.
+
+A `Copy` event consumes one runtime value and creates two runtime values. The
+created values are recorded in canonical output order `[left; right]`, using
+distinct logical IDs and `Rewrite_output` origins whose port keys identify the
+corresponding `left` or `right` output. This order is independent of edge list
+order, downstream node IDs, scheduler selection order, and container traversal
+order.
 
 Literal materialization, execution input materialization, delivery along edges,
 ready-candidate maintenance, and other mechanical state construction are not

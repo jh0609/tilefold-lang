@@ -66,9 +66,10 @@ Tilefold distinguishes at least these concepts:
 Core v0 now uses an explicit directed port graph at the validation boundary.
 Raw graphs are diagnostic input and validated graphs are the only runtime input
 for the first executable slice. That slice currently covers initialization,
-`Succ`, `Drop`, minimal rewrite events, `Completed`, and `Stuck` for
-`Unit`/`Nat` graphs. Full scheduling, trace snapshots, function application,
-recursion, parsing, and canonical serialization remain outside this stage.
+`Succ`, `Copy`, `Drop`, minimal rewrite events, `Completed`, `Stuck`, and typed
+runtime errors for `Unit`/`Nat` graphs. Full scheduling, trace snapshots,
+function application, recursion, parsing, and canonical serialization remain
+outside this stage.
 
 ## Fold and Unfold
 

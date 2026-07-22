@@ -10,7 +10,8 @@ rewrite events, `Completed`, and `Stuck` for the current validated graph subset.
 It does not implement `Copy`, `Function`, closures, `Apply`, runtime instances,
 `NatRec`, `PrioritySpine`, canonical rule order generalization, program
 packages, `.tfold` parsing, canonical JSON serialization, `GraphSnapshot`,
-full provenance schemas, resource budgets, or a semantics version.
+full provenance schemas, resource budgets, or a semantics version. Decision
+0011 later extends the same interpreter slice with `Copy Unit` and `Copy Nat`.
 
 ## Context
 

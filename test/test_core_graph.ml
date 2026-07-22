@@ -445,3 +445,135 @@ let () =
   let first = validate_errors graph |> List.map validation_error_to_string in
   let second = validate_errors graph |> List.map validation_error_to_string in
   assert (first = second)
+
+let copy_unit_graph ?(default_node_order = [ node_id "copy"; node_id "drop" ])
+    ?(nodes =
+      [
+        node "param" (Parameter Core_type.Unit);
+        node "copy" (Copy Core_type.Unit);
+        node "drop" (Drop Core_type.Unit);
+        node "result" (Result Core_type.Unit);
+      ])
+    ?(edges =
+      [
+        edge "e-param-copy" (pref "param" "value") (pref "copy" "input");
+        edge "e-copy-left-drop" (pref "copy" "left") (pref "drop" "input");
+        edge "e-copy-right-result" (pref "copy" "right") (pref "result" "value");
+      ])
+    () =
+  Raw_graph.of_lists ~nodes ~edges ~default_node_order
+
+let copy_nat_graph ?(default_node_order = [ node_id "copy"; node_id "drop" ])
+    ?(nodes =
+      [
+        node "param" (Parameter Core_type.Nat);
+        node "copy" (Copy Core_type.Nat);
+        node "drop" (Drop Core_type.Nat);
+        node "result" (Result Core_type.Nat);
+      ])
+    ?(edges =
+      [
+        edge "e-param-copy" (pref "param" "value") (pref "copy" "input");
+        edge "e-copy-left-result" (pref "copy" "left") (pref "result" "value");
+        edge "e-copy-right-drop" (pref "copy" "right") (pref "drop" "input");
+      ])
+    () =
+  Raw_graph.of_lists ~nodes ~edges ~default_node_order
+
+let () =
+  match validate (copy_unit_graph ()) with
+  | Ok graph ->
+      assert (
+        List.map Node_id.to_string (Validated_graph.default_node_order graph)
+        = [ "copy"; "drop" ]);
+      assert (
+        match Validated_graph.port_schema graph (node_id "copy") with
+        | Some ports ->
+            List.map (fun port -> Port_key.to_string port.key) ports
+            = [ "input"; "left"; "right" ]
+        | None -> false)
+  | Error _ -> assert false
+
+let () =
+  match validate (copy_nat_graph ()) with
+  | Ok _ -> ()
+  | Error _ -> assert false
+
+let () =
+  let errors =
+    validate_errors (copy_nat_graph ~default_node_order:[ node_id "drop" ] ())
+  in
+  has_error
+    (function
+      | Executable_node_missing_from_default_order id -> Node_id.to_string id = "copy"
+      | _ -> false)
+    errors
+
+let () =
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "copy" (Copy Core_type.Nat);
+      node "drop" (Drop Core_type.Nat);
+      node "result" (Result Core_type.Nat);
+    ]
+  in
+  let errors = validate_errors (copy_nat_graph ~nodes ()) in
+  has_error
+    (function
+      | Type_mismatch { source_type = Core_type.Unit; target_type = Core_type.Nat; _ }
+        ->
+          true
+      | _ -> false)
+    errors
+
+let () =
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Nat);
+      node "copy" (Copy Core_type.Nat);
+      node "drop" (Drop Core_type.Nat);
+      node "result" (Result Core_type.Unit);
+    ]
+  in
+  let errors = validate_errors (copy_nat_graph ~nodes ()) in
+  has_error
+    (function
+      | Type_mismatch { source_type = Core_type.Nat; target_type = Core_type.Unit; _ }
+        ->
+          true
+      | _ -> false)
+    errors
+
+let () =
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Nat);
+      node "copy" (Copy Core_type.Nat);
+      node "drop" (Drop Core_type.Unit);
+      node "result" (Result Core_type.Nat);
+    ]
+  in
+  let errors = validate_errors (copy_nat_graph ~nodes ()) in
+  has_error
+    (function
+      | Type_mismatch { source_type = Core_type.Nat; target_type = Core_type.Unit; _ }
+        ->
+          true
+      | _ -> false)
+    errors
+
+let () =
+  let edges =
+    [
+      edge "e-param-copy" (pref "param" "value") (pref "copy" "input");
+      edge "e-copy-right-drop" (pref "copy" "right") (pref "drop" "input");
+    ]
+  in
+  let errors = validate_errors (copy_nat_graph ~edges ()) in
+  has_error
+    (function
+      | Output_port_connection_count { node_id; port_key; actual = 0; _ } ->
+          Node_id.to_string node_id = "copy" && Port_key.to_string port_key = "left"
+      | _ -> false)
+    errors

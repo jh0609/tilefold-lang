@@ -67,7 +67,8 @@ Non-executable nodes are:
 - `Result _`
 
 Future decisions may add `Copy`, `Apply`, `NatRec`, and other node kinds to
-the executable set. This decision does not implement those nodes.
+the executable set. This decision does not implement those nodes. Decision
+0011 later adds `Copy _` to the executable set.
 
 The OCaml API exposes the executable predicate as:
 
@@ -121,7 +122,8 @@ Conforming engines must preserve the ordered list exactly and use it as the
 fallback schedule order when the corresponding scheduler is implemented.
 
 Decision 0010 implements the first runtime use of `default_node_order` as the
-fallback selection key after `ready_epoch` for `Succ` and `Drop`.
+fallback selection key after `ready_epoch` for `Succ` and `Drop`. Decision
+0011 extends that runtime use to `Copy`.
 
 ## Not Decided
 
