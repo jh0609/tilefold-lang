@@ -74,14 +74,15 @@ Whether rotation changes Surface meaning or is only visualization remains open.
 
 Render position is not an input to deterministic rewrite selection. Tilefold
 does not use pixel top-to-bottom or left-to-right order as execution order. If a
-future Surface feature uses spatial manipulation to express order, priority, or
-sequence, that meaning must first be converted into explicit symbolic relations
-such as `Before`, `Priority`, or `Sequence`. Introducing such relations would
-require recording them in the canonical program and semantics profile.
+Surface feature uses spatial manipulation to express order, priority, or
+sequence, that meaning must first be converted into explicit symbolic
+relations. Introducing such relations requires recording them in the canonical
+program and semantics profile.
 
 This decision does not add `Before`, `Priority`, or `Sequence` as Core
-primitives, and it does not resolve the `transparent-v0` deterministic rewrite
-selection policy.
+primitives. Decision 0005 later defines `PrioritySpine` as an optional symbolic
+Surface scheduling relation for `transparent-v0`, still without using pixel
+position as execution order.
 
 For folded function blocks, position and size are not semantics. The typed
 external port correspondence and template ID are semantic. Fold, unfold, and
@@ -112,6 +113,6 @@ This decision does not define:
 - Surface shape grammar,
 - whether rotation changes Surface meaning,
 - any `Before`, `Priority`, or `Sequence` Core primitive,
-- deterministic rewrite selection,
+- detailed scheduling relations beyond the later `PrioritySpine` decision,
 - UI rendering, snapping, hit testing, or layout algorithms,
 - an implementation in `lib/`, `bin/`, or `test/`.

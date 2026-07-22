@@ -33,6 +33,11 @@ symbolic spatial relations that can be validated, serialized, compared, and
 desugared. The Core engine does not interpret pixel coordinates or renderer
 layout directly.
 
+Surface may also provide optional explicit scheduling relations. In
+`transparent-v0`, `PrioritySpine` is such a relation: it can prioritize among
+nodes that are already ready, but it is not a value-producing Core primitive,
+not a dependency gate, and not a hard sequence.
+
 ## Tiles and Connections
 
 A Tilefold program is a finite graph of typed tiles and typed connections.
@@ -131,6 +136,7 @@ This stage does not define or implement:
 - WebAssembly integration,
 - a Rust engine,
 - parallel execution,
+- hard sequencing or pixel-coordinate execution ordering,
 - performance optimizations,
 - arbitrary recursion,
 - concrete `.tfold` file syntax,

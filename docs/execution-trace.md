@@ -23,6 +23,14 @@ geometry affects program meaning, the trace and canonical program must refer to
 the resolved symbolic relation, not the renderer coordinates that helped create
 it.
 
+For `transparent-v0`, the standard trace records the exact canonical sequential
+physical rewrite order. Causal predecessor information may be included as
+additional data, but it does not replace the sequential order.
+
+The trace header must identify the semantics profile and canonical scheduling
+relations, including any `PrioritySpine` metadata that can affect rewrite
+order.
+
 ## GraphSnapshot
 
 A `GraphSnapshot` records a canonical representation of a graph at a point in
@@ -51,6 +59,7 @@ G_i --R_i--> G_(i+1)
 Each event should identify:
 
 - the event index,
+- the canonical sequential rewrite index,
 - the semantics version,
 - the semantics profile identifier when executing an experimental profile,
 - the execution policy,
@@ -64,6 +73,10 @@ Each event should identify:
 - errors, if the rewrite produces a specified error state.
 
 The exact schema is not fixed yet.
+
+Diagnostic scheduling context may include the selected node's `ready_epoch`,
+spine ID, slot ID, and selection reason. This diagnostic information must be
+derived from the same standard trace and canonical scheduling metadata.
 
 ## ApplyEvent
 

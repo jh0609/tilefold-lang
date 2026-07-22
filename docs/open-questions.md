@@ -29,10 +29,13 @@ a frozen semantics version.
 
 This resolves the broad direction of questions 1 and 2 below, but it does not
 settle concrete port schemas, rewrite rules, trace schemas, canonical
-serialization, deterministic rewrite selection, function template ID
-serialization, canonical template hashing, symbolic spatial relation schemas,
-Surface shape grammar, rotation semantics, error modeling, or the formal
-termination proof.
+serialization, function template ID serialization, canonical template hashing,
+symbolic spatial relation schemas, Surface shape grammar, rotation semantics,
+scheduling error serialization, error modeling, or the formal termination proof.
+
+The broad deterministic scheduler for `transparent-v0` is now provisional:
+sequential single-rewrite execution with ready epochs, optional
+`PrioritySpine`, canonical node order, and canonical rule order.
 
 ## 1. Which details of the Core v0 primitive candidates are normative?
 
@@ -86,32 +89,32 @@ termination proof.
 - Recommendation: Prefer an explicit representation that is visible in
   snapshots or trace before adding performance-oriented indirection.
 
-## 3. What is the canonical deterministic rewrite selection policy?
+## 3. Which scheduler details remain to be specified?
 
-- Question: When multiple rewrites are available, how does the abstract machine
-  choose the next one?
+- Question: Given the provisional `transparent-v0` scheduler, which details are
+  still open before implementation?
 - Alternatives:
-  - A total order over rewrite rules and matched logical IDs within strict
-    call-by-value readiness.
-  - A dependency-driven schedule derived from graph topology while preserving
-    strict call-by-value.
-  - A policy parameter recorded in the trace.
+  - Specify canonical node order and canonical rule order before implementing
+    any scheduler.
+  - Specify ready-queue behavior and validation errors first.
+  - Specify trace diagnostics first, leaving internal queue structures to the
+    engine.
 - Advantages:
-  - Total order: simple and reproducible.
-  - Dependency schedule: may better match user expectations in dataflow graphs.
-  - Policy parameter: allows future evaluation strategies.
+  - Ordering first: directly supports trace conformance.
+  - Queue behavior first: reduces implementation ambiguity.
+  - Trace diagnostics first: supports debugging and comparison.
 - Disadvantages:
-  - Total order: may feel arbitrary in visual debugging.
-  - Dependency schedule: harder to specify canonically.
-  - Policy parameter: increases conformance surface area.
-- Impact on termination: Any policy must preserve the global termination
-  argument; some fair policies may be harder to prove.
-- Impact on execution transparency: The policy must be explicit in every trace.
-- Impact on future compatibility: A policy parameter gives flexibility but makes
-  exact trace compatibility more complex.
-- Recommendation: Begin with one deterministic strict call-by-value policy,
-  documented as part of the semantics version, before introducing policy
-  variants.
+  - Ordering first: may delay useful validation work.
+  - Queue behavior first: may overfit implementation structure.
+  - Trace diagnostics first: may not settle conformance-critical tie-breakers.
+- Impact on termination: Scheduler details must not create permission gates or
+  wait cycles; readiness remains dependency-driven.
+- Impact on execution transparency: The canonical sequential index is required;
+  ready epoch, spine ID, slot ID, and selection reason may be diagnostic.
+- Impact on future compatibility: Canonical node and rule ordering will affect
+  golden traces and must be stable once frozen.
+- Recommendation: Specify canonical node order, canonical rule order, and
+  scheduling validation errors before implementing the scheduler.
 
 ## 4. How should `transparent-v0` represent traces and snapshots?
 
@@ -287,31 +290,34 @@ termination proof.
   compatibility and visualizer behavior.
 - Recommendation: Keep open until Surface shape grammar is defined.
 
-## 11. Can Surface spatial relations express execution order?
+## 11. Which scheduling relations beyond PrioritySpine should exist?
 
-- Question: Should spatial constructs such as `Before`, `Priority`, or
-  `Sequence` ever influence execution order?
+- Question: Should future profiles add hard sequencing or dependency-like
+  scheduling relations beyond `PrioritySpine`?
 - Alternatives:
-  - No spatial ordering relation in Core v0.
-  - Add explicit Surface-only ordering relations that desugar to existing Core
-    structure.
-  - Add future Core constructs for ordering if a semantics version requires
-    them.
+  - Keep only optional `PrioritySpine`.
+  - Add `HardSequence`.
+  - Add `Before` or `After` dependency gates.
+  - Add conditional priority or priorities between multiple spines.
 - Advantages:
-  - No ordering relation: preserves current open deterministic rewrite policy.
-  - Surface-only relations: can express user intent without pixel ordering.
-  - Future Core constructs: could make ordering first-class if needed.
+  - Only `PrioritySpine`: keeps scheduling weak and deterministic.
+  - `HardSequence`: gives stronger user-visible control.
+  - Dependency gates: can model explicit waiting.
+  - Conditional or multi-spine priority: supports richer scheduling experiments.
 - Disadvantages:
-  - No ordering relation: less visual control over scheduling.
-  - Surface-only relations: desugaring must be carefully specified.
-  - Future Core constructs: expands semantics and conformance burden.
-- Impact on termination: Any ordering construct must preserve total execution.
+  - Only `PrioritySpine`: cannot express hard ordering.
+  - `HardSequence`: risks introducing artificial waiting and trace complexity.
+  - Dependency gates: may interact with progress and termination.
+  - Conditional or multi-spine priority: expands conformance surface.
+- Impact on termination: Any future scheduling construct must preserve total
+  execution and avoid permission-token deadlocks.
 - Impact on execution transparency: Ordering must be explicit and recorded in
   the canonical program and semantics profile.
 - Impact on future compatibility: Introducing ordering changes trace behavior
   and must not happen silently under an existing semantics version.
-- Recommendation: Keep `transparent-v0` deterministic rewrite selection Open
-  and do not add `Before`, `Priority`, or `Sequence` as Core primitives now.
+- Recommendation: Keep `HardSequence`, `Before`/`After` gates, execution
+  permission tokens, conditional priorities, and multi-spine priority as future
+  experimental alternatives. Do not add them to `transparent-v0`.
 
 ## 12. How much editor behavior is standardized?
 
@@ -336,3 +342,29 @@ termination proof.
   future visualizers.
 - Recommendation: Standardize canonical symbolic relations first, not editor
   gesture mechanics.
+
+## 13. How are scheduling validation errors serialized?
+
+- Question: What canonical error format represents invalid `PrioritySpine`
+  metadata?
+- Alternatives:
+  - Reuse the general validation error schema once defined.
+  - Define a scheduling-specific validation error section.
+  - Encode errors as canonical relation validation failures.
+- Advantages:
+  - General schema: fewer error families.
+  - Scheduling-specific section: clearer diagnostics.
+  - Relation failures: keeps Surface relation validation uniform.
+- Disadvantages:
+  - General schema: may be too vague for slot errors.
+  - Scheduling-specific section: adds schema surface.
+  - Relation failures: may obscure scheduler-specific consequences.
+- Impact on termination: Invalid scheduling metadata must be rejected before
+  execution, preventing ambiguous ready-node choice.
+- Impact on execution transparency: Errors must identify duplicate slots,
+  multiple spines per scope, missing nodes, cross-scope members,
+  non-executable members, and invalid stable slot IDs.
+- Impact on future compatibility: Error identity and serialization affect
+  conformance fixtures.
+- Recommendation: Keep exact serialization open until the general validation
+  error model is designed.

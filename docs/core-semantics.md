@@ -125,15 +125,46 @@ value ID.
 Core v0 evaluates strict call-by-value functional graphs.
 
 In call-by-value evaluation, an application evaluates the function position and
-argument value before applying the function. The exact deterministic scheduling
-policy for independent ready subgraphs is still open, but it must preserve
-strict call-by-value behavior and canonical trace generation.
+argument value before applying the function.
+
+The normative `transparent-v0` scheduler is sequential single-rewrite
+execution. At each machine state, exactly one standard rewrite is selected and
+applied. Normative parallel rewrite execution is forbidden in `transparent-v0`.
 
 Render position is not an input to deterministic rewrite selection. Pixel
 top-to-bottom or left-to-right order is not an execution policy. If Surface
-spatial manipulation later expresses ordering, it must first desugar into an
-explicit symbolic relation recorded in the canonical program and semantics
-profile.
+spatial manipulation expresses scheduling priority, it must first desugar into
+an explicit symbolic scheduling relation recorded in the canonical program and
+semantics profile.
+
+A node is ready only when it belongs to an active runtime graph, is not an
+inactive template node, has all required input ports connected to completed
+immutable logical values, satisfies runtime graph invariants and port types,
+has exactly one applicable rewrite rule, and is not already consumed or already
+registered as a duplicate ready candidate.
+
+Ready candidates are selected by the structured key:
+
+```text
+(
+  ready_epoch,
+  priority membership and slot,
+  canonical node order,
+  canonical rule order
+)
+```
+
+Initial ready nodes have `ready_epoch = 0`. Nodes made ready by a rewrite event
+receive the following epoch; nodes made ready by the same graph patch receive
+the same epoch. Once assigned, a ready epoch is stable while the node remains a
+valid candidate.
+
+`PrioritySpine` is optional canonical scheduling metadata produced from Surface
+symbolic relations. It is not a Core computational primitive and does not
+create dependencies, execution permission, or a hard sequence. Within the same
+ready epoch, ready spine members precede non-members, and members of the same
+spine follow stable slot order. A non-ready earlier slot does not block a ready
+later slot.
 
 Core v0 excludes shared mutable state, cells, and effects. It also excludes
 arbitrary recursion, unbounded `while`, and unbounded `goto`.
@@ -190,6 +221,12 @@ The `transparent-v0` profile records these current choices:
 - `runtime-instance = per-apply-logical-instance`
 - `apply-atomicity = activate-instance-with-canonical-graph-patch`
 - `surface-function-block = folded-view-of-template`
+- `standard-execution = sequential-single-rewrite`
+- `rewrite-selection = readiness-fifo-with-priority-spine-and-canonical-tiebreak`
+- `priority-spine = optional-symbolic-scheduling-relation`
+- `hard-sequence = absent`
+- `parallel-normative-execution = forbidden`
+- `render-position-ordering = forbidden`
 
 These values classify the current design direction. They do not implement or
 freeze primitive port schemas or rewrite rules.

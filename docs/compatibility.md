@@ -38,6 +38,10 @@ validated Core graphs, standard traces, and observable results. Moving or
 automatically laying out shapes without changing symbolic relations must not
 change conformance results.
 
+For `transparent-v0`, identical canonical scheduling metadata must produce the
+same rewrite order and standard trace on conforming engines. `PrioritySpine`
+metadata is conformance-relevant when present. Pixel or render position is not.
+
 ## Same Trace vs Same Observable Result
 
 There are two possible compatibility levels:
