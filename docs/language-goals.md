@@ -63,9 +63,10 @@ Tilefold distinguishes at least these concepts:
 - values: runtime data represented in the graph or trace by stable logical
   identifiers and canonical data.
 
-Core v0 has a provisional calculation model and primitive candidate list, but
-the exact rewrite rules and trace schema for those candidates are not
-implemented in this stage.
+Core v0 now uses an explicit directed port graph at the validation boundary.
+Raw graphs are diagnostic input and validated graphs are the only future runtime
+input. Core v0 still has no scheduler, machine state, rewrite rules, or trace
+schema implemented in this stage.
 
 ## Fold and Unfold
 

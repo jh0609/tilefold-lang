@@ -55,8 +55,10 @@ automatic layout results, antialiasing, or hitbox details.
 
 Tiles are graph nodes that participate in validation and rewrite rules.
 
-Ports are named or otherwise stable connection points on tiles. Each port has a
-declared type, type variable, or type constraint.
+Ports are named or otherwise stable connection points on tiles. In the current
+explicit directed port graph representation, a node kind determines its port
+schema. A raw graph does not declare arbitrary port direction or port type data.
+Each derived port has a stable port key, direction, and Core type.
 
 Core v0 starts with these type forms:
 
@@ -91,6 +93,13 @@ Non-canonical text is rejected rather than silently normalized. See
 
 Connections are graph edges between compatible ports. Type-invalid connections
 must be rejected before initialization of the abstract machine.
+
+The OCaml reference implementation separates `Raw_graph.t` from
+`Validated_graph.t`. `Raw_graph.t` can contain duplicate IDs, missing
+references, wrong directions, and type errors for diagnostic purposes.
+`Validated_graph.t` is abstract and can only be produced by the validator. This
+preserves the boundary that future execution APIs must accept validated graphs,
+not raw graphs.
 
 Core has no variable names. Function inputs and free values are represented by
 explicit ports and edges. A function's captured values must be visible at the
@@ -303,9 +312,29 @@ The initial Core v0 primitive candidates are:
   values.
 - `Drop`: explicit discard of an unused value.
 
-These are candidates for the first Core v0 semantics. Their precise port
-schemas, validation rules, rewrite rules, trace event shapes, and canonical
-serialization are not implemented in this stage.
+These are candidates for the first Core v0 semantics. The full candidate set's
+port schemas, validation rules, rewrite rules, trace event shapes, and
+canonical serialization are not complete. The subset below is the first
+implemented validation boundary.
+
+The first implemented validation subset fixes these node-derived schemas:
+
+- `Unit_literal`: `value` output of type `Unit`.
+- `Nat_literal`: `value` output of type `Nat`.
+- `Parameter A`: `value` output of type `A`.
+- `Result B`: `value` input of type `B`.
+- `Succ`: `input` input of type `Nat`, `result` output of type `Nat`.
+- `Drop A`: `input` input of type `A`.
+
+For this subset, a valid template body has exactly one `Parameter` boundary and
+one `Result` boundary. The template type is derived as `A -> B`. Every input
+port must have exactly one incoming edge and every output port must have
+exactly one outgoing edge, so implicit fan-out, unused outputs, duplicated
+input connections, and unconnected boundary inputs are validation errors.
+
+This validator does not implement graph cycle rules, reachability, `Copy`,
+`Function`, `Apply`, `NatRec`, scheduler metadata, rewrite rules, or trace
+schemas. See `docs/decisions/0008-explicit-port-graph-and-validation-boundary.md`.
 
 `Unit` and `Nat(n)` are value constructors, not executable rewrite nodes. Their
 runtime logical values are materialized during machine initialization or
@@ -356,6 +385,11 @@ The `transparent-v0` profile records these current choices:
 - `hard-sequence = absent`
 - `parallel-normative-execution = forbidden`
 - `render-position-ordering = forbidden`
+- `core-representation = explicit-directed-port-graph`
+- `port-schema = derived-from-node-kind`
+- `raw-and-validated-graph = distinct-abstract-types`
+- `runtime-input = validated-graph-only`
+- `initial-implementation-scope = Unit + Nat + Succ + Drop + Parameter/Result boundaries`
 
 These values classify the current design direction. They do not implement or
 freeze primitive port schemas or rewrite rules.

@@ -46,6 +46,13 @@ OCaml as an abstract `Nat.t` wrapper over Zarith `Z.t`. Host integer overflow is
 not a Tilefold runtime error. Canonical Nat text is fixed by
 `docs/decisions/0007-arbitrary-precision-nat.md`.
 
+The initial Core graph representation and validation boundary are now
+provisional: Core is an explicit directed port graph, port schemas are derived
+from node kind, and `Raw_graph.t` and `Validated_graph.t` are distinct abstract
+types. The first validator covers `Unit`, `Nat`, `Succ`, `Drop`, `Parameter`,
+and `Result`. This is recorded in
+`docs/decisions/0008-explicit-port-graph-and-validation-boundary.md`.
+
 ## 1. Which details of the Core v0 primitive candidates are normative?
 
 - Question: Which exact port schemas, typing rules, and rewrite rules define
@@ -503,3 +510,80 @@ not a Tilefold runtime error. Canonical Nat text is fixed by
   fixtures and may require a semantics version.
 - Recommendation: Keep resource budgets open. Do not treat Nat overflow as a
   language error; only future explicit resource limits may reject large values.
+
+## 19. What graph cycle policy should validated Core enforce?
+
+- Question: Are graph cycles rejected syntactically, accepted only through
+  total constructs, or accepted with a separate proof obligation?
+- Alternatives:
+  - Reject all cycles in the validated directed port graph.
+  - Allow only cycles introduced by specified total constructs.
+  - Allow syntactic cycles when validation can prove productivity or totality.
+- Advantages:
+  - Reject all: simplest validator and termination story.
+  - Total constructs only: fits future `NatRec` and structured recursion.
+  - Proof obligation: most expressive.
+- Disadvantages:
+  - Reject all: may be too restrictive for graph encodings.
+  - Total constructs only: requires precise primitive-specific validation.
+  - Proof obligation: significantly more complex.
+- Impact on termination: Cycle policy is central to the future termination
+  proof.
+- Impact on execution transparency: Accepted cycles must still produce
+  transparent rewrites and traces.
+- Impact on future compatibility: Changing cycle acceptance will alter
+  validation conformance.
+- Recommendation: Keep open. Do not implement cycle checks before `Copy`,
+  `Function`, `Apply`, and `NatRec` validation are designed.
+
+## 20. What is the final reachability requirement?
+
+- Question: Must every validated node be on the result path, or can explicit
+  `Drop` side regions and other consumed structures be outside the result
+  slice?
+- Alternatives:
+  - Require all nodes to be reachable from `Parameter` and able to influence
+    `Result`.
+  - Require all outputs to be consumed, allowing explicit `Drop` side paths.
+  - Define a separate productive result slice plus explicit discard regions.
+- Advantages:
+  - Result-only reachability: simple observable result story.
+  - Output consumption: matches explicit `Drop` without needing global graph
+    slicing.
+  - Separate slices: most precise.
+- Disadvantages:
+  - Result-only reachability: rejects deliberate `Drop` paths.
+  - Output consumption: does not define global reachability.
+  - Separate slices: requires more validator and trace design.
+- Impact on termination: Reachability can affect which active regions must
+  terminate and be processed.
+- Impact on execution transparency: Explicit discard regions should remain
+  visible if accepted.
+- Impact on future compatibility: Reachability changes affect validation
+  acceptance and conformance fixtures.
+- Recommendation: Keep open. The initial validator checks exact port
+  connectivity, not final reachability.
+
+## 21. What are canonical node and rule ordering?
+
+- Question: Which structured canonical order should the scheduler use after
+  ready epoch and `PrioritySpine` slot priority?
+- Alternatives:
+  - Structural path order from canonical graph serialization.
+  - Explicit canonical order assigned during validation.
+  - Content-derived order with collision handling.
+- Advantages:
+  - Structural path order: aligned with serialization.
+  - Validation-assigned order: simple for the runtime to consume.
+  - Content-derived order: stable under some reorderings.
+- Disadvantages:
+  - Structural path order: depends on unfinished serialization.
+  - Validation-assigned order: risks preserving raw input order as semantics.
+  - Content-derived order: complex around identical subgraphs.
+- Impact on termination: Usually indirect, but ordering must not create hidden
+  waiting behavior.
+- Impact on execution transparency: Exact trace conformance depends on this
+  choice.
+- Impact on future compatibility: Golden traces will lock in the chosen order.
+- Recommendation: Keep open. The initial ID comparison helpers are diagnostic
+  utilities, not scheduler ordering semantics.

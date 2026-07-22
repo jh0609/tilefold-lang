@@ -54,6 +54,13 @@ domain and must not introduce host `int`, `int64`, or machine-word overflow as
 a Tilefold runtime error. Canonical Nat text uses unsigned decimal digits with
 no leading zeroes except `0`; full program and trace serialization remain open.
 
+Validation acceptance and rejection are conformance-relevant. For the initial
+explicit directed port graph subset, conforming engines must agree with the
+OCaml reference validator on fixed node-derived port schemas, raw graph
+rejection, validated graph acceptance, derived template type, and deterministic
+diagnostic ordering where specified. Raw graph input order may be preserved for
+diagnostics, but it is not a scheduler canonical node order.
+
 ## Same Trace vs Same Observable Result
 
 There are two possible compatibility levels:
