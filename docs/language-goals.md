@@ -38,6 +38,11 @@ Surface may also provide optional explicit scheduling relations. In
 nodes that are already ready, but it is not a value-producing Core primitive,
 not a dependency gate, and not a hard sequence.
 
+A Tilefold program runs by applying its entry function. The program package
+names an entry template and provides canonical metadata; it is not itself a
+calculation primitive. Input-free programs are ordinary `Unit -> B` functions
+applied to the `Unit` value.
+
 ## Tiles and Connections
 
 A Tilefold program is a finite graph of typed tiles and typed connections.
@@ -142,6 +147,7 @@ This stage does not define or implement:
 - concrete `.tfold` file syntax,
 - final Surface shape grammar or symbolic spatial relation schema,
 - final rewrite rules for Core v0 primitive candidates,
+- a special zero-argument function call or `ProgramResult` primitive,
 - coordinates, colors, iconography, animation timing, or graphical layout.
 
 Visualization metadata is intentionally outside the execution engine.

@@ -60,8 +60,21 @@ declared type, type variable, or type constraint.
 
 Core v0 starts with these type forms:
 
+- `Unit`
 - `Nat`
 - `A -> B`
+
+Conceptually:
+
+```text
+Type ::=
+    Unit
+  | Nat
+  | A -> B
+```
+
+`Unit` has exactly one value, written `Unit` or `()`. It adds no iteration,
+effects, state, or nontermination.
 
 Connections are graph edges between compatible ports. Type-invalid connections
 must be rejected before initialization of the abstract machine.
@@ -120,6 +133,94 @@ For an identity function with no internal calculation nodes, the `Apply` event
 may rewire the argument to the result use sites while preserving the argument
 value ID.
 
+## Program Packages and Entry Execution
+
+A Tilefold program is a package, not a Core computational primitive.
+
+Conceptually:
+
+```text
+ProgramPackage {
+  templates;
+  entry_template_id;
+  semantics_profile;
+  symbolic_relations;
+  scheduling_metadata;
+}
+```
+
+The package contains canonical function templates, the entry template ID, the
+semantics profile or future semantics version, canonical symbolic relations,
+scheduling metadata, and canonical execution metadata.
+
+The entry template always has type `A -> B`. An execution request supplies one
+input value of type `A`. An input-free program is represented as `Unit -> B` and
+receives the `Unit` value. Tilefold does not add a zero-argument function form
+or a nullary `Apply` rule.
+
+The entry template is a closed template. It must not depend on hidden host
+state or an ambient environment. If its capture boundary is unresolved, the
+package is not a valid executable program. External input must pass through the
+entry parameter.
+
+Execution begins by ordinary application:
+
+```text
+Apply(entry closure, input value)
+-> root runtime instance
+-> ordinary body rewrites
+-> result value at the root result boundary
+```
+
+The root runtime instance follows the same identity and trace rules as any
+other `Apply` instance. The entry template's result boundary is the program
+result boundary. There is no `ProgramResult` primitive.
+
+For an entry of type `Unit -> B`, the `Unit` parameter remains explicit in
+Core. If the body does not use it, the body must handle it with `Drop`. Surface
+may display this as an input-free program, but Core does not implicitly discard
+the `Unit` argument.
+
+## Literal Materialization
+
+`Nat(n)` and `Unit` are immutable logical value constructors, not executable
+rewrite nodes.
+
+Top-level execution inputs and program literals are materialized during machine
+initialization. Function-template literals are materialized as logical values
+for a runtime instance when the `ApplyEvent` activates that instance.
+
+No separate `NatLiteral` or `UnitLiteral` rewrite event is introduced. Literal
+values have stable logical IDs and origin provenance, such as:
+
+- `ProgramLiteral(template_element_id)`
+- `InstanceLiteral(instance_id, template_element_id)`
+- `ExecutionInput(input_id)`
+
+The exact serialization schema for literal provenance remains open.
+
+`Unit` follows the same `Copy` and `Drop` rules as other immutable values.
+`Copy(Unit)` creates two `Unit` values with distinct logical IDs and shared
+origin provenance. `Drop(Unit)` is an ordinary `Drop` event. The singleton
+payload may be physically shared, but logical identity and provenance are still
+observable.
+
+## Completion and Stuck States
+
+Successful execution requires at least:
+
+- a completed result value at the root entry instance result boundary,
+- all active calculation nodes in the root execution processed,
+- non-result values handled explicitly, such as by `Drop`,
+- valid machine graph invariants.
+
+If the result value is available while active `Drop` or other rewrites remain,
+execution continues. If no node is ready while the result or active graph is
+incomplete, the state is a candidate `Stuck` state rather than `Completed`.
+
+The exact `Completed`, `Stuck`, and error schemas remain open. A future progress
+property should show that well-validated Core programs do not get stuck.
+
 ## Core v0 Calculation Model
 
 Core v0 evaluates strict call-by-value functional graphs.
@@ -177,6 +278,7 @@ Desugaring must make these structural uses explicit in Core with `Copy` and
 
 The initial Core v0 primitive candidates are:
 
+- `Unit`: the singleton unit value constructor.
 - `Nat(n)`: a natural-number value constructor for a concrete natural number.
 - `Succ`: successor over `Nat`.
 - `Function`: a function boundary with explicit input, output, and captured
@@ -191,6 +293,10 @@ The initial Core v0 primitive candidates are:
 These are candidates for the first Core v0 semantics. Their precise port
 schemas, validation rules, rewrite rules, trace event shapes, and canonical
 serialization are not implemented in this stage.
+
+`Unit` and `Nat(n)` are value constructors, not executable rewrite nodes. Their
+runtime logical values are materialized during machine initialization or
+function instance activation.
 
 `Copy` has the following intended observable meaning:
 
@@ -216,6 +322,13 @@ The `transparent-v0` profile records these current choices:
 - `logical-id = causal`
 - `mutable-state = forbidden`
 - `effects = forbidden`
+- `unit-type = singleton-total-value`
+- `program-model = package-with-entry-function`
+- `entry-execution = ordinary-apply`
+- `nullary-entry = Unit-to-result`
+- `program-result = root-instance-result-boundary`
+- `literal-materialization = initialization-or-instance-activation`
+- `literal-rewrite-event = absent`
 - `function-template = immutable-canonical-core-graph`
 - `closure = template-id-plus-explicit-captures`
 - `runtime-instance = per-apply-logical-instance`
@@ -290,8 +403,8 @@ This document does not choose one yet.
 
 ## Primitive Tile List
 
-The Core v0 primitive candidate list is `Nat(n)`, `Succ`, `Function`, `Apply`,
-`NatRec`, `Copy`, and `Drop`.
+The Core v0 primitive candidate list is `Unit`, `Nat(n)`, `Succ`, `Function`,
+`Apply`, `NatRec`, `Copy`, and `Drop`.
 
 No additional arithmetic, control-flow, data-construction, effect, recursion,
 fold, or block tile is normative until it is specified in the OCaml reference

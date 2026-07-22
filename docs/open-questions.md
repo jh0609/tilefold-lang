@@ -13,7 +13,7 @@ that design-space table.
 The first Core calculation model is now planned as a System T-inspired total
 higher-order functional graph language with:
 
-- initial type forms `Nat` and `A -> B`,
+- initial type forms `Unit`, `Nat`, and `A -> B`,
 - strict call-by-value evaluation,
 - immutable logical values,
 - no variable names,
@@ -29,9 +29,12 @@ a frozen semantics version.
 
 This resolves the broad direction of questions 1 and 2 below, but it does not
 settle concrete port schemas, rewrite rules, trace schemas, canonical
-serialization, function template ID serialization, canonical template hashing,
-symbolic spatial relation schemas, Surface shape grammar, rotation semantics,
-scheduling error serialization, error modeling, or the formal termination proof.
+serialization, program package serialization, entry template ID serialization,
+execution input serialization, literal provenance serialization, function
+template ID serialization, canonical template hashing, symbolic spatial
+relation schemas, Surface shape grammar, rotation semantics, scheduling error
+serialization, `Completed`/`Stuck` schemas, error modeling, or the formal
+termination proof.
 
 The broad deterministic scheduler for `transparent-v0` is now provisional:
 sequential single-rewrite execution with ready epochs, optional
@@ -368,3 +371,103 @@ sequential single-rewrite execution with ready epochs, optional
   conformance fixtures.
 - Recommendation: Keep exact serialization open until the general validation
   error model is designed.
+
+## 14. How are ProgramPackage and entry metadata serialized?
+
+- Question: What canonical format represents `ProgramPackage`, entry template
+  IDs, semantics profile or version, symbolic relations, scheduling metadata,
+  and execution metadata?
+- Alternatives:
+  - One canonical package document.
+  - Separate template, relation, scheduling, and entry sections.
+  - A content-addressed package with referenced template objects.
+- Advantages:
+  - One document: simpler initial tooling.
+  - Separate sections: clearer conformance boundaries.
+  - Content addressing: supports template reuse and integrity checks.
+- Disadvantages:
+  - One document: can become large and hard to diff.
+  - Separate sections: more schema coordination.
+  - Content addressing: requires hashing and reference rules.
+- Impact on termination: No direct effect.
+- Impact on execution transparency: Entry execution must be reproducible
+  without hidden host state.
+- Impact on future compatibility: Package serialization determines stored
+  program compatibility and conformance fixtures.
+- Recommendation: Keep open until canonical graph and template serialization
+  are specified.
+
+## 15. How are execution inputs and literal provenance serialized?
+
+- Question: What is the canonical schema for execution inputs and literal
+  origins such as `ProgramLiteral`, `InstanceLiteral`, and `ExecutionInput`?
+- Alternatives:
+  - A unified value-origin schema.
+  - Separate schemas for inputs, program literals, and instance literals.
+  - A compact trace-only origin encoding.
+- Advantages:
+  - Unified schema: easier provenance queries.
+  - Separate schemas: clearer lifecycle distinctions.
+  - Compact encoding: smaller traces.
+- Disadvantages:
+  - Unified schema: may be too abstract.
+  - Separate schemas: more repeated structure.
+  - Compact encoding: harder to inspect manually.
+- Impact on termination: No direct effect.
+- Impact on execution transparency: Literal values need stable logical IDs and
+  origin provenance without separate literal rewrite events.
+- Impact on future compatibility: Golden traces and replay depend on this
+  schema.
+- Recommendation: Keep open while requiring provenance to distinguish program
+  literals, instance literals, and execution inputs.
+
+## 16. Should multiple inputs use product types or currying?
+
+- Question: How should Tilefold represent entry functions that appear to take
+  multiple inputs?
+- Alternatives:
+  - Currying only, using nested `A -> B` functions.
+  - Add product types later.
+  - Surface multi-input sugar that desugars to currying for now.
+- Advantages:
+  - Currying only: no new Core type constructor.
+  - Product types: natural fixed-arity entry signatures.
+  - Surface sugar: ergonomic without expanding Core immediately.
+- Disadvantages:
+  - Currying only: may be awkward for visual entry blocks.
+  - Product types: expands Core type and eliminator design.
+  - Surface sugar: needs precise desugaring and port correspondence.
+- Impact on termination: Product eliminators would need total semantics.
+- Impact on execution transparency: Surface multi-input views must desugar
+  transparently to Core.
+- Impact on future compatibility: Entry signatures affect stored programs and
+  test fixtures.
+- Recommendation: Do not add product types now; keep the exact multi-input
+  story open.
+
+## 17. What are the exact Completed, Stuck, and error schemas?
+
+- Question: How should execution completion, stuck states, and errors be
+  represented?
+- Alternatives:
+  - A single machine terminal-state schema.
+  - Separate completion, validation error, runtime stuck, and runtime error
+    schemas.
+  - Trace-final event plus final graph snapshot.
+- Advantages:
+  - Single schema: simpler consumers.
+  - Separate schemas: clearer invariants.
+  - Trace-final event: replay-friendly.
+- Disadvantages:
+  - Single schema: may blur validation and runtime failures.
+  - Separate schemas: larger public protocol.
+  - Trace-final event: depends on trace schema decisions.
+- Impact on termination: Completion requires all active rewrites processed, not
+  only a root result value.
+- Impact on execution transparency: A no-ready-node incomplete state must be
+  distinguishable from `Completed`.
+- Impact on future compatibility: Error identity and terminal-state schema are
+  conformance-visible.
+- Recommendation: Keep exact schemas open while requiring `Completed` to include
+  root result availability, processed active graph, explicit handling of
+  non-result values, and valid graph invariants.

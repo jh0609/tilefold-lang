@@ -31,6 +31,11 @@ The trace header must identify the semantics profile and canonical scheduling
 relations, including any `PrioritySpine` metadata that can affect rewrite
 order.
 
+For entry execution, the trace must identify the program package metadata needed
+to locate the entry template and the root `ApplyEvent`. The root entry
+application is an ordinary `Apply` instance, not a special program execution
+event.
+
 ## GraphSnapshot
 
 A `GraphSnapshot` records a canonical representation of a graph at a point in
@@ -109,6 +114,30 @@ nested `Apply` remain separate standard trace events.
 For an identity function with no internal calculation nodes, the `ApplyEvent`
 may record a graph patch that rewires the argument to result use sites while
 preserving the argument value ID.
+
+The root `ApplyEvent` for entry execution follows the same requirements. It
+records the entry template ID, entry closure ID, root instance ID, supplied
+input value, captures if any are already resolved, and external port
+correspondence. A valid executable package must not leave unresolved entry
+captures.
+
+## Literal Provenance
+
+`Nat(n)` and `Unit` are materialized as immutable logical values during machine
+initialization or instance activation, not by separate literal rewrite events.
+
+Literal values must have stable logical IDs and origin provenance. Candidate
+provenance forms are:
+
+- `ProgramLiteral(template_element_id)`
+- `InstanceLiteral(instance_id, template_element_id)`
+- `ExecutionInput(input_id)`
+
+The exact serialization schema remains open.
+
+`Unit` values keep logical identity and provenance even though the payload is a
+singleton. `Copy(Unit)` creates distinct logical IDs. `Drop(Unit)` is an
+ordinary `Drop` event.
 
 ## Stable Logical IDs
 

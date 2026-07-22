@@ -61,6 +61,13 @@ trace semantics.
 | `logical-id` | `causal` |
 | `mutable-state` | `forbidden` |
 | `effects` | `forbidden` |
+| `unit-type` | `singleton-total-value` |
+| `program-model` | `package-with-entry-function` |
+| `entry-execution` | `ordinary-apply` |
+| `nullary-entry` | `Unit-to-result` |
+| `program-result` | `root-instance-result-boundary` |
+| `literal-materialization` | `initialization-or-instance-activation` |
+| `literal-rewrite-event` | `absent` |
 | `function-template` | `immutable-canonical-core-graph` |
 | `closure` | `template-id-plus-explicit-captures` |
 | `runtime-instance` | `per-apply-logical-instance` |
@@ -100,6 +107,13 @@ trace semantics.
 | Drop visibility | Semantics | Provisional | `explicit` | implicit garbage; surface-only unused input handling | Changes graph and trace event structure | Explicit `Drop` can support resource and termination accounting | Conformance can compare `Drop` events | Surface unused inputs desugar to Core `Drop` |
 | Copy output identity | Semantics | Provisional | `explicit-distinct-logical-values` | same logical ID aliases; physical sharing only; linear use without copy | Affects value provenance and downstream trace subjects | Distinct IDs avoid mutation-like alias observations | Trace comparison must account for created logical IDs | Payload sharing is an engine detail only |
 | Nat representation | Semantics | Provisional | `compact` | unary graph expansion; binary canonical value; host integer with bounds | Changes snapshots, trace size, and primitive rewrite granularity | Compact representation still needs a total natural-number domain | Canonical serialization must define exact natural encoding | Not a license to use host overflow semantics |
+| Unit type | Semantics | Provisional | `singleton-total-value` | omit unit; special nullary functions; use a host null value | Adds a single canonical value without effects | No new recursion or nontermination | Conformance must preserve logical identity and provenance for `Unit` values | `Unit` is written `Unit` or `()` |
+| Program model | Semantics | Provisional | `package-with-entry-function` | program as primitive; top-level graph execution; host callback entry | Determines how execution starts and what metadata is canonical | Entry execution stays within total function application | Conformance starts from the same entry template and input | Package contains templates, entry ID, profile/version, symbolic relations, and scheduling metadata |
+| Entry execution | Semantics | Provisional | `ordinary-apply` | nullary `Apply`; special entry evaluator; implicit host input environment | Changes root trace and instance identity | Ordinary apply avoids special non-total execution paths | Root instance follows normal `Apply` conformance | Entry template is closed and has type `A -> B` |
+| Nullary entry | Semantics | Provisional | `Unit-to-result` | zero-argument functions; optional input; implicit ignored input | Affects Core type grammar and trace input materialization | `Unit -> B` adds no new termination risk | Input-free runs still have an explicit `Unit` input value | Unused `Unit` must be explicitly dropped |
+| Program result boundary | Semantics | Provisional | `root-instance-result-boundary` | `ProgramResult` primitive; host-observed final value; first result wins | Changes completion criteria and traces | Must still process active rewrites such as `Drop` | Conformance observes the root result boundary and completion state | No special `ProgramResult` primitive |
+| Literal materialization | Semantics | Provisional | `initialization-or-instance-activation` | literal rewrite events; host precomputed values; inline payload only | Affects value creation order, snapshots, and provenance | Literal creation adds no rewrite loop | Conformance must agree on logical IDs and provenance | Program/input literals at initialization; template literals at `ApplyEvent` activation |
+| Literal rewrite event | Semantics | Provisional | absent | `NatLiteral` event; `UnitLiteral` event; generic materialize event | Would add trace events and rewrite count | No termination need for rewrite events | Golden traces depend on whether events exist | `Nat(n)` and `Unit` are constructors, not executable rewrite nodes |
 | NatRec expansion granularity | Semantics | Open | Open | one event per recursive step; macro event with nested expansion; full unfolded graph | Changes rewrite count and trace size | Must expose a structurally decreasing argument | Golden traces depend heavily on this choice | Do not finalize before `NatRec` rule design |
 | Function application strategy | Semantics | Provisional | strict function and argument before apply | beta-style substitution; environment passing; graph sharing strategy | Changes graph transitions and trace events | Must avoid hidden non-terminating evaluation mechanisms | Conformance needs canonical application events | Must keep captured values visible at boundaries |
 | Logical ID policy | Semantics | Provisional | `causal` | structural hash; sequential counter; path-based IDs | Changes trace IDs and replay behavior | Usually indirect, but IDs may define rewrite ordering | Exact trace comparison requires a canonical policy | "Causal" means derived from inputs and prior trace state, not memory addresses |
@@ -107,7 +121,7 @@ trace semantics.
 | Snapshot policy | Semantics | Open | Open | every step; initial/final only; periodic checkpoints; demand-driven optional snapshots | Changes replay cost and trace size | No direct semantic termination effect | Conformance must state whether snapshots are compared | Must be enough for specified replay guarantees |
 | Provenance granularity | Semantics | Open | Open | value-only; rule-and-input; full graph-slice; folded-block-aware | Changes explainability and trace size | Usually indirect | Conformance needs canonical provenance if compared | `Copy` requires common source provenance |
 | Error model | Semantics | Open | Open | validation-only rejection; runtime specified errors; stuck graph states | Changes observable results and traces | Progress theorem depends on this choice | Error identity and ordering must be canonical | Avoid hidden host exceptions as semantics |
-| Supported type constructors | Semantics | Provisional | `Nat`, `A -> B` | products; sums; unit; lists; finite records | Adds validation and rewrite surface | New constructors need termination-preserving eliminators | Semantics version/profile must record additions | Current Core v0 starts with only `Nat` and function type |
+| Supported type constructors | Semantics | Provisional | `Unit`, `Nat`, `A -> B` | products; sums; lists; finite records | Adds validation and rewrite surface | New constructors need termination-preserving eliminators | Semantics version/profile must record additions | Product types remain open |
 | Parallel execution policy | Semantics | Provisional | `parallel-normative-execution = forbidden` | deterministic parallel batches; nondeterministic parallel interleaving; engine-only parallelism with canonical trace | Can change event grouping/order if semantic | Parallelism must not introduce nontermination or races | Standard conformance uses sequential trace order | Core v0 does not implement parallel normative execution |
 
 ## Configuration Representation Principle

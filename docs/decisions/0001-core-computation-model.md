@@ -15,6 +15,9 @@ The initial type forms are:
 - `Nat`
 - `A -> B`
 
+Decision 0006 extends Core v0 with `Unit` and keeps function execution as
+ordinary `Apply`.
+
 The initial primitive candidates are:
 
 - `Nat(n)`

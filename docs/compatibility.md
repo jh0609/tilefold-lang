@@ -42,6 +42,12 @@ For `transparent-v0`, identical canonical scheduling metadata must produce the
 same rewrite order and standard trace on conforming engines. `PrioritySpine`
 metadata is conformance-relevant when present. Pixel or render position is not.
 
+Entry execution is conformance-relevant as an ordinary function application.
+Conforming engines must agree on the entry template, supplied input value, root
+runtime instance identity, root result boundary, literal materialization
+provenance, and standard trace behavior. There is no separate `ProgramResult`
+primitive or nullary `Apply` conformance path.
+
 ## Same Trace vs Same Observable Result
 
 There are two possible compatibility levels:
