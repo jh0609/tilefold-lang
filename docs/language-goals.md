@@ -126,7 +126,9 @@ added.
 The current Core v0 direction is a System T-inspired total higher-order
 functional graph language with strict call-by-value evaluation, natural numbers,
 function types, and primitive recursion over natural numbers. Tilefold does not
-yet claim exact equivalence with System T.
+yet claim exact equivalence with System T. Core `Nat` denotes
+arbitrary-precision nonnegative integers, so host integer overflow is not part
+of Tilefold semantics.
 
 Runtime and memory bounds are separate resource-model concerns. The initial
 foundation does not fix a resource model.

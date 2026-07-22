@@ -11,6 +11,7 @@ bug-reports: "https://github.com/jh0609/tilefold-lang/issues"
 depends: [
   "dune" {>= "3.11"}
   "ocaml" {>= "5.1"}
+  "zarith"
   "odoc" {with-doc}
 ]
 build: [

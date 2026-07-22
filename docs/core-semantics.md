@@ -76,6 +76,19 @@ Type ::=
 `Unit` has exactly one value, written `Unit` or `()`. It adds no iteration,
 effects, state, or nontermination.
 
+`Nat` denotes the mathematical set of arbitrary-precision nonnegative
+integers. Host OCaml `int` or `int64` ranges are not part of the Tilefold `Nat`
+semantics, and integer overflow is not a Tilefold runtime error. Actual memory
+exhaustion, time limits, and resource budgets remain future resource-model
+questions.
+
+The OCaml reference implementation represents Nat payloads as an abstract
+`Nat.t` wrapper over Zarith `Z.t`. Negative values cannot be constructed through
+the public API. Canonical Nat text uses ASCII decimal digits only: no sign, no
+whitespace, no separators, no leading zeroes, and zero exactly as `0`.
+Non-canonical text is rejected rather than silently normalized. See
+`docs/decisions/0007-arbitrary-precision-nat.md`.
+
 Connections are graph edges between compatible ports. Type-invalid connections
 must be rejected before initialization of the abstract machine.
 
@@ -319,6 +332,9 @@ The `transparent-v0` profile records these current choices:
 - `drop = explicit`
 - `primitive-expansion = exposed`
 - `nat-representation = compact`
+- `nat-domain = arbitrary-precision-nonnegative-integer`
+- `nat-ocaml-representation = abstract-wrapper-over-zarith-z`
+- `nat-overflow = impossible-in-language-semantics`
 - `logical-id = causal`
 - `mutable-state = forbidden`
 - `effects = forbidden`

@@ -1,3 +1,4 @@
 (library
  (name tilefold)
- (public_name tilefold))
+ (public_name tilefold)
+ (libraries zarith))

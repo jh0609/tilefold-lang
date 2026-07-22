@@ -44,6 +44,10 @@ Design points are tracked with these statuses:
 
 The current provisional profile is `transparent-v0` with these settings:
 
+Decision 0007 later refines Nat-specific settings by defining the Nat domain as
+arbitrary-precision nonnegative integers and the OCaml reference payload as an
+abstract wrapper over Zarith `Z.t`.
+
 - `evaluation = strict-call-by-value`
 - `binding = explicit-ports`
 - `capture = boundary-ports`

@@ -121,9 +121,11 @@ should show that well-validated Core programs do not get stuck.
 
 ## Not Decided
 
+Decision 0007 resolves the OCaml `Nat` payload representation as an abstract
+wrapper over Zarith `Z.t`.
+
 This decision does not define:
 
-- whether OCaml `Nat` representation uses Zarith `Z.t`,
 - the exact initialization event or snapshot schema for `Unit`, `Nat`, or the
   entry closure,
 - `ProgramPackage` canonical serialization,

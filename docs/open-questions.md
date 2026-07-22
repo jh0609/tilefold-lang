@@ -33,12 +33,18 @@ serialization, program package serialization, entry template ID serialization,
 execution input serialization, literal provenance serialization, function
 template ID serialization, canonical template hashing, symbolic spatial
 relation schemas, Surface shape grammar, rotation semantics, scheduling error
-serialization, `Completed`/`Stuck` schemas, error modeling, or the formal
-termination proof.
+serialization, `Completed`/`Stuck` schemas, error modeling, resource budgets,
+or the formal termination proof.
 
 The broad deterministic scheduler for `transparent-v0` is now provisional:
 sequential single-rewrite execution with ready epochs, optional
 `PrioritySpine`, canonical node order, and canonical rule order.
+
+The Nat domain and OCaml reference payload representation are now provisional:
+Tilefold `Nat` is an arbitrary-precision nonnegative integer, represented in
+OCaml as an abstract `Nat.t` wrapper over Zarith `Z.t`. Host integer overflow is
+not a Tilefold runtime error. Canonical Nat text is fixed by
+`docs/decisions/0007-arbitrary-precision-nat.md`.
 
 ## 1. Which details of the Core v0 primitive candidates are normative?
 
@@ -471,3 +477,29 @@ sequential single-rewrite execution with ready epochs, optional
 - Recommendation: Keep exact schemas open while requiring `Completed` to include
   root result availability, processed active graph, explicit handling of
   non-result values, and valid graph invariants.
+
+## 18. What is Tilefold's resource model for large values and execution?
+
+- Question: How should Tilefold specify memory, time, maximum Nat size, trace
+  size, and other practical resource limits?
+- Alternatives:
+  - Leave all resource exhaustion as host implementation failure.
+  - Define optional implementation budgets outside language semantics.
+  - Define a future semantic resource model with canonical budget errors.
+- Advantages:
+  - Host failure: simplest for early semantics work.
+  - Optional budgets: useful for tools without changing pure meaning.
+  - Semantic budgets: reproducible limits and errors.
+- Disadvantages:
+  - Host failure: weak reproducibility for very large programs.
+  - Optional budgets: engines may expose different operational behavior.
+  - Semantic budgets: expands conformance and trace surface.
+- Impact on termination: Resource limits do not replace the termination goal;
+  they may bound practical execution of otherwise terminating programs.
+- Impact on execution transparency: Any semantic budget must be recorded in
+  profiles and traces. Non-semantic implementation failures must not be confused
+  with Tilefold runtime errors.
+- Impact on future compatibility: Budget semantics would affect conformance
+  fixtures and may require a semantics version.
+- Recommendation: Keep resource budgets open. Do not treat Nat overflow as a
+  language error; only future explicit resource limits may reject large values.

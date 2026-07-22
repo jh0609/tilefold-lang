@@ -48,6 +48,12 @@ runtime instance identity, root result boundary, literal materialization
 provenance, and standard trace behavior. There is no separate `ProgramResult`
 primitive or nullary `Apply` conformance path.
 
+Tilefold `Nat` conformance is independent of platform integer width. Later
+engines must implement `Nat` as an arbitrary-precision nonnegative integer
+domain and must not introduce host `int`, `int64`, or machine-word overflow as
+a Tilefold runtime error. Canonical Nat text uses unsigned decimal digits with
+no leading zeroes except `0`; full program and trace serialization remain open.
+
 ## Same Trace vs Same Observable Result
 
 There are two possible compatibility levels:
