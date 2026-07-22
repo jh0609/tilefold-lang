@@ -139,28 +139,50 @@ Copying a closure creates distinct logical closure values. Those values may
 share the same immutable template and physical payload, but only when that
 sharing does not alter observable semantics, logical identity, or provenance.
 
-Each `Apply` creates an independent logical runtime instance. Instance-internal
-nodes and ports have IDs derived deterministically from the `Apply` event and
-template element IDs. Different instances have separate logical identity and
-execution state even if they share one immutable template.
+Each `ApplyEnter` creates an independent logical runtime instance.
+Instance-internal nodes and ports have IDs derived deterministically from the
+call event and template element IDs. Different instances have separate logical
+identity and execution state even if they share one immutable template.
 
 Physical template sharing is an implementation detail. It must not make
 separate runtime instances appear merged in graph snapshots or traces.
 
-The `Apply` rewrite activates the function body's logical runtime instance. It
-does not immediately compute the whole function result. Body rewrites such as
-`Succ`, `NatRec`, `Copy`, `Drop`, and nested `Apply` remain separate semantic
-rewrites and standard trace events.
+Function calls use an observable lifecycle:
+
+```text
+ApplyEnter
+-> function body rewrites
+-> ApplyReturn
+```
+
+`ApplyEnter` and `ApplyReturn` are separate rewrites, each occurring in its own
+`Engine.step`. `ApplyEnter` activates the function body's logical runtime
+instance, creates the callee parameter value, creates a `CallFrame`, and moves
+the static call site into `WaitingForReturn`. It does not compute the whole
+function result. Body rewrites such as `Succ`, `NatRec`, `Copy`, `Drop`, and
+nested `Apply` remain separate semantic rewrites and standard trace events.
+
+`ApplyReturn` consumes the callee result, closes the corresponding `CallFrame`,
+creates the caller-scope output value for the apply site, and marks the call
+site `Completed`.
+
+`WaitingForReturn` does not mean the `Apply` node is still executing. After
+`ApplyEnter`, the active calculation subject is the function instance.
+
+A `CallFrame` is runtime state linking the caller scope, apply site, callee
+function instance, and return target for one open call. It is not a Surface
+language construct, but its effect must be observable through trace events and
+snapshots when snapshots are defined.
 
 Mechanical construction needed to realize the instance, such as memory
 allocation, template data copying, port object allocation, edge object
 allocation, map updates, or cache construction, is compressed into the canonical
-graph patch for the `Apply` event rather than exposed as separate semantic
+graph patch for the `ApplyEnter` event rather than exposed as separate semantic
 events.
 
-For an identity function with no internal calculation nodes, the `Apply` event
-may rewire the argument to the result use sites while preserving the argument
-value ID.
+For an identity function with no internal calculation nodes, the exact
+`ApplyEnter`/`ApplyReturn` graph patches and value identity policy remain
+deferred.
 
 ## Program Packages and Entry Execution
 
@@ -202,8 +224,8 @@ Apply(entry closure, input value)
 ```
 
 The root runtime instance follows the same identity and trace rules as any
-other `Apply` instance. The entry template's result boundary is the program
-result boundary. There is no `ProgramResult` primitive.
+other `ApplyEnter`/`ApplyReturn` call lifecycle. The entry template's result
+boundary is the program result boundary. There is no `ProgramResult` primitive.
 
 For an entry of type `Unit -> B`, the `Unit` parameter remains explicit in
 Core. If the body does not use it, the body must handle it with `Drop`. Surface
@@ -217,7 +239,7 @@ rewrite nodes.
 
 Top-level execution inputs and program literals are materialized during machine
 initialization. Function-template literals are materialized as logical values
-for a runtime instance when the `ApplyEvent` activates that instance.
+for a runtime instance when `ApplyEnter` activates that instance.
 
 No separate `NatLiteral` or `UnitLiteral` rewrite event is introduced. Literal
 values have stable logical IDs and origin provenance, such as:
@@ -446,7 +468,10 @@ The `transparent-v0` profile records these current choices:
 - `function-template = immutable-canonical-core-graph`
 - `closure = template-id-plus-explicit-captures`
 - `runtime-instance = per-apply-logical-instance`
-- `apply-atomicity = activate-instance-with-canonical-graph-patch`
+- `apply-lifecycle = ApplyEnter-body-rewrites-ApplyReturn`
+- `apply-step-policy = enter-and-return-are-separate-steps`
+- `apply-call-site-state = Ready-WaitingForReturn-Completed`
+- `call-frame = internal-runtime-return-link`
 - `surface-function-block = folded-view-of-template`
 - `standard-execution = sequential-single-rewrite`
 - `rewrite-selection = readiness-fifo-with-priority-spine-and-canonical-tiebreak`

@@ -67,6 +67,9 @@ errors. This started in
 extended by `docs/decisions/0011-copy-rewrite-and-linear-duplication.md`.
 `docs/decisions/0012-priority-spine-static-scheduling.md` implements the first
 static `PrioritySpine` validation and runtime scheduling slice.
+`docs/decisions/0013-apply-enter-return-call-lifecycle.md` confirms the
+multi-step `ApplyEnter` -> function body rewrites -> `ApplyReturn` lifecycle
+and keeps several function scheduling and boundary policies deferred.
 
 ## 1. Which details of the Core v0 primitive candidates are normative?
 
@@ -218,7 +221,7 @@ static `PrioritySpine` validation and runtime scheduling slice.
   - Hybrid: more schema surface.
 - Impact on termination: No direct effect.
 - Impact on execution transparency: Template identity must be visible and
-  stable across fold/unfold and `ApplyEvent` replay.
+  stable across fold/unfold and Apply lifecycle replay.
 - Impact on future compatibility: Changing template ID rules would affect
   traces, snapshots, and conformance fixtures.
 - Recommendation: Keep open until canonical graph serialization is specified.
@@ -625,3 +628,31 @@ static `PrioritySpine` validation and runtime scheduling slice.
   scopes, `NatRec` interaction, starvation/fairness for future repeated
   regions, scheduler decision evidence in permanent traces, and final public
   diagnostics open.
+
+## 22. Which function-call runtime policies remain after Apply lifecycle?
+
+- Question: Which policies must be decided before implementing `Apply`,
+  function instances, and call returns?
+- Alternatives:
+  - Prioritize active callee scope by default.
+  - Allow caller and callee ready nodes to interleave by the ordinary scheduler.
+  - Use a call-depth or scope-priority rule that is explicit in the profile.
+- Advantages:
+  - Callee priority: likely easier for users to predict from a function call.
+  - Ordinary interleaving: maximizes uniform scheduler semantics.
+  - Explicit call-depth rule: makes the policy testable and trace-visible.
+- Disadvantages:
+  - Callee priority: adds cross-scope scheduling rules.
+  - Ordinary interleaving: may surprise users reading function calls as nested
+    evaluation.
+  - Explicit call-depth rule: expands conformance surface.
+- Impact on termination: The policy must not create hidden waiting or cycles.
+- Impact on execution transparency: Trace examples must make caller/callee
+  scheduling understandable.
+- Impact on future compatibility: Golden traces will lock in the interleaving
+  behavior.
+- Recommendation: Keep deferred until concrete trace examples compare caller
+  and callee interleaving. Also keep deferred whether `Parameter` and `Result`
+  are executable runtime nodes or boundary markers, function-boundary logical
+  value identity, runtime scope and instance ordering, PrioritySpine instance
+  inheritance, callee-local `Stuck` propagation, and instance cleanup.

@@ -32,9 +32,9 @@ relations, including any `PrioritySpine` metadata that can affect rewrite
 order.
 
 For entry execution, the trace must identify the program package metadata needed
-to locate the entry template and the root `ApplyEvent`. The root entry
-application is an ordinary `Apply` instance, not a special program execution
-event.
+to locate the entry template and the root call lifecycle. The root entry
+application uses ordinary `ApplyEnter` and `ApplyReturn` events, not a special
+program execution event.
 
 ## GraphSnapshot
 
@@ -99,7 +99,7 @@ order.
 Literal materialization, execution input materialization, delivery along edges,
 ready-candidate maintenance, and other mechanical state construction are not
 separate rewrite events. Full graph patches, `GraphSnapshot`, canonical JSON,
-trace headers, and `ApplyEvent` are still not implemented.
+trace headers, and the Apply call lifecycle are still not implemented.
 
 Diagnostic scheduling context may include the selected node's `ready_epoch`,
 spine ID, slot ID, and selection reason. This diagnostic information must be
@@ -119,42 +119,51 @@ PrioritySpine never overtakes ready epochs. If an ordinary node is ready at
 epoch `0` and a spine member becomes ready at epoch `1`, the epoch `0` ordinary
 node is selected first.
 
-## ApplyEvent
+## ApplyEnter and ApplyReturn
 
-An `ApplyEvent` records the semantic activation of a function runtime instance.
-It is the standard trace event for an `Apply` rewrite.
+Function application is recorded as a lifecycle rather than a single
+run-to-completion event:
 
-An `ApplyEvent` must record:
+```text
+ApplyEnter
+-> function body rewrites
+-> ApplyReturn
+```
+
+`ApplyEnter` records the semantic activation of a function runtime instance.
+It is the standard trace event for entering an `Apply` call site.
+
+An `ApplyEnter` event must record:
 
 - template ID,
 - closure ID,
 - instance ID,
 - argument value,
 - capture values,
-- external port correspondence.
+- external port correspondence,
+- CallFrame identity or equivalent return-link identity.
 
-The event activates the logical runtime instance for the function body. It must
-not serialize the full function body for every application. The canonical
-program and function template data, together with the `ApplyEvent`, must be
-enough to reconstruct the instance graph deterministically.
+The event activates the logical runtime instance for the function body and
+creates the `CallFrame`. It must not serialize the full function body for every
+application. The canonical program and function template data, together with
+the `ApplyEnter` event, must be enough to reconstruct the instance graph
+deterministically.
 
 Template node copying, port object creation, edge object creation, memory
 allocation, map updates, and cache construction are mechanical implementation
 steps. They are not separate semantic trace events. They are represented, when
-observable, as part of the canonical graph patch for the `ApplyEvent`.
+observable, as part of the canonical graph patch for the `ApplyEnter` event.
 
-An `ApplyEvent` does not imply that the function result has already been
-computed. Function body rewrites such as `Succ`, `NatRec`, `Copy`, `Drop`, and
-nested `Apply` remain separate standard trace events.
+`ApplyEnter` does not imply that the function result has already been computed.
+Function body rewrites such as `Succ`, `NatRec`, `Copy`, `Drop`, and nested
+`Apply` remain separate standard trace events.
 
-For an identity function with no internal calculation nodes, the `ApplyEvent`
-may record a graph patch that rewires the argument to result use sites while
-preserving the argument value ID.
+`ApplyReturn` records returning from a function instance to the caller. It must
+record the function result, matching `CallFrame`, apply site, caller-scope
+output value, and return target correspondence needed for replay.
 
-The root `ApplyEvent` for entry execution follows the same requirements. It
-records the entry template ID, entry closure ID, root instance ID, supplied
-input value, captures if any are already resolved, and external port
-correspondence. A valid executable package must not leave unresolved entry
+The root `ApplyEnter` and `ApplyReturn` for entry execution follow the same
+requirements. A valid executable package must not leave unresolved entry
 captures.
 
 ## Literal Provenance

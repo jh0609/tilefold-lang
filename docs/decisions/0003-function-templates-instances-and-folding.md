@@ -111,3 +111,7 @@ This decision does not define:
 - the exact way snapshots include or reference template definitions,
 - primitive port schemas or rewrite rules,
 - an implementation in `lib/`, `bin/`, or `test/`.
+
+Decision 0013 later refines `Apply` into an observable
+`ApplyEnter` -> body rewrites -> `ApplyReturn` lifecycle with an internal
+`CallFrame`.

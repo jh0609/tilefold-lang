@@ -128,6 +128,10 @@ Decision 0010 implements the first entry-template execution slice directly over
 validated graph bodies, including input and literal materialization for
 `Unit`/`Nat` and `Completed`/`Stuck` outcomes for `Succ`/`Drop`.
 
+Decision 0013 later confirms that entry application follows the ordinary
+`ApplyEnter` -> body rewrites -> `ApplyReturn` lifecycle rather than a special
+program execution primitive.
+
 This decision does not define:
 
 - the exact initialization event or snapshot schema for `Unit`, `Nat`, or the
