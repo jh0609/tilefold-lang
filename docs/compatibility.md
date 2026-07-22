@@ -67,6 +67,14 @@ when the `transparent-v0` scheduler is implemented. Different
 when nodes and edges are otherwise identical. Pixel position, layout, hardware
 ID, and discovery order are not substitutes for this canonical ordered list.
 
+The first runtime vertical slice is conformance-relevant for validated graphs
+using `Unit`, `Nat`, `Succ`, `Drop`, `Parameter`, and `Result`. Conforming
+engines must agree with the OCaml reference on initialization materialization,
+input type errors, ready epoch assignment, fallback selection by
+`default_node_order`, `Succ` and `Drop` rewrite events, event indexes,
+`Completed` results, and `Stuck` reasons for this subset. Literal creation is
+not a rewrite event.
+
 ## Same Trace vs Same Observable Result
 
 There are two possible compatibility levels:

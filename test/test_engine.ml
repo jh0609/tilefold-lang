@@ -1,0 +1,266 @@
+open Tilefold
+open Core_graph
+
+let node_id value =
+  match Node_id.of_string value with
+  | Ok id -> id
+  | Error message -> failwith message
+
+let edge_id value =
+  match Edge_id.of_string value with
+  | Ok id -> id
+  | Error message -> failwith message
+
+let port_key value =
+  match Port_key.of_string value with
+  | Ok key -> key
+  | Error message -> failwith message
+
+let nat value =
+  match Nat.of_string value with
+  | Ok nat -> nat
+  | Error _ -> assert false
+
+let node id kind = { id = node_id id; kind }
+let pref node port = { node_id = node_id node; port_key = port_key port }
+let edge id source target = { id = edge_id id; source; target }
+
+let validate_ok raw =
+  match validate raw with
+  | Ok graph -> graph
+  | Error errors ->
+      failwith
+        ("validation failed: "
+        ^ String.concat "; " (List.map validation_error_to_string errors))
+
+let init_ok graph input =
+  match Engine.initialize graph ~input with
+  | Ok machine -> machine
+  | Error error -> failwith (Engine.initialization_error_to_string error)
+
+let run_completed machine =
+  match Engine.run machine with
+  | Engine.Run_completed { value; trace } -> (value, trace)
+  | Engine.Run_stuck _ -> assert false
+
+let payload_nat_string value =
+  match Runtime_value.payload value with
+  | Runtime_value.Nat nat -> Nat.to_string nat
+  | Runtime_value.Unit -> assert false
+
+let entry_unit_to_nat ?(order = [ "succ"; "drop" ]) ?(literal = "3") () =
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop" (Drop Core_type.Unit);
+      node "lit" (Nat_literal (nat literal));
+      node "succ" Succ;
+      node "result" (Result Core_type.Nat);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop" "input");
+      edge "e-lit-succ" (pref "lit" "value") (pref "succ" "input");
+      edge "e-succ-result" (pref "succ" "result") (pref "result" "value");
+    ]
+  in
+  Raw_graph.of_lists ~nodes ~edges
+    ~default_node_order:(List.map node_id order)
+  |> validate_ok
+
+let direct_unit_to_unit () =
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "result" (Result Core_type.Unit);
+    ]
+  in
+  let edges = [ edge "e-param-result" (pref "param" "value") (pref "result" "value") ] in
+  Raw_graph.of_lists ~nodes ~edges ~default_node_order:[] |> validate_ok
+
+let direct_nat_to_nat () =
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Nat);
+      node "result" (Result Core_type.Nat);
+    ]
+  in
+  let edges = [ edge "e-param-result" (pref "param" "value") (pref "result" "value") ] in
+  Raw_graph.of_lists ~nodes ~edges ~default_node_order:[] |> validate_ok
+
+let arrow_input_graph () =
+  let typ = Core_type.Arrow (Core_type.Unit, Core_type.Nat) in
+  let nodes = [ node "param" (Parameter typ); node "result" (Result typ) ] in
+  let edges = [ edge "e-param-result" (pref "param" "value") (pref "result" "value") ] in
+  Raw_graph.of_lists ~nodes ~edges ~default_node_order:[] |> validate_ok
+
+let result_before_cleanup () =
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "lit" Unit_literal;
+      node "drop" (Drop Core_type.Unit);
+      node "result" (Result Core_type.Unit);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-result" (pref "param" "value") (pref "result" "value");
+      edge "e-lit-drop" (pref "lit" "value") (pref "drop" "input");
+    ]
+  in
+  Raw_graph.of_lists ~nodes ~edges ~default_node_order:[ node_id "drop" ]
+  |> validate_ok
+
+let stuck_cycle () =
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "succ" Succ;
+      node "result" (Result Core_type.Unit);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-result" (pref "param" "value") (pref "result" "value");
+      edge "e-succ-cycle" (pref "succ" "result") (pref "succ" "input");
+    ]
+  in
+  Raw_graph.of_lists ~nodes ~edges ~default_node_order:[ node_id "succ" ]
+  |> validate_ok
+
+let assert_rules expected trace =
+  assert (List.map (fun event -> Rewrite_event.rule_to_string event.Rewrite_event.rule) trace = expected)
+
+let assert_subjects expected trace =
+  assert (
+    List.map (fun event -> Node_id.to_string event.Rewrite_event.subject) trace
+    = expected)
+
+let assert_indexes expected trace =
+  assert (List.map (fun event -> event.Rewrite_event.index) trace = expected)
+
+let assert_epochs expected trace =
+  assert (List.map (fun event -> event.Rewrite_event.ready_epoch) trace = expected)
+
+let () =
+  let graph = entry_unit_to_nat () in
+  let machine = init_ok graph Runtime_value.Unit in
+  assert (
+    List.map (fun c -> Node_id.to_string c.Engine.node_id) (Engine.Machine.ready_candidates machine)
+    = [ "succ"; "drop" ]);
+  let initial_values = Engine.Machine.values machine in
+  assert (
+    List.exists
+      (fun value -> Runtime_value.origin value = Runtime_value.Execution_input)
+      initial_values);
+  assert (
+    List.exists
+      (fun value ->
+        Runtime_value.origin value = Runtime_value.Program_literal (node_id "lit"))
+      initial_values);
+  let value, trace = run_completed machine in
+  assert (payload_nat_string value = "4");
+  assert_rules [ "Succ"; "Drop" ] trace;
+  assert_subjects [ "succ"; "drop" ] trace;
+  assert_indexes [ 0; 1 ] trace;
+  assert_epochs [ 0; 0 ] trace;
+  assert (List.length trace = 2);
+  let first = List.hd trace in
+  assert (
+    List.map Runtime_value.Value_id.to_string first.Rewrite_event.consumed
+    = [ "literal:lit" ]);
+  assert (List.length first.Rewrite_event.created = 1);
+  assert (
+    Runtime_value.origin (List.hd first.Rewrite_event.created)
+    = Runtime_value.Rewrite_output
+        { event_index = 0; node_id = node_id "succ"; port_key = Port_key.result })
+
+let () =
+  let graph = entry_unit_to_nat ~order:[ "drop"; "succ" ] () in
+  let value, trace = run_completed (init_ok graph Runtime_value.Unit) in
+  assert (payload_nat_string value = "4");
+  assert_rules [ "Drop"; "Succ" ] trace;
+  assert_subjects [ "drop"; "succ" ] trace
+
+let () =
+  let graph = entry_unit_to_nat () in
+  let machine0 = init_ok graph Runtime_value.Unit in
+  match Engine.step machine0 with
+  | Engine.Rewritten { machine = machine1; event = event0 } -> (
+      assert (Rewrite_event.rule_to_string event0.Rewrite_event.rule = "Succ");
+      assert (Engine.Machine.trace_events machine0 = []);
+      assert (List.length (Engine.Machine.ready_candidates machine0) = 2);
+      match Engine.step machine1 with
+      | Engine.Rewritten { machine = machine2; event = event1 } -> (
+          assert (Rewrite_event.rule_to_string event1.Rewrite_event.rule = "Drop");
+          match Engine.step machine2 with
+          | Engine.Completed value -> assert (payload_nat_string value = "4")
+          | _ -> assert false)
+      | _ -> assert false)
+  | _ -> assert false
+
+let () =
+  let machine = init_ok (direct_unit_to_unit ()) Runtime_value.Unit in
+  assert (Engine.Machine.trace_events machine = []);
+  match Engine.step machine with
+  | Engine.Completed value -> assert (Runtime_value.payload value = Runtime_value.Unit)
+  | _ -> assert false
+
+let () =
+  let machine = init_ok (result_before_cleanup ()) Runtime_value.Unit in
+  assert (Option.is_some (Engine.Machine.result_value machine));
+  match Engine.step machine with
+  | Engine.Rewritten { machine; event } -> (
+      assert (Rewrite_event.rule_to_string event.Rewrite_event.rule = "Drop");
+      match Engine.step machine with
+      | Engine.Completed value -> assert (Runtime_value.payload value = Runtime_value.Unit)
+      | _ -> assert false)
+  | _ -> assert false
+
+let () =
+  match Engine.initialize (direct_unit_to_unit ()) ~input:(Runtime_value.Nat (nat "0")) with
+  | Error (Engine.Input_type_mismatch { expected = Core_type.Unit; actual = Core_type.Nat }) ->
+      ()
+  | _ -> assert false
+
+let () =
+  let machine = init_ok (direct_nat_to_nat ()) (Runtime_value.Nat (nat "5")) in
+  match Engine.step machine with
+  | Engine.Completed value -> assert (payload_nat_string value = "5")
+  | _ -> assert false
+
+let () =
+  match Engine.initialize (arrow_input_graph ()) ~input:Runtime_value.Unit with
+  | Error (Engine.Unsupported_runtime_input_type (Core_type.Arrow (Core_type.Unit, Core_type.Nat))) ->
+      ()
+  | _ -> assert false
+
+let () =
+  let machine = init_ok (stuck_cycle ()) Runtime_value.Unit in
+  (match Engine.step machine with
+  | Engine.Stuck reason ->
+      assert (List.map Node_id.to_string reason.Engine.unexecuted_nodes = [ "succ" ]);
+      assert (reason.Engine.result_missing = false)
+  | _ -> assert false);
+  match Engine.run machine with
+  | Engine.Run_stuck { reason; trace } ->
+      assert (trace = []);
+      assert (List.map Node_id.to_string reason.Engine.unexecuted_nodes = [ "succ" ])
+  | _ -> assert false
+
+let () =
+  let graph = entry_unit_to_nat () in
+  let value_a, trace_a = run_completed (init_ok graph Runtime_value.Unit) in
+  let value_b, trace_b = run_completed (init_ok graph Runtime_value.Unit) in
+  assert (Runtime_value.equal value_a value_b);
+  assert (
+    List.map Rewrite_event.to_string trace_a
+    = List.map Rewrite_event.to_string trace_b)
+
+let () =
+  let max_int_nat = string_of_int max_int in
+  let graph = entry_unit_to_nat ~literal:max_int_nat () in
+  let value, _trace = run_completed (init_ok graph Runtime_value.Unit) in
+  assert (payload_nat_string value = Z.to_string (Z.succ (Z.of_string max_int_nat)))

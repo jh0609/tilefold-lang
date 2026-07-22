@@ -28,7 +28,7 @@ This direction is recorded as the provisional profile `transparent-v0`, not as
 a frozen semantics version.
 
 This resolves the broad direction of questions 1 and 2 below, but it does not
-settle concrete port schemas, rewrite rules, trace schemas, canonical
+settle all primitive port schemas, all rewrite rules, full trace schemas, canonical
 serialization, program package serialization, entry template ID serialization,
 execution input serialization, literal provenance serialization, function
 template ID serialization, canonical template hashing, symbolic spatial
@@ -58,6 +58,12 @@ Canonical default node order is now provisional: each template carries
 used as fallback scheduling metadata. This is recorded in
 `docs/decisions/0009-canonical-default-node-order.md`.
 
+The first runtime vertical slice is now implemented for validated graphs with
+`Unit`, `Nat`, `Succ`, `Drop`, `Parameter`, and `Result`. It materializes input
+and literals, executes `Succ` and `Drop`, records minimal rewrite events, and
+reports `Completed` or `Stuck`. This is recorded in
+`docs/decisions/0010-first-runtime-interpreter-vertical-slice.md`.
+
 ## 1. Which details of the Core v0 primitive candidates are normative?
 
 - Question: Which exact port schemas, typing rules, and rewrite rules define
@@ -81,9 +87,9 @@ used as fallback scheduling metadata. This is recorded in
   consumed, created, changed, and provenance behavior.
 - Impact on future compatibility: Once golden traces exist, port schemas and
   rule identities are expensive to change.
-- Recommendation: Specify `Nat(n)`, `Succ`, `Copy`, and `Drop` first, then add
-  `Function`, `Apply`, and `NatRec` with explicit tests for strict
-  call-by-value and termination.
+- Recommendation: The first implemented rewrite subset is `Succ` and `Drop`.
+  Keep `Copy`, `Function`, `Apply`, and `NatRec` open until their validation,
+  trace behavior, and termination arguments are specified.
 
 ## 2. How are immutable logical values represented?
 
@@ -463,10 +469,10 @@ used as fallback scheduling metadata. This is recorded in
 - Recommendation: Do not add product types now; keep the exact multi-input
   story open.
 
-## 17. What are the exact Completed, Stuck, and error schemas?
+## 17. What remains open for Completed, Stuck, and error schemas?
 
-- Question: How should execution completion, stuck states, and errors be
-  represented?
+- Question: Given the minimal implemented `Completed`/`Stuck` slice, what
+  remains open for full terminal-state and error schemas?
 - Alternatives:
   - A single machine terminal-state schema.
   - Separate completion, validation error, runtime stuck, and runtime error
@@ -486,9 +492,10 @@ used as fallback scheduling metadata. This is recorded in
   distinguishable from `Completed`.
 - Impact on future compatibility: Error identity and terminal-state schema are
   conformance-visible.
-- Recommendation: Keep exact schemas open while requiring `Completed` to include
-  root result availability, processed active graph, explicit handling of
-  non-result values, and valid graph invariants.
+- Recommendation: Treat the current `Completed` value and `Stuck` reason as the
+  provisional runtime slice. Keep full terminal-state serialization, blocked
+  port diagnostics, validation/runtime error taxonomy, and trace-final event
+  design open.
 
 ## 18. What is Tilefold's resource model for large values and execution?
 

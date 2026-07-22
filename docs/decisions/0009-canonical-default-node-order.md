@@ -120,13 +120,16 @@ pure final result is the same.
 Conforming engines must preserve the ordered list exactly and use it as the
 fallback schedule order when the corresponding scheduler is implemented.
 
+Decision 0010 implements the first runtime use of `default_node_order` as the
+fallback selection key after `ready_epoch` for `Succ` and `Drop`.
+
 ## Not Decided
 
 This decision does not define:
 
 - numeric node ordinals,
-- scheduler or ready queue implementation,
-- runtime `ready_epoch`,
+- full scheduler or ready queue implementation,
+- runtime `ready_epoch` beyond the first vertical slice,
 - `PrioritySpine` validation implementation,
 - canonical rule order,
 - literal materialization,

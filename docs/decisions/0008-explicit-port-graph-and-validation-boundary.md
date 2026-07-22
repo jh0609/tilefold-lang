@@ -101,6 +101,9 @@ Future execution APIs must accept `Validated_graph.t`, not `Raw_graph.t`.
 Decision 0009 extends raw and validated graph data with mandatory
 `default_node_order` scheduling metadata for executable nodes.
 
+Decision 0010 uses `Validated_graph.t` as the only runtime input for the first
+interpreter vertical slice.
+
 ## Validation Rules
 
 The validator collects multiple errors when possible and returns them in a
@@ -155,10 +158,10 @@ This decision does not define:
 - capture boundaries,
 - machine state,
 - ready queue or scheduler,
-- literal materialization,
-- logical runtime values or logical value IDs,
+- full literal materialization schemas beyond the first runtime slice,
+- final logical runtime value or logical value ID serialization,
 - provenance,
-- `Succ` or `Drop` rewrite rules,
+- rewrite rules beyond the first `Succ`/`Drop` runtime slice,
 - `RewriteEvent` or `GraphSnapshot`,
 - `ProgramPackage` parser,
 - CLI validation commands,

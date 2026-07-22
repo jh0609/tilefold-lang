@@ -90,6 +90,11 @@ trace semantics.
 | `runtime-input` | `validated-graph-only` |
 | `initial-implementation-scope` | `Unit + Nat + Succ + Drop + Parameter/Result boundaries` |
 | `canonical-node-order` | `explicit-ordered-executable-node-list` |
+| `runtime-value` | `immutable-logical-value-with-typed-origin` |
+| `runtime-logical-id` | `deterministic-provisional-id` |
+| `implemented-rewrite-subset` | `Succ + Drop` |
+| `step-completion-policy` | `rewritten-then-completed-on-next-step` |
+| `stuck-reporting` | `unexecuted-nodes-and-result-missing-flag` |
 
 ## Design Points
 
@@ -130,6 +135,11 @@ trace semantics.
 | Program result boundary | Semantics | Provisional | `root-instance-result-boundary` | `ProgramResult` primitive; host-observed final value; first result wins | Changes completion criteria and traces | Must still process active rewrites such as `Drop` | Conformance observes the root result boundary and completion state | No special `ProgramResult` primitive |
 | Literal materialization | Semantics | Provisional | `initialization-or-instance-activation` | literal rewrite events; host precomputed values; inline payload only | Affects value creation order, snapshots, and provenance | Literal creation adds no rewrite loop | Conformance must agree on logical IDs and provenance | Program/input literals at initialization; template literals at `ApplyEvent` activation |
 | Literal rewrite event | Semantics | Provisional | absent | `NatLiteral` event; `UnitLiteral` event; generic materialize event | Would add trace events and rewrite count | No termination need for rewrite events | Golden traces depend on whether events exist | `Nat(n)` and `Unit` are constructors, not executable rewrite nodes |
+| Runtime value representation | Semantics | Provisional | `immutable-logical-value-with-typed-origin` | graph value nodes; trace-only payloads; host values hidden in machine state | Affects trace, provenance, and replay visibility | Usually indirect | Conformance for the slice compares value payloads, IDs, and origins where exposed | Current origins are execution input, program literal, and rewrite output |
+| Runtime logical ID policy | Semantics | Provisional | `deterministic-provisional-id` | canonical content IDs; structural path IDs; sequential counters | Changes trace IDs and replay fixtures | Usually indirect | Later engines must match the chosen policy for exact traces | Current IDs avoid memory addresses but are not final serialization |
+| Implemented rewrite subset | Semantics | Provisional | `Succ + Drop` | validation only; add Copy; add Apply; add NatRec | Determines executable traces and results | `Succ` and `Drop` do not add recursion | Conformance includes exact event order and result for this subset | No Copy, Apply, Function, NatRec, or PrioritySpine runtime |
+| Step completion policy | Semantics | Provisional | `rewritten-then-completed-on-next-step` | return event and completion together; complete immediately after rewrite | Changes step API observations, not run final result | No direct effect | Step-level tests depend on this policy | `run` repeats `step` until completed or stuck |
+| Stuck reporting | Semantics | Provisional | `unexecuted-nodes-and-result-missing-flag` | opaque stuck; full blocked-port report; validation-only rejection | Changes diagnostic outcome for incomplete runtime states | Helps avoid hidden loops while cycle policy is open | Conformance can compare stuck reason for this subset | Cycle validation remains open |
 | NatRec expansion granularity | Semantics | Open | Open | one event per recursive step; macro event with nested expansion; full unfolded graph | Changes rewrite count and trace size | Must expose a structurally decreasing argument | Golden traces depend heavily on this choice | Do not finalize before `NatRec` rule design |
 | Function application strategy | Semantics | Provisional | strict function and argument before apply | beta-style substitution; environment passing; graph sharing strategy | Changes graph transitions and trace events | Must avoid hidden non-terminating evaluation mechanisms | Conformance needs canonical application events | Must keep captured values visible at boundaries |
 | Logical ID policy | Semantics | Provisional | `causal` | structural hash; sequential counter; path-based IDs | Changes trace IDs and replay behavior | Usually indirect, but IDs may define rewrite ordering | Exact trace comparison requires a canonical policy | "Causal" means derived from inputs and prior trace state, not memory addresses |

@@ -116,6 +116,13 @@ payloads, or a combination remains a schema design question. Whichever
 representation is chosen, value identity and provenance must be observable in
 the standard trace.
 
+The first runtime slice represents values in machine state as immutable
+`Runtime_value.t` records with abstract logical value IDs, `Unit` or `Nat`
+payloads, and typed origins. Implemented origins are `Execution_input`,
+`Program_literal(node_id)`, and `Rewrite_output(event_index, node_id,
+port_key)`. This is a provisional runtime representation, not the final
+canonical serialization.
+
 ## Function Templates, Closures, and Runtime Instances
 
 A function template is the immutable canonical Core graph for a defined
@@ -243,6 +250,11 @@ incomplete, the state is a candidate `Stuck` state rather than `Completed`.
 The exact `Completed`, `Stuck`, and error schemas remain open. A future progress
 property should show that well-validated Core programs do not get stuck.
 
+The first executable slice implements a minimal `Completed`/`Stuck` API:
+completion is observed when the result boundary has a value, all executable
+nodes have run, and no ready candidate remains. `Stuck` records unexecuted
+executable node IDs and whether the result is missing.
+
 ## Core v0 Calculation Model
 
 Core v0 evaluates strict call-by-value functional graphs.
@@ -281,6 +293,10 @@ Initial ready nodes have `ready_epoch = 0`. Nodes made ready by a rewrite event
 receive the following epoch; nodes made ready by the same graph patch receive
 the same epoch. Once assigned, a ready epoch is stable while the node remains a
 valid candidate.
+
+The first runtime slice implements the selection key `(ready_epoch,
+default_node_order position)`. `PrioritySpine` and general canonical rule order
+are still absent from runtime.
 
 `PrioritySpine` is optional canonical scheduling metadata produced from Surface
 symbolic relations. It is not a Core computational primitive and does not
@@ -352,9 +368,11 @@ requires `default_node_order` to include every executable node exactly once and
 to exclude non-executable nodes.
 
 This validator does not implement graph cycle rules, reachability, `Copy`,
-`Function`, `Apply`, `NatRec`, `PrioritySpine`, rewrite rules, or trace
-schemas. See `docs/decisions/0008-explicit-port-graph-and-validation-boundary.md`
-and `docs/decisions/0009-canonical-default-node-order.md`.
+`Function`, `Apply`, `NatRec`, `PrioritySpine`, or full trace schemas. The
+first runtime slice implements only `Succ` and `Drop` rewrites. See
+`docs/decisions/0008-explicit-port-graph-and-validation-boundary.md`,
+`docs/decisions/0009-canonical-default-node-order.md`, and
+`docs/decisions/0010-first-runtime-interpreter-vertical-slice.md`.
 
 `Unit` and `Nat(n)` are value constructors, not executable rewrite nodes. Their
 runtime logical values are materialized during machine initialization or
@@ -371,6 +389,11 @@ function instance activation.
 
 `Drop` makes the discard of an otherwise unused value explicit in Core. It is
 the desugaring target for surface-level unused inputs.
+
+In the first executable slice, `Succ` consumes a `Nat` runtime value and creates
+a new `Nat(Nat.succ n)` value with `Rewrite_output` origin. `Drop A` consumes a
+runtime value of type `A` and creates no value. Each rule emits one
+`RewriteEvent`.
 
 The `transparent-v0` profile records these current choices:
 
@@ -411,6 +434,11 @@ The `transparent-v0` profile records these current choices:
 - `runtime-input = validated-graph-only`
 - `initial-implementation-scope = Unit + Nat + Succ + Drop + Parameter/Result boundaries`
 - `canonical-node-order = explicit-ordered-executable-node-list`
+- `runtime-value = immutable-logical-value-with-typed-origin`
+- `runtime-logical-id = deterministic-provisional-id`
+- `implemented-rewrite-subset = Succ + Drop`
+- `step-completion-policy = rewritten-then-completed-on-next-step`
+- `stuck-reporting = unexecuted-nodes-and-result-missing-flag`
 
 These values classify the current design direction. They do not implement or
 freeze primitive port schemas or rewrite rules.

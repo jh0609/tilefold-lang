@@ -79,6 +79,21 @@ Each event should identify:
 
 The exact schema is not fixed yet.
 
+The first executable slice implements a minimal typed `RewriteEvent` subset for
+`Succ` and `Drop`. It records:
+
+- sequential event index starting at `0`,
+- rule,
+- subject node ID,
+- ready epoch,
+- consumed runtime value IDs,
+- created runtime values.
+
+Literal materialization, execution input materialization, delivery along edges,
+ready-candidate maintenance, and other mechanical state construction are not
+separate rewrite events. Full graph patches, `GraphSnapshot`, canonical JSON,
+trace headers, and `ApplyEvent` are still not implemented.
+
 Diagnostic scheduling context may include the selected node's `ready_epoch`,
 spine ID, slot ID, and selection reason. This diagnostic information must be
 derived from the same standard trace and canonical scheduling metadata.

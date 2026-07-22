@@ -64,9 +64,11 @@ Tilefold distinguishes at least these concepts:
   identifiers and canonical data.
 
 Core v0 now uses an explicit directed port graph at the validation boundary.
-Raw graphs are diagnostic input and validated graphs are the only future runtime
-input. Core v0 still has no scheduler, machine state, rewrite rules, or trace
-schema implemented in this stage.
+Raw graphs are diagnostic input and validated graphs are the only runtime input
+for the first executable slice. That slice currently covers initialization,
+`Succ`, `Drop`, minimal rewrite events, `Completed`, and `Stuck` for
+`Unit`/`Nat` graphs. Full scheduling, trace snapshots, function application,
+recursion, parsing, and canonical serialization remain outside this stage.
 
 ## Fold and Unfold
 

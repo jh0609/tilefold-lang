@@ -124,6 +124,10 @@ should show that well-validated Core programs do not get stuck.
 Decision 0007 resolves the OCaml `Nat` payload representation as an abstract
 wrapper over Zarith `Z.t`.
 
+Decision 0010 implements the first entry-template execution slice directly over
+validated graph bodies, including input and literal materialization for
+`Unit`/`Nat` and `Completed`/`Stuck` outcomes for `Succ`/`Drop`.
+
 This decision does not define:
 
 - the exact initialization event or snapshot schema for `Unit`, `Nat`, or the
