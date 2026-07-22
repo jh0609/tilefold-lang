@@ -61,6 +61,12 @@ rejection, validated graph acceptance, derived template type, and deterministic
 diagnostic ordering where specified. Raw graph input order may be preserved for
 diagnostics, but it is not a scheduler canonical node order.
 
+Identical `default_node_order` metadata must produce the same fallback schedule
+when the `transparent-v0` scheduler is implemented. Different
+`default_node_order` lists are semantically relevant scheduling metadata even
+when nodes and edges are otherwise identical. Pixel position, layout, hardware
+ID, and discovery order are not substitutes for this canonical ordered list.
+
 ## Same Trace vs Same Observable Result
 
 There are two possible compatibility levels:

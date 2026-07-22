@@ -89,6 +89,7 @@ trace semantics.
 | `raw-and-validated-graph` | `distinct-abstract-types` |
 | `runtime-input` | `validated-graph-only` |
 | `initial-implementation-scope` | `Unit + Nat + Succ + Drop + Parameter/Result boundaries` |
+| `canonical-node-order` | `explicit-ordered-executable-node-list` |
 
 ## Design Points
 
@@ -138,7 +139,7 @@ trace semantics.
 | Error model | Semantics | Open | Open | validation-only rejection; runtime specified errors; stuck graph states | Changes observable results and traces | Progress theorem depends on this choice | Error identity and ordering must be canonical | Avoid hidden host exceptions as semantics |
 | Graph cycle policy | Semantics | Open | Open | reject all cycles; allow cycles only through total constructs; allow syntactic cycles with validation proof | Changes validation and possible stuck states | Central to termination proof | Canonical acceptance/rejection depends on policy | Not implemented in the initial validator |
 | Reachability policy | Semantics | Open | Open | require all nodes reachable from Parameter to Result; allow explicit dropped side regions; require productive result slice plus consumed drops | Changes which unused or disconnected structures validate | Affects totality and resource accounting | Needs conformance fixtures once decided | Current validator enforces port connectivity, not global reachability |
-| Canonical node order | Semantics | Open | Open | structural path order; validated input order plus canonicalization; content-derived order | Affects scheduler tie-breaks and trace order | Usually indirect | Same trace conformance requires one order | ID string lexicographic order is not adopted as scheduler semantics |
+| Canonical node order | Semantics | Provisional | `explicit-ordered-executable-node-list` | numeric node ordinals; structural path order; validated input order plus canonicalization; content-derived order | Affects fallback ready-node selection and exact trace order | Usually indirect | Same fallback schedule requires identical `default_node_order` metadata | The list contains every executable node exactly once; diagnostic ID ordering is not scheduler semantics |
 | Supported type constructors | Semantics | Provisional | `Unit`, `Nat`, `A -> B` | products; sums; lists; finite records | Adds validation and rewrite surface | New constructors need termination-preserving eliminators | Semantics version/profile must record additions | Product types remain open |
 | Parallel execution policy | Semantics | Provisional | `parallel-normative-execution = forbidden` | deterministic parallel batches; nondeterministic parallel interleaving; engine-only parallelism with canonical trace | Can change event grouping/order if semantic | Parallelism must not introduce nontermination or races | Standard conformance uses sequential trace order | Core v0 does not implement parallel normative execution |
 

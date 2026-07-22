@@ -69,6 +69,10 @@ Ready candidates are selected by this structured key:
 stable slot order. Nodes outside the spine use canonical node order.
 Canonical rule order is the final tie-breaker.
 
+Decision 0009 later defines this fallback canonical node order for
+`transparent-v0` as the template's explicit ordered executable-node list,
+`default_node_order`.
+
 The scheduler must not use memory addresses, hash-table traversal order,
 process state, wall-clock time, pixel position, render position, or a simple
 lexicographic ordering of string IDs. It uses structured canonical ordering.

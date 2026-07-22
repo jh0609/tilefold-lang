@@ -68,13 +68,17 @@ type edge = {
 }
 
 val ports_of_node_kind : node_kind -> port list
+val is_executable_node_kind : node_kind -> bool
 
 module Raw_graph : sig
   type t
 
-  val of_lists : nodes:node list -> edges:edge list -> t
+  val of_lists :
+    nodes:node list -> edges:edge list -> default_node_order:Node_id.t list -> t
+
   val nodes : t -> node list
   val edges : t -> edge list
+  val default_node_order : t -> Node_id.t list
 end
 
 module Validated_graph : sig
@@ -88,6 +92,7 @@ module Validated_graph : sig
   val result_type : t -> Core_type.t
   val template_type : t -> Core_type.t
   val port_schema : t -> Node_id.t -> port list option
+  val default_node_order : t -> Node_id.t list
 end
 
 type validation_error =
@@ -128,6 +133,10 @@ type validation_error =
       expected : int;
       actual : int;
     }
+  | Duplicate_default_order_member of Node_id.t
+  | Default_order_node_missing of Node_id.t
+  | Default_order_member_not_executable of Node_id.t
+  | Executable_node_missing_from_default_order of Node_id.t
 
 val validate : Raw_graph.t -> (Validated_graph.t, validation_error list) result
 val validation_error_to_string : validation_error -> string

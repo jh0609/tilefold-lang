@@ -289,6 +289,20 @@ ready epoch, ready spine members precede non-members, and members of the same
 spine follow stable slot order. A non-ready earlier slot does not block a ready
 later slot.
 
+Every function template also carries mandatory fallback scheduling metadata:
+
+```text
+default_node_order : Node_id.t list
+```
+
+The list contains every executable node in the template scope exactly once. If
+ready nodes are not selected by `PrioritySpine`, list position determines their
+canonical fallback order. This is not a numeric node ordinal and is not derived
+from pixel position, renderer layout, physical hardware ID, sensor discovery
+order, or raw string lexicographic ID order. Reordering the list is a semantic
+scheduling edit that may affect canonical program data and exact trace order,
+while leaving graph connectivity unchanged.
+
 Core v0 excludes shared mutable state, cells, and effects. It also excludes
 arbitrary recursion, unbounded `while`, and unbounded `goto`.
 
@@ -332,9 +346,15 @@ port must have exactly one incoming edge and every output port must have
 exactly one outgoing edge, so implicit fan-out, unused outputs, duplicated
 input connections, and unconnected boundary inputs are validation errors.
 
+The current executable node kinds are `Succ` and `Drop _`. `Unit_literal`,
+`Nat_literal _`, `Parameter _`, and `Result _` are non-executable. The validator
+requires `default_node_order` to include every executable node exactly once and
+to exclude non-executable nodes.
+
 This validator does not implement graph cycle rules, reachability, `Copy`,
-`Function`, `Apply`, `NatRec`, scheduler metadata, rewrite rules, or trace
-schemas. See `docs/decisions/0008-explicit-port-graph-and-validation-boundary.md`.
+`Function`, `Apply`, `NatRec`, `PrioritySpine`, rewrite rules, or trace
+schemas. See `docs/decisions/0008-explicit-port-graph-and-validation-boundary.md`
+and `docs/decisions/0009-canonical-default-node-order.md`.
 
 `Unit` and `Nat(n)` are value constructors, not executable rewrite nodes. Their
 runtime logical values are materialized during machine initialization or
@@ -390,6 +410,7 @@ The `transparent-v0` profile records these current choices:
 - `raw-and-validated-graph = distinct-abstract-types`
 - `runtime-input = validated-graph-only`
 - `initial-implementation-scope = Unit + Nat + Succ + Drop + Parameter/Result boundaries`
+- `canonical-node-order = explicit-ordered-executable-node-list`
 
 These values classify the current design direction. They do not implement or
 freeze primitive port schemas or rewrite rules.

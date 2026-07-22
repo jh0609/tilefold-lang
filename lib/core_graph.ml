@@ -93,21 +93,30 @@ let ports_of_node_kind = function
       ]
   | Drop typ -> [ port Port_key.input Input typ ]
 
+let is_executable_node_kind = function
+  | Succ | Drop _ -> true
+  | Unit_literal | Nat_literal _ | Parameter _ | Result _ -> false
+
 module Raw_graph = struct
   type t = {
     nodes : node list;
     edges : edge list;
+    default_node_order : Node_id.t list;
   }
 
-  let of_lists ~nodes ~edges = { nodes; edges }
+  let of_lists ~nodes ~edges ~default_node_order =
+    { nodes; edges; default_node_order }
+
   let nodes graph = graph.nodes
   let edges graph = graph.edges
+  let default_node_order graph = graph.default_node_order
 end
 
 module Validated_graph = struct
   type t = {
     nodes : node list;
     edges : edge list;
+    default_node_order : Node_id.t list;
     parameter_node : node;
     result_node : node;
     parameter_type : Core_type.t;
@@ -127,8 +136,19 @@ module Validated_graph = struct
     |> List.find_opt (fun (node : node) -> Node_id.equal node.id node_id)
     |> Option.map (fun node -> ports_of_node_kind node.kind)
 
-  let create ~nodes ~edges ~parameter_node ~result_node ~parameter_type ~result_type =
-    { nodes; edges; parameter_node; result_node; parameter_type; result_type }
+  let default_node_order graph = graph.default_node_order
+
+  let create ~nodes ~edges ~default_node_order ~parameter_node ~result_node
+      ~parameter_type ~result_type =
+    {
+      nodes;
+      edges;
+      default_node_order;
+      parameter_node;
+      result_node;
+      parameter_type;
+      result_type;
+    }
 end
 
 type validation_error =
@@ -169,6 +189,10 @@ type validation_error =
       expected : int;
       actual : int;
     }
+  | Duplicate_default_order_member of Node_id.t
+  | Default_order_node_missing of Node_id.t
+  | Default_order_member_not_executable of Node_id.t
+  | Executable_node_missing_from_default_order of Node_id.t
 
 let find_duplicates items compare =
   let sorted = List.sort compare items in
@@ -349,13 +373,40 @@ let connectivity_errors (nodes : node list) edges =
                         (Output_port_connection_count
                            { node_id = node.id; port_key = port.key; expected = 1; actual })))
 
+let default_order_errors (nodes : node list) default_node_order =
+  let duplicate_errors =
+    find_duplicates default_node_order (fun left right -> Node_id.compare left right)
+    |> List.map (fun node_id -> Duplicate_default_order_member node_id)
+  in
+  let member_errors =
+    default_node_order
+    |> List.concat_map (fun node_id ->
+           match find_node nodes node_id with
+           | None -> [ Default_order_node_missing node_id ]
+           | Some node ->
+               if is_executable_node_kind node.kind then []
+               else [ Default_order_member_not_executable node_id ])
+  in
+  let executable_nodes =
+    List.filter (fun (node : node) -> is_executable_node_kind node.kind) nodes
+  in
+  let missing_errors =
+    executable_nodes
+    |> List.filter (fun (node : node) ->
+           not (List.exists (fun member -> Node_id.equal node.id member) default_node_order))
+    |> List.map (fun (node : node) -> Executable_node_missing_from_default_order node.id)
+  in
+  duplicate_errors @ member_errors @ missing_errors
+
 let validate raw_graph =
   let nodes = Raw_graph.nodes raw_graph in
   let edges = Raw_graph.edges raw_graph in
+  let default_node_order = Raw_graph.default_node_order raw_graph in
   let errors =
     duplicate_errors nodes edges @ boundary_errors nodes
     @ List.concat_map (reference_errors nodes) edges
     @ connectivity_errors nodes edges
+    @ default_order_errors nodes default_node_order
   in
   match errors with
   | _ :: _ -> Error errors
@@ -364,8 +415,8 @@ let validate raw_graph =
       | ( [ ({ kind = Parameter parameter_type; _ } as parameter_node) ],
           [ ({ kind = Result result_type; _ } as result_node) ] ) ->
           Ok
-            (Validated_graph.create ~nodes ~edges ~parameter_node ~result_node
-               ~parameter_type ~result_type)
+            (Validated_graph.create ~nodes ~edges ~default_node_order ~parameter_node
+               ~result_node ~parameter_type ~result_type)
       | _ -> assert false)
 
 let port_ref_to_string port_ref =
@@ -410,3 +461,11 @@ let validation_error_to_string = function
       "output port connection count for " ^ Node_id.to_string node_id ^ "."
       ^ Port_key.to_string port_key ^ ": expected " ^ string_of_int expected
       ^ ", actual " ^ string_of_int actual
+  | Duplicate_default_order_member node_id ->
+      "duplicate default order member: " ^ Node_id.to_string node_id
+  | Default_order_node_missing node_id ->
+      "default order node missing: " ^ Node_id.to_string node_id
+  | Default_order_member_not_executable node_id ->
+      "default order member is not executable: " ^ Node_id.to_string node_id
+  | Executable_node_missing_from_default_order node_id ->
+      "executable node missing from default order: " ^ Node_id.to_string node_id

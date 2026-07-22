@@ -42,8 +42,11 @@ let valid_edges () =
     edge "e-succ-result" (pref "succ" "result") (pref "result" "value");
   ]
 
-let raw ?(nodes = valid_nodes ()) ?(edges = valid_edges ()) () =
-  Raw_graph.of_lists ~nodes ~edges
+let valid_default_node_order () = [ node_id "succ"; node_id "drop" ]
+
+let raw ?(nodes = valid_nodes ()) ?(edges = valid_edges ())
+    ?(default_node_order = valid_default_node_order ()) () =
+  Raw_graph.of_lists ~nodes ~edges ~default_node_order
 
 let validate_errors graph =
   match validate graph with
@@ -81,9 +84,25 @@ let () =
       assert (List.length (Validated_graph.nodes graph) = 5);
       assert (List.length (Validated_graph.edges graph) = 3);
       assert (
+        List.map Node_id.to_string (Validated_graph.default_node_order graph)
+        = [ "succ"; "drop" ]);
+      assert (
         match Validated_graph.port_schema graph (node_id "succ") with
         | Some ports -> List.length ports = 2
         | None -> false)
+
+let () =
+  match
+    validate (raw ~default_node_order:[ node_id "drop"; node_id "succ" ] ())
+  with
+  | Error errors ->
+      failwith
+        ("expected reordered graph to validate, got: "
+        ^ String.concat "; " (List.map validation_error_to_string errors))
+  | Ok graph ->
+      assert (
+        List.map Node_id.to_string (Validated_graph.default_node_order graph)
+        = [ "drop"; "succ" ])
 
 let () =
   let errors =
@@ -296,6 +315,109 @@ let () =
   has_error (function Target_node_missing _ -> true | _ -> false) errors
 
 let () =
+  let errors =
+    validate_errors
+      (raw ~default_node_order:[ node_id "succ"; node_id "succ"; node_id "drop" ] ())
+  in
+  has_error
+    (function
+      | Duplicate_default_order_member id -> Node_id.to_string id = "succ"
+      | _ -> false)
+    errors
+
+let () =
+  let errors =
+    validate_errors
+      (raw ~default_node_order:[ node_id "succ"; node_id "missing"; node_id "drop" ] ())
+  in
+  has_error
+    (function
+      | Default_order_node_missing id -> Node_id.to_string id = "missing"
+      | _ -> false)
+    errors
+
+let () =
+  let errors =
+    validate_errors
+      (raw ~default_node_order:[ node_id "succ"; node_id "lit"; node_id "drop" ] ())
+  in
+  has_error
+    (function
+      | Default_order_member_not_executable id -> Node_id.to_string id = "lit"
+      | _ -> false)
+    errors
+
+let () =
+  let errors =
+    validate_errors
+      (raw ~default_node_order:[ node_id "succ"; node_id "param"; node_id "drop" ] ())
+  in
+  has_error
+    (function
+      | Default_order_member_not_executable id -> Node_id.to_string id = "param"
+      | _ -> false)
+    errors
+
+let () =
+  let errors =
+    validate_errors
+      (raw ~default_node_order:[ node_id "succ"; node_id "result"; node_id "drop" ] ())
+  in
+  has_error
+    (function
+      | Default_order_member_not_executable id -> Node_id.to_string id = "result"
+      | _ -> false)
+    errors
+
+let () =
+  let errors = validate_errors (raw ~default_node_order:[ node_id "drop" ] ()) in
+  has_error
+    (function
+      | Executable_node_missing_from_default_order id -> Node_id.to_string id = "succ"
+      | _ -> false)
+    errors
+
+let () =
+  let errors = validate_errors (raw ~default_node_order:[ node_id "succ" ] ()) in
+  has_error
+    (function
+      | Executable_node_missing_from_default_order id -> Node_id.to_string id = "drop"
+      | _ -> false)
+    errors
+
+let () =
+  let errors =
+    validate_errors
+      (raw
+         ~default_node_order:
+           [ node_id "succ"; node_id "succ"; node_id "missing"; node_id "lit" ]
+         ())
+  in
+  has_error (function Duplicate_default_order_member _ -> true | _ -> false) errors;
+  has_error (function Default_order_node_missing _ -> true | _ -> false) errors;
+  has_error
+    (function Default_order_member_not_executable _ -> true | _ -> false)
+    errors;
+  has_error
+    (function Executable_node_missing_from_default_order _ -> true | _ -> false)
+    errors
+
+let () =
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "result" (Result Core_type.Unit);
+    ]
+  in
+  let edges = [ edge "e-param-result" (pref "param" "value") (pref "result" "value") ] in
+  match validate (raw ~nodes ~edges ~default_node_order:[] ()) with
+  | Error errors ->
+      failwith
+        ("expected empty executable graph to validate, got: "
+        ^ String.concat "; " (List.map validation_error_to_string errors))
+  | Ok graph -> assert (Validated_graph.default_node_order graph = [])
+
+let () =
   let graph =
     raw
       ~edges:
@@ -311,4 +433,15 @@ let () =
   let second =
     validate_errors graph |> List.map validation_error_to_string
   in
+  assert (first = second)
+
+let () =
+  let graph =
+    raw
+      ~default_node_order:
+        [ node_id "succ"; node_id "succ"; node_id "missing"; node_id "lit" ]
+      ()
+  in
+  let first = validate_errors graph |> List.map validation_error_to_string in
+  let second = validate_errors graph |> List.map validation_error_to_string in
   assert (first = second)

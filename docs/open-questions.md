@@ -53,6 +53,11 @@ types. The first validator covers `Unit`, `Nat`, `Succ`, `Drop`, `Parameter`,
 and `Result`. This is recorded in
 `docs/decisions/0008-explicit-port-graph-and-validation-boundary.md`.
 
+Canonical default node order is now provisional: each template carries
+`default_node_order : Node_id.t list`, an explicit ordered executable-node list
+used as fallback scheduling metadata. This is recorded in
+`docs/decisions/0009-canonical-default-node-order.md`.
+
 ## 1. Which details of the Core v0 primitive candidates are normative?
 
 - Question: Which exact port schemas, typing rules, and rewrite rules define
@@ -564,26 +569,34 @@ and `Result`. This is recorded in
 - Recommendation: Keep open. The initial validator checks exact port
   connectivity, not final reachability.
 
-## 21. What are canonical node and rule ordering?
+## 21. Which scheduler ordering details remain after default node order?
 
-- Question: Which structured canonical order should the scheduler use after
-  ready epoch and `PrioritySpine` slot priority?
+- Question: Given provisional `default_node_order`, which details remain open
+  for complete scheduler ordering?
 - Alternatives:
-  - Structural path order from canonical graph serialization.
-  - Explicit canonical order assigned during validation.
-  - Content-derived order with collision handling.
+  - Specify canonical rule order next.
+  - Specify editor policy for inserting new executable nodes into
+    `default_node_order`.
+  - Specify ProgramPackage canonical serialization that stores the ordered
+    list.
+  - Specify `PrioritySpine` validation implementation.
 - Advantages:
-  - Structural path order: aligned with serialization.
-  - Validation-assigned order: simple for the runtime to consume.
-  - Content-derived order: stable under some reorderings.
+  - Rule order: completes the final scheduler tie-breaker.
+  - Editor insertion policy: improves editing predictability.
+  - ProgramPackage serialization: makes ordering portable and testable.
+  - PrioritySpine validation: completes same-epoch priority metadata checks.
 - Disadvantages:
-  - Structural path order: depends on unfinished serialization.
-  - Validation-assigned order: risks preserving raw input order as semantics.
-  - Content-derived order: complex around identical subgraphs.
+  - Rule order: depends on concrete rewrite rules.
+  - Editor insertion policy: risks over-standardizing UI behavior.
+  - ProgramPackage serialization: depends on broader canonical format choices.
+  - PrioritySpine validation: should wait for the scheduling metadata schema.
 - Impact on termination: Usually indirect, but ordering must not create hidden
   waiting behavior.
 - Impact on execution transparency: Exact trace conformance depends on this
-  choice.
-- Impact on future compatibility: Golden traces will lock in the chosen order.
-- Recommendation: Keep open. The initial ID comparison helpers are diagnostic
-  utilities, not scheduler ordering semantics.
+  remaining scheduler metadata and rule-order work.
+- Impact on future compatibility: Golden traces will lock in the complete
+  scheduler ordering.
+- Recommendation: Treat canonical node order itself as resolved by
+  `default_node_order`, and keep canonical rule order, editor insertion policy,
+  ProgramPackage serialization, and `PrioritySpine` validator implementation
+  open.

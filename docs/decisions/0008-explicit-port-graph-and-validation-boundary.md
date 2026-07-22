@@ -98,6 +98,9 @@ validated template is closed.
 
 Future execution APIs must accept `Validated_graph.t`, not `Raw_graph.t`.
 
+Decision 0009 extends raw and validated graph data with mandatory
+`default_node_order` scheduling metadata for executable nodes.
+
 ## Validation Rules
 
 The validator collects multiple errors when possible and returns them in a
@@ -144,7 +147,6 @@ This decision does not define:
 - the final reachability definition,
 - `Copy`, `Function`, `Apply`, or `NatRec` validation,
 - `PrioritySpine` validation implementation,
-- canonical node order,
 - canonical rule order,
 - validation error canonical serialization,
 - error codes or versioning,
