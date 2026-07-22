@@ -71,6 +71,10 @@ runtime errors for `Unit`/`Nat` graphs. Full scheduling, trace snapshots,
 function application, recursion, parsing, and canonical serialization remain
 outside this stage.
 
+The implemented scheduling slice includes static single-scope `PrioritySpine`
+metadata for same-epoch ready-node priority. Dynamic scheduling, multiple
+scopes, hard sequencing, and pixel-coordinate ordering remain outside Core.
+
 ## Fold and Unfold
 
 A folded block is a named abstraction over a Tilefold Core graph. It is not a

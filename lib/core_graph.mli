@@ -79,9 +79,17 @@ module Raw_graph : sig
   val of_lists :
     nodes:node list -> edges:edge list -> default_node_order:Node_id.t list -> t
 
+  val of_lists_with_priority_spine :
+    nodes:node list ->
+    edges:edge list ->
+    default_node_order:Node_id.t list ->
+    priority_spine:Node_id.t list option ->
+    t
+
   val nodes : t -> node list
   val edges : t -> edge list
   val default_node_order : t -> Node_id.t list
+  val priority_spine : t -> Node_id.t list option
 end
 
 module Validated_graph : sig
@@ -96,6 +104,7 @@ module Validated_graph : sig
   val template_type : t -> Core_type.t
   val port_schema : t -> Node_id.t -> port list option
   val default_node_order : t -> Node_id.t list
+  val priority_spine : t -> Node_id.t list option
 end
 
 type validation_error =
@@ -140,6 +149,12 @@ type validation_error =
   | Default_order_node_missing of Node_id.t
   | Default_order_member_not_executable of Node_id.t
   | Executable_node_missing_from_default_order of Node_id.t
+  | Duplicate_priority_spine_member of Node_id.t
+  | Priority_spine_node_missing of Node_id.t
+  | Priority_spine_member_not_executable of {
+      node_id : Node_id.t;
+      kind : node_kind;
+    }
 
 val validate : Raw_graph.t -> (Validated_graph.t, validation_error list) result
 val validation_error_to_string : validation_error -> string

@@ -9,6 +9,7 @@ type initialization_error =
 type ready_candidate = {
   node_id : Core_graph.Node_id.t;
   ready_epoch : int;
+  priority_spine_rank : int option;
   default_order_rank : int;
 }
 

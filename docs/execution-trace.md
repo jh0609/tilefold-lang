@@ -105,6 +105,20 @@ Diagnostic scheduling context may include the selected node's `ready_epoch`,
 spine ID, slot ID, and selection reason. This diagnostic information must be
 derived from the same standard trace and canonical scheduling metadata.
 
+The PrioritySpine runtime slice does not add fields to `RewriteEvent`. Selection
+order can be reconstructed from the validated graph's `PrioritySpine`, the
+validated graph's `default_node_order`, each event's `ready_epoch`, and each
+event's subject node.
+
+For example, if `default_node_order = [copy; drop; succ]` and
+`priority_spine = [succ]`, then a `Copy` event that makes both `drop` and
+`succ` ready at epoch `1` is followed by `succ` before `drop`. Without the
+spine, the same graph follows default order and runs `drop` before `succ`.
+
+PrioritySpine never overtakes ready epochs. If an ordinary node is ready at
+epoch `0` and a spine member becomes ready at epoch `1`, the epoch `0` ordinary
+node is selected first.
+
 ## ApplyEvent
 
 An `ApplyEvent` records the semantic activation of a function runtime instance.

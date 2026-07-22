@@ -177,3 +177,6 @@ This decision does not introduce:
 - parallel rewrite commit,
 - pixel-coordinate ordering,
 - an implementation in `lib/`, `bin/`, or `test/`.
+
+Decision 0012 later implements the first static single-scope PrioritySpine
+validation and runtime scheduling slice.

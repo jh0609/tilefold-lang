@@ -11,6 +11,7 @@ type initialization_error =
 type ready_candidate = {
   node_id : CG.Node_id.t;
   ready_epoch : int;
+  priority_spine_rank : int option;
   default_order_rank : int;
 }
 
@@ -133,6 +134,17 @@ let default_order_rank graph node_id =
   in
   loop 0 (CG.Validated_graph.default_node_order graph)
 
+let priority_spine_rank graph node_id =
+  match CG.Validated_graph.priority_spine graph with
+  | None -> None
+  | Some priority_spine ->
+      let rec loop rank = function
+        | [] -> None
+        | current :: rest ->
+            if CG.Node_id.equal current node_id then Some rank else loop (rank + 1) rest
+      in
+      loop 0 priority_spine
+
 let executable_node_ids graph = CG.Validated_graph.default_node_order graph
 
 let is_ready graph bindings executed_nodes node_id =
@@ -157,7 +169,14 @@ let is_ready graph bindings executed_nodes node_id =
 
 let ready_candidate graph epoch node_id =
   match default_order_rank graph node_id with
-  | Some default_order_rank -> Some { node_id; ready_epoch = epoch; default_order_rank }
+  | Some default_order_rank ->
+      Some
+        {
+          node_id;
+          ready_epoch = epoch;
+          priority_spine_rank = priority_spine_rank graph node_id;
+          default_order_rank;
+        }
   | None -> None
 
 let initial_ready_candidates graph bindings =
@@ -186,7 +205,15 @@ let refresh_ready_candidates graph bindings executed_nodes existing_ready epoch 
 let select_ready candidates =
   let compare_candidate left right =
     match Int.compare left.ready_epoch right.ready_epoch with
-    | 0 -> Int.compare left.default_order_rank right.default_order_rank
+    | 0 -> (
+        match (left.priority_spine_rank, right.priority_spine_rank) with
+        | Some left_rank, Some right_rank -> (
+            match Int.compare left_rank right_rank with
+            | 0 -> Int.compare left.default_order_rank right.default_order_rank
+            | other -> other)
+        | Some _, None -> -1
+        | None, Some _ -> 1
+        | None, None -> Int.compare left.default_order_rank right.default_order_rank)
     | other -> other
   in
   match List.sort compare_candidate candidates with

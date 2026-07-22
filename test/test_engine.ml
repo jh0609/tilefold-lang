@@ -131,7 +131,7 @@ let stuck_cycle () =
   Raw_graph.of_lists ~nodes ~edges ~default_node_order:[ node_id "succ" ]
   |> validate_ok
 
-let copy_nat_graph ?(order = [ "copy"; "succ"; "drop" ])
+let copy_nat_graph ?(order = [ "copy"; "succ"; "drop" ]) ?priority_spine
     ?(edges =
       [
         edge "e-param-copy" (pref "param" "value") (pref "copy" "input");
@@ -149,8 +149,74 @@ let copy_nat_graph ?(order = [ "copy"; "succ"; "drop" ])
       node "result" (Result result_type);
     ]
   in
-  Raw_graph.of_lists ~nodes ~edges
+  Raw_graph.of_lists_with_priority_spine ~nodes ~edges
     ~default_node_order:(List.map node_id order)
+    ~priority_spine:(Option.map (List.map node_id) priority_spine)
+  |> validate_ok
+
+let priority_epoch_overtake_graph () =
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "ordinary" (Drop Core_type.Unit);
+      node "lit" (Nat_literal (nat "3"));
+      node "copy" (Copy Core_type.Nat);
+      node "preferred" Succ;
+      node "cleanup" (Drop Core_type.Nat);
+      node "result" (Result Core_type.Nat);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-ordinary" (pref "param" "value") (pref "ordinary" "input");
+      edge "e-lit-copy" (pref "lit" "value") (pref "copy" "input");
+      edge "e-copy-left-preferred" (pref "copy" "left") (pref "preferred" "input");
+      edge "e-preferred-result" (pref "preferred" "result") (pref "result" "value");
+      edge "e-copy-right-cleanup" (pref "copy" "right") (pref "cleanup" "input");
+    ]
+  in
+  Raw_graph.of_lists_with_priority_spine ~nodes ~edges
+    ~default_node_order:
+      [ node_id "copy"; node_id "ordinary"; node_id "preferred"; node_id "cleanup" ]
+    ~priority_spine:(Some [ node_id "preferred" ])
+  |> validate_ok
+
+let multi_same_epoch_graph ?(priority_spine = [ "preferred-a"; "preferred-b" ])
+    () =
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "ordinary-a" (Drop Core_type.Unit);
+      node "lit-ordinary-b" (Nat_literal (nat "10"));
+      node "ordinary-b" (Drop Core_type.Nat);
+      node "lit-preferred-a" (Nat_literal (nat "3"));
+      node "preferred-a" Succ;
+      node "lit-preferred-b" (Nat_literal (nat "4"));
+      node "preferred-b" Succ;
+      node "post-drop" (Drop Core_type.Nat);
+      node "result" (Result Core_type.Nat);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-ordinary-a" (pref "param" "value") (pref "ordinary-a" "input");
+      edge "e-lit-ordinary-b" (pref "lit-ordinary-b" "value") (pref "ordinary-b" "input");
+      edge "e-lit-preferred-a" (pref "lit-preferred-a" "value") (pref "preferred-a" "input");
+      edge "e-preferred-a-result" (pref "preferred-a" "result") (pref "result" "value");
+      edge "e-lit-preferred-b" (pref "lit-preferred-b" "value") (pref "preferred-b" "input");
+      edge "e-preferred-b-post-drop" (pref "preferred-b" "result") (pref "post-drop" "input");
+    ]
+  in
+  Raw_graph.of_lists_with_priority_spine ~nodes ~edges
+    ~default_node_order:
+      [
+        node_id "ordinary-b";
+        node_id "preferred-b";
+        node_id "ordinary-a";
+        node_id "preferred-a";
+        node_id "post-drop";
+      ]
+    ~priority_spine:(Some (List.map node_id priority_spine))
   |> validate_ok
 
 let copy_unit_graph () =
@@ -227,6 +293,12 @@ let assert_indexes expected trace =
 
 let assert_epochs expected trace =
   assert (List.map (fun event -> event.Rewrite_event.ready_epoch) trace = expected)
+
+let rec step_trace machine =
+  match Engine.step machine with
+  | Engine.Completed _ -> []
+  | Engine.Stuck _ | Engine.Runtime_error _ -> assert false
+  | Engine.Rewritten { machine; event } -> event :: step_trace machine
 
 let () =
   let graph = entry_unit_to_nat () in
@@ -490,4 +562,148 @@ let () =
       assert_rules [ "Drop" ] trace;
       assert (List.map Node_id.to_string reason.Engine.unexecuted_nodes = [ "copy" ]);
       assert (reason.Engine.result_missing = true)
+  | _ -> assert false
+
+let () =
+  let value, trace =
+    run_completed
+      (init_ok
+         (copy_nat_graph ~order:[ "copy"; "drop"; "succ" ]
+            ~priority_spine:[ "succ" ] ())
+         (Runtime_value.Nat (nat "3")))
+  in
+  assert (payload_nat_string value = "4");
+  assert_rules [ "Copy"; "Succ"; "Drop" ] trace;
+  assert_subjects [ "copy"; "succ"; "drop" ] trace;
+  assert_epochs [ 0; 1; 1 ] trace;
+  let copy_event = List.hd trace in
+  assert (
+    List.map
+      (fun value ->
+        match Runtime_value.origin value with
+        | Runtime_value.Rewrite_output { port_key; _ } -> Port_key.to_string port_key
+        | _ -> assert false)
+      copy_event.Rewrite_event.created
+    = [ "left"; "right" ])
+
+let () =
+  let value, trace =
+    run_completed
+      (init_ok (copy_nat_graph ~order:[ "copy"; "drop"; "succ" ] ())
+         (Runtime_value.Nat (nat "3")))
+  in
+  assert (payload_nat_string value = "4");
+  assert_rules [ "Copy"; "Drop"; "Succ" ] trace;
+  assert_epochs [ 0; 1; 1 ] trace
+
+let () =
+  let value, trace =
+    run_completed
+      (init_ok
+         (copy_nat_graph ~order:[ "copy"; "drop"; "succ" ] ~priority_spine:[] ())
+         (Runtime_value.Nat (nat "3")))
+  in
+  assert (payload_nat_string value = "4");
+  assert_rules [ "Copy"; "Drop"; "Succ" ] trace
+
+let () =
+  let value, trace =
+    run_completed (init_ok (priority_epoch_overtake_graph ()) Runtime_value.Unit)
+  in
+  assert (payload_nat_string value = "4");
+  assert_rules [ "Copy"; "Drop"; "Succ"; "Drop" ] trace;
+  assert_subjects [ "copy"; "ordinary"; "preferred"; "cleanup" ] trace;
+  assert_epochs [ 0; 0; 1; 1 ] trace
+
+let () =
+  let value, trace =
+    run_completed (init_ok (multi_same_epoch_graph ()) Runtime_value.Unit)
+  in
+  assert (payload_nat_string value = "4");
+  assert_subjects
+    [ "preferred-a"; "preferred-b"; "ordinary-b"; "ordinary-a"; "post-drop" ]
+    trace;
+  assert_rules [ "Succ"; "Succ"; "Drop"; "Drop"; "Drop" ] trace;
+  assert_epochs [ 0; 0; 0; 0; 2 ] trace
+
+let () =
+  let value, trace =
+    run_completed
+      (init_ok
+         (multi_same_epoch_graph ~priority_spine:[ "preferred-b"; "preferred-a" ] ())
+         Runtime_value.Unit)
+  in
+  assert (payload_nat_string value = "4");
+  assert_subjects
+    [ "preferred-b"; "preferred-a"; "ordinary-b"; "ordinary-a"; "post-drop" ]
+    trace
+
+let () =
+  let graph =
+    copy_nat_graph ~order:[ "copy"; "drop"; "succ" ] ~priority_spine:[ "succ" ]
+      ()
+  in
+  let run_value, run_trace =
+    run_completed (init_ok graph (Runtime_value.Nat (nat "3")))
+  in
+  let stepped_trace = step_trace (init_ok graph (Runtime_value.Nat (nat "3"))) in
+  assert (payload_nat_string run_value = "4");
+  assert (
+    List.map Rewrite_event.to_string stepped_trace
+    = List.map Rewrite_event.to_string run_trace)
+
+let () =
+  let graph =
+    copy_nat_graph ~order:[ "copy"; "drop"; "succ" ] ~priority_spine:[ "succ" ]
+      ()
+  in
+  let value_a, trace_a = run_completed (init_ok graph (Runtime_value.Nat (nat "3"))) in
+  let value_b, trace_b = run_completed (init_ok graph (Runtime_value.Nat (nat "3"))) in
+  assert (Runtime_value.equal value_a value_b);
+  assert (List.map Rewrite_event.to_string trace_a = List.map Rewrite_event.to_string trace_b)
+
+let () =
+  let reversed_edges =
+    [
+      edge "e-copy-right-drop" (pref "copy" "right") (pref "drop" "input");
+      edge "e-succ-result" (pref "succ" "result") (pref "result" "value");
+      edge "e-copy-left-succ" (pref "copy" "left") (pref "succ" "input");
+      edge "e-param-copy" (pref "param" "value") (pref "copy" "input");
+    ]
+  in
+  let value, trace =
+    run_completed
+      (init_ok
+         (copy_nat_graph ~order:[ "copy"; "drop"; "succ" ]
+            ~priority_spine:[ "succ" ] ~edges:reversed_edges ())
+         (Runtime_value.Nat (nat "3")))
+  in
+  assert (payload_nat_string value = "4");
+  assert_subjects [ "copy"; "succ"; "drop" ] trace
+
+let () =
+  let machine =
+    init_ok
+      (copy_nat_graph ~order:[ "copy"; "drop"; "succ" ]
+         ~priority_spine:[ "succ" ] ())
+      (Runtime_value.Nat (nat "3"))
+  in
+  match Engine.step machine with
+  | Engine.Rewritten { machine; event } -> (
+      assert (Rewrite_event.rule_to_string event.Rewrite_event.rule = "Copy");
+      assert (List.length event.Rewrite_event.consumed = 1);
+      assert (List.length event.Rewrite_event.created = 2);
+      assert (
+        List.map
+          (fun value ->
+            match Runtime_value.origin value with
+            | Runtime_value.Rewrite_output { port_key; _ } ->
+                Port_key.to_string port_key
+            | _ -> assert false)
+          event.Rewrite_event.created
+        = [ "left"; "right" ]);
+      match Engine.step machine with
+      | Engine.Rewritten { event = event1; _ } ->
+          assert (Node_id.to_string event1.Rewrite_event.subject = "succ")
+      | _ -> assert false)
   | _ -> assert false

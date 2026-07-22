@@ -135,14 +135,17 @@ ready, all newly ready nodes receive:
 ready_epoch = i + 1
 ```
 
-Already ready nodes keep their existing ready epoch. Selection continues to use
-the currently implemented key:
+Already ready nodes keep their existing ready epoch. Before Decision 0012,
+selection continues to use the implemented key:
 
 ```text
 (ready_epoch, default_node_order position)
 ```
 
 `PrioritySpine` is not implemented by this decision.
+
+Decision 0012 later implements static same-epoch `PrioritySpine` scheduling
+without changing Copy's created value order or ready-epoch creation rule.
 
 ## Consequences
 

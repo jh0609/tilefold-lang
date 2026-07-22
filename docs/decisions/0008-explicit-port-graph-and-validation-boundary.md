@@ -107,6 +107,9 @@ interpreter vertical slice.
 Decision 0011 extends this validation boundary with the executable `Copy`
 node and its derived `input`, `left`, and `right` port schema.
 
+Decision 0012 extends validated graph scheduling metadata with one optional
+static `PrioritySpine`.
+
 ## Validation Rules
 
 The validator collects multiple errors when possible and returns them in a

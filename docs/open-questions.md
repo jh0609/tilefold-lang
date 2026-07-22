@@ -65,6 +65,8 @@ minimal rewrite events, and reports `Completed`, `Stuck`, or typed runtime
 errors. This started in
 `docs/decisions/0010-first-runtime-interpreter-vertical-slice.md` and was
 extended by `docs/decisions/0011-copy-rewrite-and-linear-duplication.md`.
+`docs/decisions/0012-priority-spine-static-scheduling.md` implements the first
+static `PrioritySpine` validation and runtime scheduling slice.
 
 ## 1. Which details of the Core v0 primitive candidates are normative?
 
@@ -143,8 +145,9 @@ extended by `docs/decisions/0011-copy-rewrite-and-linear-duplication.md`.
   ready epoch, spine ID, slot ID, and selection reason may be diagnostic.
 - Impact on future compatibility: Canonical node and rule ordering will affect
   golden traces and must be stable once frozen.
-- Recommendation: Specify canonical node order, canonical rule order, and
-  scheduling validation errors before implementing the scheduler.
+- Recommendation: Static `PrioritySpine` validation and runtime selection are
+  now implemented for the single-template slice. Keep canonical rule order,
+  dynamic scheduling metadata, and full scheduler diagnostics open.
 
 ## 4. How should `transparent-v0` represent traces and snapshots?
 
@@ -375,8 +378,8 @@ extended by `docs/decisions/0011-copy-rewrite-and-linear-duplication.md`.
 
 ## 13. How are scheduling validation errors serialized?
 
-- Question: What canonical error format represents invalid `PrioritySpine`
-  metadata?
+- Question: What canonical serialized error format represents invalid
+  `PrioritySpine` metadata?
 - Alternatives:
   - Reuse the general validation error schema once defined.
   - Define a scheduling-specific validation error section.
@@ -396,8 +399,9 @@ extended by `docs/decisions/0011-copy-rewrite-and-linear-duplication.md`.
   non-executable members, and invalid stable slot IDs.
 - Impact on future compatibility: Error identity and serialization affect
   conformance fixtures.
-- Recommendation: Keep exact serialization open until the general validation
-  error model is designed.
+- Recommendation: The OCaml validator now uses typed variants for duplicate,
+  missing, and non-executable PrioritySpine members. Keep final canonical error
+  serialization open until the general validation error model is designed.
 
 ## 14. How are ProgramPackage and entry metadata serialized?
 
@@ -581,32 +585,43 @@ extended by `docs/decisions/0011-copy-rewrite-and-linear-duplication.md`.
 
 ## 21. Which scheduler ordering details remain after default node order?
 
-- Question: Given provisional `default_node_order`, which details remain open
-  for complete scheduler ordering?
+- Question: Given provisional `default_node_order` and static
+  `PrioritySpine`, which details remain open for complete scheduler ordering?
 - Alternatives:
   - Specify canonical rule order next.
   - Specify editor policy for inserting new executable nodes into
     `default_node_order`.
   - Specify ProgramPackage canonical serialization that stores the ordered
     list.
-  - Specify `PrioritySpine` validation implementation.
+  - Specify function-instance inheritance of static `PrioritySpine`.
+  - Specify dynamic or per-call `PrioritySpine` metadata.
+  - Specify multiple scheduling scopes or multiple spines.
 - Advantages:
   - Rule order: completes the final scheduler tie-breaker.
   - Editor insertion policy: improves editing predictability.
   - ProgramPackage serialization: makes ordering portable and testable.
-  - PrioritySpine validation: completes same-epoch priority metadata checks.
+  - Function-instance inheritance: needed before `Apply` can instantiate
+    templates with scheduling metadata.
+  - Dynamic or per-call PrioritySpine: may be useful for advanced visual
+    workflows.
+  - Multiple scopes or spines: needed for larger programs.
 - Disadvantages:
   - Rule order: depends on concrete rewrite rules.
   - Editor insertion policy: risks over-standardizing UI behavior.
   - ProgramPackage serialization: depends on broader canonical format choices.
-  - PrioritySpine validation: should wait for the scheduling metadata schema.
+  - Function-instance inheritance: depends on `Apply` runtime instance design.
+  - Dynamic or per-call PrioritySpine: increases trace and conformance surface.
+  - Multiple scopes or spines: requires a broader scheduling metadata schema.
 - Impact on termination: Usually indirect, but ordering must not create hidden
   waiting behavior.
 - Impact on execution transparency: Exact trace conformance depends on this
   remaining scheduler metadata and rule-order work.
 - Impact on future compatibility: Golden traces will lock in the complete
   scheduler ordering.
-- Recommendation: Treat canonical node order itself as resolved by
-  `default_node_order`, and keep canonical rule order, editor insertion policy,
-  ProgramPackage serialization, and `PrioritySpine` validator implementation
-  open.
+- Recommendation: Treat canonical node order and static single-scope
+  PrioritySpine validation/runtime selection as resolved for the current slice.
+  Keep canonical rule order, editor insertion policy, ProgramPackage
+  serialization, function-instance spine inheritance, dynamic spines, multiple
+  scopes, `NatRec` interaction, starvation/fairness for future repeated
+  regions, scheduler decision evidence in permanent traces, and final public
+  diagnostics open.

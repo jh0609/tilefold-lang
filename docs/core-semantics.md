@@ -294,9 +294,21 @@ receive the following epoch; nodes made ready by the same graph patch receive
 the same epoch. Once assigned, a ready epoch is stable while the node remains a
 valid candidate.
 
-The first runtime slice implements the selection key `(ready_epoch,
-default_node_order position)`. `PrioritySpine` and general canonical rule order
-are still absent from runtime.
+The current runtime slice implements the selection key:
+
+```text
+(
+  ready_epoch,
+  priority_class,
+  priority_spine_position,
+  default_node_order position
+)
+```
+
+`PrioritySpine` is applied only within one ready epoch. It never lets a newer
+ready node overtake an older ready node. General canonical rule order is still
+absent from runtime because each implemented executable node has exactly one
+rule.
 
 `PrioritySpine` is optional canonical scheduling metadata produced from Surface
 symbolic relations. It is not a Core computational primitive and does not
@@ -304,6 +316,10 @@ create dependencies, execution permission, or a hard sequence. Within the same
 ready epoch, ready spine members precede non-members, and members of the same
 spine follow stable slot order. A non-ready earlier slot does not block a ready
 later slot.
+
+In the current single-template OCaml slice, a validated graph may contain
+`priority_spine : Node_id.t list option`. `None` and `Some []` have the same
+scheduling behavior. The list may contain any subset of executable nodes.
 
 Every function template also carries mandatory fallback scheduling metadata:
 
@@ -370,8 +386,9 @@ non-executable. The validator requires `default_node_order` to include every
 executable node exactly once and to exclude non-executable nodes.
 
 This validator does not implement graph cycle rules, reachability, `Function`,
-`Apply`, `NatRec`, `PrioritySpine`, or full trace schemas. The first runtime
-slice implements `Succ`, `Copy` for `Unit` and `Nat`, and `Drop` rewrites. See
+`Apply`, `NatRec`, multi-scope scheduling, or full trace schemas. The first
+runtime slice implements `Succ`, `Copy` for `Unit` and `Nat`, `Drop` rewrites,
+and static single-scope `PrioritySpine` scheduling. See
 `docs/decisions/0008-explicit-port-graph-and-validation-boundary.md`,
 `docs/decisions/0009-canonical-default-node-order.md`, and
 `docs/decisions/0010-first-runtime-interpreter-vertical-slice.md`, followed by
@@ -449,6 +466,12 @@ The `transparent-v0` profile records these current choices:
 - `copy-semantics = consume-one-create-two-distinct-linear-values`
 - `copy-output-order = explicit-canonical-port-order(left, right)`
 - `copy-ready-epoch = producing-event-index-plus-one`
+- `priority-spine-scope = one-optional-partial-spine-per-static-scheduling-scope`
+- `priority-spine-epoch-policy = never-overtakes-ready-epoch`
+- `priority-spine-selection = spine-members-first-within-same-epoch`
+- `priority-spine-member-order = explicit-spine-position`
+- `priority-spine-fallback = default-node-order`
+- `priority-spine-validation = reject-duplicate-missing-non-executable-and-out-of-scope-references`
 - `step-completion-policy = rewritten-then-completed-on-next-step`
 - `stuck-reporting = unexecuted-nodes-and-result-missing-flag`
 

@@ -81,6 +81,12 @@ distinct output logical values, preserving payload equality, using `left` and
 order, and assigning the same next ready epoch to downstream nodes made ready
 by the same `Copy` rewrite.
 
+For static `PrioritySpine`, conformance includes identical validation
+acceptance and rejection for optional spine metadata, identical same-epoch
+member priority, identical explicit spine-position order for members, identical
+`default_node_order` fallback for non-members, and the rule that spine
+membership never overtakes a lower `ready_epoch`.
+
 ## Same Trace vs Same Observable Result
 
 There are two possible compatibility levels:

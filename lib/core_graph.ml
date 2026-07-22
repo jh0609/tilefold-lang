@@ -111,14 +111,20 @@ module Raw_graph = struct
     nodes : node list;
     edges : edge list;
     default_node_order : Node_id.t list;
+    priority_spine : Node_id.t list option;
   }
 
   let of_lists ~nodes ~edges ~default_node_order =
-    { nodes; edges; default_node_order }
+    { nodes; edges; default_node_order; priority_spine = None }
+
+  let of_lists_with_priority_spine ~nodes ~edges ~default_node_order
+      ~priority_spine =
+    { nodes; edges; default_node_order; priority_spine }
 
   let nodes graph = graph.nodes
   let edges graph = graph.edges
   let default_node_order graph = graph.default_node_order
+  let priority_spine graph = graph.priority_spine
 end
 
 module Validated_graph = struct
@@ -126,6 +132,7 @@ module Validated_graph = struct
     nodes : node list;
     edges : edge list;
     default_node_order : Node_id.t list;
+    priority_spine : Node_id.t list option;
     parameter_node : node;
     result_node : node;
     parameter_type : Core_type.t;
@@ -146,13 +153,15 @@ module Validated_graph = struct
     |> Option.map (fun node -> ports_of_node_kind node.kind)
 
   let default_node_order graph = graph.default_node_order
+  let priority_spine graph = graph.priority_spine
 
-  let create ~nodes ~edges ~default_node_order ~parameter_node ~result_node
-      ~parameter_type ~result_type =
+  let create ~nodes ~edges ~default_node_order ~priority_spine ~parameter_node
+      ~result_node ~parameter_type ~result_type =
     {
       nodes;
       edges;
       default_node_order;
+      priority_spine;
       parameter_node;
       result_node;
       parameter_type;
@@ -202,6 +211,12 @@ type validation_error =
   | Default_order_node_missing of Node_id.t
   | Default_order_member_not_executable of Node_id.t
   | Executable_node_missing_from_default_order of Node_id.t
+  | Duplicate_priority_spine_member of Node_id.t
+  | Priority_spine_node_missing of Node_id.t
+  | Priority_spine_member_not_executable of {
+      node_id : Node_id.t;
+      kind : node_kind;
+    }
 
 let find_duplicates items compare =
   let sorted = List.sort compare items in
@@ -407,15 +422,39 @@ let default_order_errors (nodes : node list) default_node_order =
   in
   duplicate_errors @ member_errors @ missing_errors
 
+let priority_spine_errors (nodes : node list) = function
+  | None -> []
+  | Some priority_spine ->
+      let duplicate_errors =
+        find_duplicates priority_spine (fun left right -> Node_id.compare left right)
+        |> List.map (fun node_id -> Duplicate_priority_spine_member node_id)
+      in
+      let member_errors =
+        priority_spine
+        |> List.concat_map (fun node_id ->
+               match find_node nodes node_id with
+               | None -> [ Priority_spine_node_missing node_id ]
+               | Some node ->
+                   if is_executable_node_kind node.kind then []
+                   else
+                     [
+                       Priority_spine_member_not_executable
+                         { node_id; kind = node.kind };
+                     ])
+      in
+      duplicate_errors @ member_errors
+
 let validate raw_graph =
   let nodes = Raw_graph.nodes raw_graph in
   let edges = Raw_graph.edges raw_graph in
   let default_node_order = Raw_graph.default_node_order raw_graph in
+  let priority_spine = Raw_graph.priority_spine raw_graph in
   let errors =
     duplicate_errors nodes edges @ boundary_errors nodes
     @ List.concat_map (reference_errors nodes) edges
     @ connectivity_errors nodes edges
     @ default_order_errors nodes default_node_order
+    @ priority_spine_errors nodes priority_spine
   in
   match errors with
   | _ :: _ -> Error errors
@@ -424,8 +463,8 @@ let validate raw_graph =
       | ( [ ({ kind = Parameter parameter_type; _ } as parameter_node) ],
           [ ({ kind = Result result_type; _ } as result_node) ] ) ->
           Ok
-            (Validated_graph.create ~nodes ~edges ~default_node_order ~parameter_node
-               ~result_node ~parameter_type ~result_type)
+            (Validated_graph.create ~nodes ~edges ~default_node_order ~priority_spine
+               ~parameter_node ~result_node ~parameter_type ~result_type)
       | _ -> assert false)
 
 let port_ref_to_string port_ref =
@@ -478,3 +517,9 @@ let validation_error_to_string = function
       "default order member is not executable: " ^ Node_id.to_string node_id
   | Executable_node_missing_from_default_order node_id ->
       "executable node missing from default order: " ^ Node_id.to_string node_id
+  | Duplicate_priority_spine_member node_id ->
+      "duplicate PrioritySpine member: " ^ Node_id.to_string node_id
+  | Priority_spine_node_missing node_id ->
+      "PrioritySpine node missing: " ^ Node_id.to_string node_id
+  | Priority_spine_member_not_executable { node_id; kind = _ } ->
+      "PrioritySpine member is not executable: " ^ Node_id.to_string node_id

@@ -48,6 +48,11 @@ let raw ?(nodes = valid_nodes ()) ?(edges = valid_edges ())
     ?(default_node_order = valid_default_node_order ()) () =
   Raw_graph.of_lists ~nodes ~edges ~default_node_order
 
+let raw_with_priority_spine ?(nodes = valid_nodes ()) ?(edges = valid_edges ())
+    ?(default_node_order = valid_default_node_order ()) priority_spine =
+  Raw_graph.of_lists_with_priority_spine ~nodes ~edges ~default_node_order
+    ~priority_spine:(Some priority_spine)
+
 let validate_errors graph =
   match validate graph with
   | Ok _ -> assert false
@@ -86,6 +91,7 @@ let () =
       assert (
         List.map Node_id.to_string (Validated_graph.default_node_order graph)
         = [ "succ"; "drop" ]);
+      assert (Validated_graph.priority_spine graph = None);
       assert (
         match Validated_graph.port_schema graph (node_id "succ") with
         | Some ports -> List.length ports = 2
@@ -446,6 +452,89 @@ let () =
   let second = validate_errors graph |> List.map validation_error_to_string in
   assert (first = second)
 
+let () =
+  match validate (raw_with_priority_spine []) with
+  | Ok graph -> assert (Validated_graph.priority_spine graph = Some [])
+  | Error errors ->
+      failwith
+        ("expected empty PrioritySpine to validate, got: "
+        ^ String.concat "; " (List.map validation_error_to_string errors))
+
+let () =
+  match validate (raw_with_priority_spine [ node_id "succ" ]) with
+  | Ok graph ->
+      assert (
+        Option.map (List.map Node_id.to_string) (Validated_graph.priority_spine graph)
+        = Some [ "succ" ])
+  | Error errors ->
+      failwith
+        ("expected partial PrioritySpine to validate, got: "
+        ^ String.concat "; " (List.map validation_error_to_string errors))
+
+let () =
+  match validate (raw_with_priority_spine [ node_id "drop"; node_id "succ" ]) with
+  | Ok graph ->
+      assert (
+        Option.map (List.map Node_id.to_string) (Validated_graph.priority_spine graph)
+        = Some [ "drop"; "succ" ])
+  | Error errors ->
+      failwith
+        ("expected full reordered PrioritySpine to validate, got: "
+        ^ String.concat "; " (List.map validation_error_to_string errors))
+
+let () =
+  let errors =
+    validate_errors (raw_with_priority_spine [ node_id "succ"; node_id "succ" ])
+  in
+  has_error
+    (function
+      | Duplicate_priority_spine_member id -> Node_id.to_string id = "succ"
+      | _ -> false)
+    errors
+
+let () =
+  let errors =
+    validate_errors (raw_with_priority_spine [ node_id "succ"; node_id "missing" ])
+  in
+  has_error
+    (function
+      | Priority_spine_node_missing id -> Node_id.to_string id = "missing"
+      | _ -> false)
+    errors
+
+let () =
+  let errors =
+    validate_errors (raw_with_priority_spine [ node_id "succ"; node_id "param" ])
+  in
+  has_error
+    (function
+      | Priority_spine_member_not_executable { node_id; kind = Parameter _ } ->
+          Node_id.to_string node_id = "param"
+      | _ -> false)
+    errors
+
+let () =
+  let errors =
+    validate_errors (raw_with_priority_spine [ node_id "succ"; node_id "result" ])
+  in
+  has_error
+    (function
+      | Priority_spine_member_not_executable { node_id; kind = Result _ } ->
+          Node_id.to_string node_id = "result"
+      | _ -> false)
+    errors
+
+let () =
+  let errors =
+    validate_errors (raw_with_priority_spine [ node_id "succ"; node_id "lit" ])
+  in
+  has_error
+    (function
+      | Priority_spine_member_not_executable { node_id; kind = Nat_literal _ } ->
+          Node_id.to_string node_id = "lit"
+      | _ -> false)
+    errors
+
 let copy_unit_graph ?(default_node_order = [ node_id "copy"; node_id "drop" ])
     ?(nodes =
       [
@@ -464,6 +553,7 @@ let copy_unit_graph ?(default_node_order = [ node_id "copy"; node_id "drop" ])
   Raw_graph.of_lists ~nodes ~edges ~default_node_order
 
 let copy_nat_graph ?(default_node_order = [ node_id "copy"; node_id "drop" ])
+    ?priority_spine
     ?(nodes =
       [
         node "param" (Parameter Core_type.Nat);
@@ -478,7 +568,8 @@ let copy_nat_graph ?(default_node_order = [ node_id "copy"; node_id "drop" ])
         edge "e-copy-right-drop" (pref "copy" "right") (pref "drop" "input");
       ])
     () =
-  Raw_graph.of_lists ~nodes ~edges ~default_node_order
+  Raw_graph.of_lists_with_priority_spine ~nodes ~edges ~default_node_order
+    ~priority_spine
 
 let () =
   match validate (copy_unit_graph ()) with
@@ -497,6 +588,14 @@ let () =
 let () =
   match validate (copy_nat_graph ()) with
   | Ok _ -> ()
+  | Error _ -> assert false
+
+let () =
+  match validate (copy_nat_graph ~priority_spine:[ node_id "copy"; node_id "drop" ] ()) with
+  | Ok graph ->
+      assert (
+        Option.map (List.map Node_id.to_string) (Validated_graph.priority_spine graph)
+        = Some [ "copy"; "drop" ])
   | Error _ -> assert false
 
 let () =

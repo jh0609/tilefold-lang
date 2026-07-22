@@ -12,6 +12,7 @@ It does not implement `Copy`, `Function`, closures, `Apply`, runtime instances,
 packages, `.tfold` parsing, canonical JSON serialization, `GraphSnapshot`,
 full provenance schemas, resource budgets, or a semantics version. Decision
 0011 later extends the same interpreter slice with `Copy Unit` and `Copy Nat`.
+Decision 0012 later adds static `PrioritySpine` scheduling to the same slice.
 
 ## Context
 

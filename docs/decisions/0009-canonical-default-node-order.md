@@ -125,6 +125,9 @@ Decision 0010 implements the first runtime use of `default_node_order` as the
 fallback selection key after `ready_epoch` for `Succ` and `Drop`. Decision
 0011 extends that runtime use to `Copy`.
 
+Decision 0012 implements `PrioritySpine` as a same-epoch priority layer above
+this fallback order.
+
 ## Not Decided
 
 This decision does not define:
