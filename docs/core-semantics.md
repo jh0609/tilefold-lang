@@ -44,6 +44,13 @@ identifiers and folded-block correspondence data.
 The graph must not contain visualization-only information such as coordinates,
 colors, sizes, icons, or animation timing.
 
+Surface geometry may carry language meaning before desugaring, but only after
+it has been resolved into symbolic Surface relations such as connections,
+containment, binding, branching, or explicitly defined slots. Core receives the
+validated typed graph produced from those relations. It does not read pixel
+position, zoom, viewport, screen size, line curvature, visual spacing,
+automatic layout results, antialiasing, or hitbox details.
+
 ## Tiles, Ports, Connections, and Values
 
 Tiles are graph nodes that participate in validation and rewrite rules.
@@ -121,6 +128,12 @@ In call-by-value evaluation, an application evaluates the function position and
 argument value before applying the function. The exact deterministic scheduling
 policy for independent ready subgraphs is still open, but it must preserve
 strict call-by-value behavior and canonical trace generation.
+
+Render position is not an input to deterministic rewrite selection. Pixel
+top-to-bottom or left-to-right order is not an execution policy. If Surface
+spatial manipulation later expresses ordering, it must first desugar into an
+explicit symbolic relation recorded in the canonical program and semantics
+profile.
 
 Core v0 excludes shared mutable state, cells, and effects. It also excludes
 arbitrary recursion, unbounded `while`, and unbounded `goto`.

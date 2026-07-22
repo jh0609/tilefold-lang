@@ -16,6 +16,13 @@ Engine implementation configuration may be recorded for diagnostics, but it
 must not be required to explain observable semantics. Visualization
 configuration is outside the standard trace.
 
+Pixel layout, zoom, viewport, screen resolution, device size, line curvature,
+visual spacing, animation paths, animation timing, automatic layout output,
+antialiasing, and hitbox details are not part of the standard trace. If Surface
+geometry affects program meaning, the trace and canonical program must refer to
+the resolved symbolic relation, not the renderer coordinates that helped create
+it.
+
 ## GraphSnapshot
 
 A `GraphSnapshot` records a canonical representation of a graph at a point in
@@ -164,6 +171,9 @@ colors, easing curves, frame timing, or animation paths.
 
 Visualization tools may derive animations from trace events, but those
 animations are not part of Tilefold semantics.
+
+Summary, standard, and diagnostic trace views must not create different
+semantic traces by including layout-dependent execution meaning.
 
 ## If Nondeterminism Is Allowed Later
 

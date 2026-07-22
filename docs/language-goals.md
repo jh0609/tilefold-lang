@@ -28,6 +28,11 @@ execution model. A program should be explainable as a sequence of local graph
 rewrites, and that sequence should be reproducible from the program, inputs,
 semantics version, and execution policy.
 
+Geometry may be part of Tilefold Surface syntax, but only through discrete
+symbolic spatial relations that can be validated, serialized, compared, and
+desugared. The Core engine does not interpret pixel coordinates or renderer
+layout directly.
+
 ## Tiles and Connections
 
 A Tilefold program is a finite graph of typed tiles and typed connections.
@@ -74,6 +79,10 @@ correspondence, types, runtime instance identity, and the standard trace.
 
 Shape color, coordinates, icons, outlines, and visual form are visualization
 metadata, not Core semantics.
+
+For folded function blocks, position and size are also outside Core semantics.
+Typed external port correspondence, capture correspondence, and template ID are
+the semantic parts that must survive fold, unfold, and layout changes.
 
 ## Execution Transparency
 
@@ -125,6 +134,7 @@ This stage does not define or implement:
 - performance optimizations,
 - arbitrary recursion,
 - concrete `.tfold` file syntax,
+- final Surface shape grammar or symbolic spatial relation schema,
 - final rewrite rules for Core v0 primitive candidates,
 - coordinates, colors, iconography, animation timing, or graphical layout.
 

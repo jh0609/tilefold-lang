@@ -30,7 +30,8 @@ a frozen semantics version.
 This resolves the broad direction of questions 1 and 2 below, but it does not
 settle concrete port schemas, rewrite rules, trace schemas, canonical
 serialization, deterministic rewrite selection, function template ID
-serialization, canonical template hashing, error modeling, or the formal
+serialization, canonical template hashing, symbolic spatial relation schemas,
+Surface shape grammar, rotation semantics, error modeling, or the formal
 termination proof.
 
 ## 1. Which details of the Core v0 primitive candidates are normative?
@@ -235,3 +236,103 @@ termination proof.
   mapping.
 - Recommendation: Keep Surface shape grammar open until Core template and
   canonical serialization details are firmer.
+
+## 9. What is the exact symbolic spatial relation schema?
+
+- Question: Which discrete spatial relations are part of Tilefold Surface
+  language semantics?
+- Alternatives:
+  - A small fixed schema with `Connect`, `Contain`, `Bind`, and `Branch`.
+  - An extensible typed relation schema.
+  - Separate relation schemas for visual editing and canonical Surface
+    serialization.
+- Advantages:
+  - Fixed schema: simpler validation and conformance.
+  - Extensible schema: easier to grow Surface syntax.
+  - Separate schemas: can keep editor gestures flexible.
+- Disadvantages:
+  - Fixed schema: may be too rigid for future visual constructs.
+  - Extensible schema: more compatibility surface.
+  - Separate schemas: requires exact mapping rules.
+- Impact on termination: Relation desugaring must only produce terminating Core
+  constructs.
+- Impact on execution transparency: Every meaningful spatial relation must have
+  canonical nonvisual representation.
+- Impact on future compatibility: Stored programs, tests, and visualizers depend
+  on the relation schema.
+- Recommendation: Keep the exact schema open while treating `Connect`,
+  `Contain`, `Bind`, and `Branch` as candidate relation forms.
+
+## 10. Is rotation semantic or visual-only?
+
+- Question: Does rotating a shape change Surface meaning, or is it only
+  visualization metadata?
+- Alternatives:
+  - Rotation is visualization only.
+  - Rotation selects or reorders visible port roles before relation resolution.
+  - Rotation is allowed only for shapes whose grammar declares semantic
+    orientation.
+- Advantages:
+  - Visual-only: simplest Core and conformance story.
+  - Port-role selection: may support expressive visual editing.
+  - Declared orientation: avoids accidental meaning changes.
+- Disadvantages:
+  - Visual-only: may limit geometric expressiveness.
+  - Port-role selection: risks hidden meaning if not serialized clearly.
+  - Declared orientation: increases shape grammar complexity.
+- Impact on termination: Usually indirect, through desugaring.
+- Impact on execution transparency: If semantic, rotation must become a stable
+  symbolic relation or port correspondence, not a pixel transform.
+- Impact on future compatibility: Rotation rules affect Surface file
+  compatibility and visualizer behavior.
+- Recommendation: Keep open until Surface shape grammar is defined.
+
+## 11. Can Surface spatial relations express execution order?
+
+- Question: Should spatial constructs such as `Before`, `Priority`, or
+  `Sequence` ever influence execution order?
+- Alternatives:
+  - No spatial ordering relation in Core v0.
+  - Add explicit Surface-only ordering relations that desugar to existing Core
+    structure.
+  - Add future Core constructs for ordering if a semantics version requires
+    them.
+- Advantages:
+  - No ordering relation: preserves current open deterministic rewrite policy.
+  - Surface-only relations: can express user intent without pixel ordering.
+  - Future Core constructs: could make ordering first-class if needed.
+- Disadvantages:
+  - No ordering relation: less visual control over scheduling.
+  - Surface-only relations: desugaring must be carefully specified.
+  - Future Core constructs: expands semantics and conformance burden.
+- Impact on termination: Any ordering construct must preserve total execution.
+- Impact on execution transparency: Ordering must be explicit and recorded in
+  the canonical program and semantics profile.
+- Impact on future compatibility: Introducing ordering changes trace behavior
+  and must not happen silently under an existing semantics version.
+- Recommendation: Keep `transparent-v0` deterministic rewrite selection Open
+  and do not add `Before`, `Priority`, or `Sequence` as Core primitives now.
+
+## 12. How much editor behavior is standardized?
+
+- Question: Which parts of snapping, hit testing, collision detection, and drag
+  thresholds should be standardized?
+- Alternatives:
+  - Treat all such behavior as editor implementation detail.
+  - Standardize only the final symbolic relation output.
+  - Standardize selected gestures for cross-editor consistency.
+- Advantages:
+  - Implementation detail: keeps Core and Surface semantics clean.
+  - Final relation output: supports conformance without constraining UI.
+  - Selected gestures: may improve user portability between editors.
+- Disadvantages:
+  - Implementation detail: editors may feel different.
+  - Final relation output: still requires canonical relation schemas.
+  - Selected gestures: risks turning UI mechanics into language semantics.
+- Impact on termination: No direct effect.
+- Impact on execution transparency: Only final symbolic relations should affect
+  program meaning.
+- Impact on future compatibility: Over-standardizing UI behavior may burden
+  future visualizers.
+- Recommendation: Standardize canonical symbolic relations first, not editor
+  gesture mechanics.

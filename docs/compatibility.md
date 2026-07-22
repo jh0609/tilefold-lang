@@ -22,12 +22,21 @@ OCaml reference engine on the relevant public behavior for the same:
 
 Conformance must not depend on implementation details such as memory layout,
 hash table traversal order, thread scheduling, or host-specific process state.
+It also must not depend on pixel coordinates, renderer layout, zoom, viewport,
+screen resolution, device size, line curvature, visual spacing, animation
+timing, automatic layout output, antialiasing, or hitbox implementation
+details.
 
 Immutable function template sharing is an implementation detail. Conformance
 targets logical template identity, closure identity, runtime instance identity,
 and standard trace behavior. An optimized engine may physically share template
 payloads, but it must not merge distinct logical runtime instances or change
 graph snapshots and trace events.
+
+Layout-independent conformance compares canonical symbolic Surface relations,
+validated Core graphs, standard traces, and observable results. Moving or
+automatically laying out shapes without changing symbolic relations must not
+change conformance results.
 
 ## Same Trace vs Same Observable Result
 
