@@ -33,6 +33,12 @@ conformance suite. Its completed-run view records:
 The CLI `--trace` option now prints this canonical conformance view. The
 normal CLI summary remains unchanged.
 
+The current golden fixture suite names nested and higher-order structures
+explicitly. In addition to primitive and package-result fixtures, it includes
+`nested-apply`, `nested-natrec`, and `arrow-accumulator` fixtures so failures
+identify whether nested call scheduling, nested primitive recursion, or
+function-valued accumulator behavior changed.
+
 ## Exclusions
 
 The canonical conformance view is not:

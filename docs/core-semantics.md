@@ -811,6 +811,14 @@ result is weaker than same canonical trace: two runs may compute the same value
 but fail conformance if their event order, identities, provenance, or closure
 captures differ.
 
+The explicit fixture set includes `succ`, `copy-drop`, `function-closure`,
+`ordinary-apply`, `nested-apply`, `natrec-count-0`, `natrec-count-1`,
+`natrec-count-3`, `nested-natrec`, `arrow-accumulator`,
+`higher-order-function`, `higher-order-apply`, `add`, `multiply`, and
+ProgramPackage results for `Unit`, `Nat`, and Arrow types. Each fixture compares
+the complete canonical trace from two independent executions, not only the final
+result.
+
 ## Primitive Tile List
 
 The Core v0 primitive candidate list is `Unit`, `Nat(n)`, `Succ`, `Function`,

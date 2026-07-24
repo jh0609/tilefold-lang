@@ -231,6 +231,25 @@ let payload_string value =
 
 let rules trace = List.map (fun event -> Rewrite_event.rule_to_string event.Rewrite_event.rule) trace
 
+let rule_count rule trace =
+  trace
+  |> List.filter (fun event ->
+         String.equal (Rewrite_event.rule_to_string event.Rewrite_event.rule) rule)
+  |> List.length
+
+let canonical_completed (execution : P.completed_execution) =
+  Canonical_trace.render_completed execution.machine execution.value
+
+let contains_substring haystack needle =
+  let haystack_length = String.length haystack in
+  let needle_length = String.length needle in
+  let rec loop index =
+    if index + needle_length > haystack_length then false
+    else if String.equal (String.sub haystack index needle_length) needle then true
+    else loop (index + 1)
+  in
+  needle_length = 0 || loop 0
+
 let assert_indexes name trace =
   trace
   |> List.iteri (fun index event ->
@@ -258,6 +277,18 @@ let assert_canonical_fixture name package expected_type expected_payload
   assert (String.starts_with ~prefix:"semantics_profile: transparent-v0" canonical);
   assert (String.contains canonical 'p');
   ignore name
+
+let assert_canonical_fixture_with name package expected_type expected_payload check =
+  let first = run_completed package in
+  let second = run_completed package in
+  assert (Core_type.to_string (Runtime_value.typ first.value) = expected_type);
+  assert (payload_string first.value = expected_payload);
+  assert_indexes name first.trace;
+  let first_canonical = canonical_completed first in
+  let second_canonical = canonical_completed second in
+  if not (String.equal first_canonical second_canonical) then
+    failwith (name ^ ": canonical trace is not deterministic");
+  check first first_canonical
 
 let () =
   assert_canonical_fixture "program-unit" (package_of_entry (unit_entry ()) Core_type.Unit)
@@ -317,6 +348,42 @@ let () =
   assert_canonical_fixture "higher-order-apply"
     (P.Examples.higher_order_apply ()) "Nat" "Nat(5)"
     (rules (run_completed (P.Examples.higher_order_apply ())).trace)
+
+let () =
+  assert_canonical_fixture_with "nested-apply"
+    (P.Examples.higher_order_apply ()) "Nat" "Nat(5)"
+    (fun completed canonical ->
+      if rule_count "ApplyEnter" completed.trace < 4 then
+        failwith "nested-apply: expected nested ApplyEnter events";
+      if rule_count "ApplyReturn" completed.trace < 4 then
+        failwith "nested-apply: expected nested ApplyReturn events";
+      if not (contains_substring canonical "Call(parent=Call") then
+        failwith "nested-apply: canonical trace should include nested call instance IDs")
+
+let () =
+  assert_canonical_fixture_with "nested-natrec"
+    (P.Examples.multiply ()) "Nat" "Nat(6)"
+    (fun completed canonical ->
+      if rule_count "NatRecStart" completed.trace < 2 then
+        failwith "nested-natrec: expected more than one NatRecStart";
+      if rule_count "NatRecComplete" completed.trace < 2 then
+        failwith "nested-natrec: expected more than one NatRecComplete";
+      if not (contains_substring canonical "natrec_iteration=") then
+        failwith "nested-natrec: canonical trace should include NatRec details")
+
+let () =
+  assert_canonical_fixture_with "arrow-accumulator"
+    (P.Examples.higher_order_function ()) "Nat -> Nat"
+    "Closure(example-higher-wrapper)"
+    (fun completed canonical ->
+      if rule_count "NatRecStart" completed.trace <> 1 then
+        failwith "arrow-accumulator: expected one NatRecStart";
+      if rule_count "NatRecComplete" completed.trace <> 1 then
+        failwith "arrow-accumulator: expected one NatRecComplete";
+      if not (contains_substring canonical "type=Nat -> Nat") then
+        failwith "arrow-accumulator: canonical trace should include Arrow type";
+      if not (contains_substring canonical "payload=Closure") then
+        failwith "arrow-accumulator: canonical trace should include closure values")
 
 let () =
   assert_canonical_fixture "natrec-count-0"
