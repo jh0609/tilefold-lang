@@ -1,6 +1,7 @@
 module Core_graph = Core_graph
 module Core_type = Core_type
 module Engine = Engine
+module Linear_v0 = Linear_v0
 module Nat = Nat
 module Rewrite_event = Rewrite_event
 module Runtime_value = Runtime_value

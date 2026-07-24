@@ -140,6 +140,7 @@ trace semantics.
 | `step-limit` | `external-forced-termination` |
 | `evaluation-order` | `source-order-left-to-right-arguments` |
 | `trace` | `ownership-and-lineage-observable` |
+| `initial-implementation-scope` | `pure-AST-static-checker-and-runtime-slice` |
 
 ## Design Points
 

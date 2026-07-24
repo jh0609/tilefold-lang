@@ -8,6 +8,11 @@ limits. It does not replace `transparent-v0` or Tilefold Core v0. It is not
 currently specified as a layer that compiles to Tilefold Core v0; compilation
 or meaning-preserving translation between the profiles is deferred.
 
+Implementation note: `docs/decisions/0015-linear-v0-first-static-and-runtime-slice.md`
+records the first OCaml vertical slice. That slice implements a checked pure
+subset and does not yet implement parser support, loops, closures, recursion
+step limits, World effects, or resource operations.
+
 ## 1. Goals and Non-Goals
 
 The goal of `linear-v0` is to make every runtime value's creation, movement,
