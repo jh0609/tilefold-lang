@@ -102,9 +102,16 @@ type run_result =
       trace : Rewrite_event.t list;
     }
 
+type completed_execution = {
+  value : Runtime_value.t;
+  machine : Engine.Machine.t;
+  trace : Rewrite_event.t list;
+}
+
 val initialize : t -> (Engine.Machine.t, execution_error) result
 val step : Engine.Machine.t -> Engine.step_result
 val run : ?step_limit:Nat.t -> t -> run_result
+val run_completed : ?step_limit:Nat.t -> t -> (completed_execution, run_result) result
 val result_value : t -> Engine.Machine.t -> (Runtime_value.t, execution_error) result
 val validation_error_to_string : validation_error -> string
 val execution_error_to_string : execution_error -> string

@@ -183,8 +183,9 @@ Still open:
   (Arrow _)` is supported for closure payloads. NatRec's current graph schema,
   lifecycle scheduling, trace rules, and bounded primitive recursion behavior
   are recorded in Decision 0022. Directed value dependency cycles are rejected
-  by Decision 0024. Keep final canonical serialization, broader productivity
-  policy, and full trace schema details open.
+  by Decision 0024. A provisional canonical trace conformance view is
+  implemented by Decision 0025. Keep final public serialization, broader
+  productivity policy, and full trace schema details open.
 
 ## 2. How are immutable logical values represented?
 

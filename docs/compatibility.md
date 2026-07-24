@@ -133,6 +133,14 @@ accumulator handoff, and execute the generated closure only through ordinary
 generated closure chain and visible `Succ` rewrites, not through host arithmetic
 or hidden function application.
 
+Canonical trace conformance is now checked with the `transparent-v0`
+canonical conformance view. Fixtures cover `Succ`, `Copy`, `Drop`, Function
+closure creation, ordinary and nested Apply, NatRec counts `0`, `1`, and `3`,
+nested NatRec, Arrow accumulator NatRec, higher-order function results,
+higher-order Apply, and ProgramPackage results of `Unit`, `Nat`, and Arrow
+types. A conforming engine must reproduce the same canonical view for the same
+validated package and input, not only the same final result.
+
 For future checkpoint and replay support, conformance must distinguish semantic
 trace from execution-management provenance. Creating a checkpoint, pausing,
 resuming, forking, selecting a join representative, aliasing a branch, or

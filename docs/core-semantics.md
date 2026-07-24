@@ -797,6 +797,20 @@ directions include:
 
 This document does not claim a machine-checked termination or totality proof.
 
+## Conformance Trace Fixtures
+
+Current conformance tests use a canonical semantic trace view for completed
+`transparent-v0` runs. The view records the final result and every committed
+rewrite event with instance, node, ready epoch, consumed/used/produced values,
+payloads, origins, closure template IDs, and closure capture IDs.
+
+The view fixes the observable behavior of the current rewrite subset for test
+fixtures. It does not define a final public trace serialization format,
+semantics version, package format, or replay/checkpoint format. Same final
+result is weaker than same canonical trace: two runs may compute the same value
+but fail conformance if their event order, identities, provenance, or closure
+captures differ.
+
 ## Primitive Tile List
 
 The Core v0 primitive candidate list is `Unit`, `Nat(n)`, `Succ`, `Function`,

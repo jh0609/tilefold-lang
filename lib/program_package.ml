@@ -390,6 +390,12 @@ type run_result =
       trace : Rewrite_event.t list;
     }
 
+type completed_execution = {
+  value : Runtime_value.t;
+  machine : Engine.Machine.t;
+  trace : Rewrite_event.t list;
+}
+
 let initialize package =
   Engine.initialize_with_templates_and_program_literals (templates package)
     package.launcher_graph
@@ -454,6 +460,46 @@ let run ?step_limit package =
                     error = Runtime_error error;
                     trace = Engine.Machine.trace_events machine;
                   })
+      in
+      loop Nat.zero machine
+
+let run_completed ?step_limit package =
+  match initialize package with
+  | Error error -> Error (Run_error { error; trace = [] })
+  | Ok machine ->
+      let limit_reached executed =
+        match step_limit with
+        | Some limit -> Nat.compare executed limit >= 0
+        | None -> false
+      in
+      let rec loop executed machine =
+        if limit_reached executed then
+          Error
+            (Step_limit_exceeded
+               {
+                 limit = Option.get step_limit;
+                 executed_steps = executed;
+                 trace = Engine.Machine.trace_events machine;
+               })
+        else
+          match Engine.step machine with
+          | Engine.Completed value ->
+              Ok
+                {
+                  value;
+                  machine;
+                  trace = Engine.Machine.trace_events machine;
+                }
+          | Engine.Stuck reason ->
+              Error (Stuck { reason; trace = Engine.Machine.trace_events machine })
+          | Engine.Runtime_error error ->
+              Error
+                (Run_error
+                   {
+                     error = Runtime_error error;
+                     trace = Engine.Machine.trace_events machine;
+                   })
+          | Engine.Rewritten { machine; _ } -> loop (Nat.succ executed) machine
       in
       loop Nat.zero machine
 

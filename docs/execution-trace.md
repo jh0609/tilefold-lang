@@ -231,6 +231,28 @@ order can be reconstructed from the validated graph's `PrioritySpine`, the
 validated graph's `default_node_order`, each event's `ready_epoch`, and each
 event's subject node.
 
+## Canonical Conformance View
+
+Status: Provisional and implemented for current conformance tests.
+
+The OCaml reference engine exposes `Canonical_trace.render_completed` as a
+canonical semantic trace view for completed `transparent-v0` runs. It includes
+the semantics profile, final result, event count, event index, rewrite rule,
+active instance ID, subject node ID, ready epoch, consumed value references,
+non-consuming used value references, produced values, value type, payload,
+origin, closure template ID, ordered closure capture IDs, and callee instance
+identity for Apply and NatRec call events.
+
+This view is intended for byte-for-byte conformance fixtures. It is not a
+public trace serialization format and does not freeze the final rendering of
+logical IDs, instance IDs, or origins. It excludes host timestamps, object
+addresses, execution duration, checkpoint/pause/resume/fork/join provenance,
+debugger UI state, and other execution-management metadata.
+
+The CLI `--trace` option prints this canonical conformance view. The shorter
+`Rewrite_event.to_string` rendering remains a diagnostic helper and must not be
+treated as the canonical identity of an event.
+
 For example, if `default_node_order = [copy; drop; succ]` and
 `priority_spine = [succ]`, then a `Copy` event that makes both `drop` and
 `succ` ready at epoch `1` is followed by `succ` before `drop`. Without the

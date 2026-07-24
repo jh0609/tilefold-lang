@@ -1,3 +1,10 @@
 (tests
- (names test_scaffold test_nat test_core_graph test_engine test_program_package test_linear_v0)
+ (names
+  test_scaffold
+  test_nat
+  test_core_graph
+  test_engine
+  test_program_package
+  test_canonical_trace
+  test_linear_v0)
  (libraries tilefold zarith))

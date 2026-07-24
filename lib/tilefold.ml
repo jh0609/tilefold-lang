@@ -1,5 +1,6 @@
 module Core_graph = Core_graph
 module Core_type = Core_type
+module Canonical_trace = Canonical_trace
 module Engine = Engine
 module Linear_v0 = Linear_v0
 module Nat = Nat
