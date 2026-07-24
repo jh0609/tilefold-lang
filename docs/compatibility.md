@@ -38,6 +38,13 @@ validated Core graphs, standard traces, and observable results. Moving or
 automatically laying out shapes without changing symbolic relations must not
 change conformance results.
 
+For the current Surface symbolic relation v1 boundary, conforming
+implementations must agree on validation and lowering for `Connect`, `Contain`,
+`Bind`, and ordered data-fan-out `Branch`. `Branch` lowers to explicit Core
+`Copy` structure and is not a conditional or control-flow relation. Geometry,
+hit testing, editor layout, and renderer-specific state remain outside
+conformance.
+
 For `transparent-v0`, identical canonical scheduling metadata must produce the
 same rewrite order and standard trace on conforming engines. `PrioritySpine`
 metadata is conformance-relevant when present. Pixel or render position is not.

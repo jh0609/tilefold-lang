@@ -58,6 +58,15 @@ validated typed graph produced from those relations. It does not read pixel
 position, zoom, viewport, screen size, line curvature, visual spacing,
 automatic layout results, antialiasing, or hitbox details.
 
+The current `transparent-v0` reference engine implements a minimal
+`Surface_symbolic` relation layer for `Connect`, `Contain`, `Bind`, and
+data-fan-out `Branch`. The layer validates raw symbolic relations, lowers only
+validated relations into existing Core graphs and ProgramPackages, and then
+reuses the existing Core and package validators. `Branch` is not conditional
+control flow; it lowers to explicit `Copy` nodes. This does not define a
+Surface geometry recognizer, editor project file, or public symbolic relation
+serialization format.
+
 ## Tiles, Ports, Connections, and Values
 
 Tiles are graph nodes that participate in validation and rewrite rules.

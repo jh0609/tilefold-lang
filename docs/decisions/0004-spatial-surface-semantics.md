@@ -42,7 +42,10 @@ Symbolic relations that may carry meaning include:
 - `Branch(copy-output-role, consumer-port)`
 - explicitly defined order or slot relations, if they are added later.
 
-The exact Surface relation schema is not finalized by this decision.
+The exact Surface relation schema is not finalized by this decision. Decision
+0027 later implements a v1 symbolic relation layer for `Connect`, `Contain`,
+`Bind`, and data-fan-out `Branch` without adding geometry recognition or editor
+UI.
 
 Rendering information excluded from Core semantics includes:
 
@@ -109,7 +112,8 @@ These categories must remain separate.
 
 This decision does not define:
 
-- the exact symbolic spatial relation schema,
+- the exact symbolic spatial relation schema beyond the later provisional v1
+  relation layer in Decision 0027,
 - Surface shape grammar,
 - whether rotation changes Surface meaning,
 - any `Before`, `Priority`, or `Sequence` Core primitive,

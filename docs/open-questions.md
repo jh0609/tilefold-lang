@@ -369,8 +369,13 @@ Still open:
 
 - Question: Which discrete spatial relations are part of Tilefold Surface
   language semantics?
+- Current status: Partially answered for the current `transparent-v0`
+  reference-engine slice. Decision 0027 implements v1 raw/validated
+  `Surface_symbolic` relations for `Connect`, `Contain`, `Bind`, and
+  data-fan-out `Branch`, with deterministic lowering to ProgramPackage.
 - Alternatives:
-  - A small fixed schema with `Connect`, `Contain`, `Bind`, and `Branch`.
+  - The implemented v1 fixed schema with `Connect`, `Contain`, `Bind`, and
+    data-fan-out `Branch`.
   - An extensible typed relation schema.
   - Separate relation schemas for visual editing and canonical Surface
     serialization.
@@ -388,8 +393,9 @@ Still open:
   canonical nonvisual representation.
 - Impact on future compatibility: Stored programs, tests, and visualizers depend
   on the relation schema.
-- Recommendation: Keep the exact schema open while treating `Connect`,
-  `Contain`, `Bind`, and `Branch` as candidate relation forms.
+- Recommendation: Use the implemented v1 schema for current conformance tests.
+  Keep public Surface persistence, geometry inference, relation extensibility,
+  and any future control-flow relation schema open.
 
 ## 10. Is rotation semantic or visual-only?
 
