@@ -684,9 +684,35 @@ let template_id value =
 
 let capture name typ = { key = Port_key.capture name; typ }
 
-let template_body ?(result_type = Core_type.Nat)
-    ?(default_node_order = [ node_id "body-drop" ])
+let template_body ?(captures = []) ?(result_type = Core_type.Nat)
+    ?default_node_order
     () =
+  let capture_nodes =
+    captures
+    |> List.mapi (fun index capture ->
+           [
+             node ("body-capture-" ^ string_of_int index) (Capture capture);
+             node ("body-capture-drop-" ^ string_of_int index) (Drop capture.typ);
+           ])
+    |> List.flatten
+  in
+  let capture_edges =
+    captures
+    |> List.mapi (fun index _capture ->
+           edge
+             ("body-e-capture-drop-" ^ string_of_int index)
+             (pref ("body-capture-" ^ string_of_int index) "value")
+             (pref ("body-capture-drop-" ^ string_of_int index) "input"))
+  in
+  let default_node_order =
+    match default_node_order with
+    | Some order -> order
+    | None ->
+        [ node_id "body-drop" ]
+        @ List.mapi
+            (fun index _ -> node_id ("body-capture-drop-" ^ string_of_int index))
+            captures
+  in
   let nodes =
     [
       node "body-param" (Parameter Core_type.Unit);
@@ -694,12 +720,14 @@ let template_body ?(result_type = Core_type.Nat)
       node "body-lit" (Nat_literal (nat "7"));
       node "body-result" (Result result_type);
     ]
+    @ capture_nodes
   in
   let edges =
     [
       edge "body-e-param-drop" (pref "body-param" "value") (pref "body-drop" "input");
       edge "body-e-lit-result" (pref "body-lit" "value") (pref "body-result" "value");
     ]
+    @ capture_edges
   in
   validate
     (Raw_graph.of_lists ~nodes ~edges ~default_node_order)
@@ -715,11 +743,19 @@ let fn_template ?(id = "f") ?(captures = []) ?(parameter_type = Core_type.Unit)
   let body =
     match body with
     | Some body -> body
-    | None -> template_body ~result_type ()
+    | None -> template_body ~captures ~result_type ()
   in
   let dependencies = Option.value dependencies ~default:[] in
   Function_template.create ~dependencies:(List.map template_id dependencies)
     ~id:(template_id id) ~parameter_type ~result_type ~captures ~body ()
+
+let function_signature template captures =
+  {
+    template_id = Function_template.id template;
+    parameter_type = Function_template.parameter_type template;
+    result_type = Function_template.result_type template;
+    captures;
+  }
 
 let function_graph ?(function_captures : capture list option) ?(template = fn_template ())
     ?(default_node_order = [ node_id "function"; node_id "drop" ])
@@ -993,3 +1029,254 @@ let () =
           true
       | _ -> false)
     errors
+
+let valid_apply_raw template ?(edges_extra = []) ?(edges_drop = []) ?priority_spine
+    ?(default_node_order = [ node_id "function"; node_id "apply"; node_id "drop-param" ])
+    () =
+  let signature = function_signature template [] in
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop-param" (Drop Core_type.Unit);
+      node "function" (Function signature);
+      node "argument" Unit_literal;
+      node "apply"
+        (Apply { apply_parameter_type = Core_type.Unit; apply_result_type = Core_type.Nat });
+      node "result" (Result Core_type.Nat);
+    ]
+  in
+  let base_edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop-param" "input");
+      edge "e-function-apply" (pref "function" "value")
+        { node_id = node_id "apply"; port_key = Port_key.function_input };
+      edge "e-argument-apply" (pref "argument" "value")
+        { node_id = node_id "apply"; port_key = Port_key.argument };
+      edge "e-apply-result" { node_id = node_id "apply"; port_key = Port_key.result }
+        (pref "result" "value");
+    ]
+  in
+  let edges =
+    base_edges
+    |> List.filter (fun edge ->
+           not (List.exists (fun id -> Edge_id.to_string edge.id = id) edges_drop))
+    |> fun edges -> edges @ edges_extra
+  in
+  Raw_graph.of_lists_with_priority_spine ~nodes ~edges ~default_node_order
+    ~priority_spine
+
+let () =
+  let template = fn_template () in
+  let errors =
+    validate_with_template_errors [ template ]
+      (valid_apply_raw template ~edges_drop:[ "e-argument-apply" ] ())
+  in
+  has_error
+    (function
+      | Input_port_connection_count { node_id; port_key; actual = 0; _ } ->
+          Node_id.to_string node_id = "apply"
+          && Port_key.to_string port_key = "argument"
+      | _ -> false)
+    errors
+
+let () =
+  let template = fn_template () in
+  let duplicate =
+    edge "e-argument-apply-2" (pref "argument" "value")
+      { node_id = node_id "apply"; port_key = Port_key.argument }
+  in
+  let errors =
+    validate_with_template_errors [ template ]
+      (valid_apply_raw template ~edges_extra:[ duplicate ] ())
+  in
+  has_error
+    (function
+      | Input_port_connection_count { node_id; port_key; actual = 2; _ } ->
+          Node_id.to_string node_id = "apply"
+          && Port_key.to_string port_key = "argument"
+      | _ -> false)
+    errors
+
+let () =
+  let template = fn_template () in
+  let errors =
+    validate_with_template_errors [ template ]
+      (valid_apply_raw template ~default_node_order:[ node_id "function"; node_id "drop-param" ] ())
+  in
+  has_error
+    (function
+      | Executable_node_missing_from_default_order id ->
+          Node_id.to_string id = "apply"
+      | _ -> false)
+    errors
+
+let () =
+  let template = fn_template () in
+  let errors =
+    validate_with_template_errors [ template ]
+      (valid_apply_raw template
+         ~default_node_order:
+           [ node_id "function"; node_id "apply"; node_id "apply"; node_id "drop-param" ]
+         ())
+  in
+  has_error
+    (function
+      | Duplicate_default_order_member id -> Node_id.to_string id = "apply"
+      | _ -> false)
+    errors
+
+let () =
+  let template = fn_template () in
+  let errors =
+    validate_with_template_errors [ template ]
+      (valid_apply_raw template ~priority_spine:[ node_id "missing" ] ())
+  in
+  has_error (function Priority_spine_node_missing _ -> true | _ -> false) errors
+
+let () =
+  let template_a = fn_template ~id:"a" ~dependencies:[ "b" ] () in
+  let template_b = fn_template ~id:"b" ~dependencies:[ "a" ] () in
+  let errors =
+    validate_with_template_errors [ template_a; template_b ]
+      (function_graph ~template:template_a ())
+  in
+  has_error (function Function_template_cycle _ -> true | _ -> false) errors
+
+let () =
+  let template = fn_template () in
+  let signature = function_signature template [] in
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop-param" (Drop Core_type.Unit);
+      node "function" (Function signature);
+      node "argument" Unit_literal;
+      node "apply"
+        (Apply { apply_parameter_type = Core_type.Unit; apply_result_type = Core_type.Nat });
+      node "result" (Result Core_type.Nat);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop-param" "input");
+      edge "e-function-apply" (pref "function" "value")
+        { node_id = node_id "apply"; port_key = Port_key.function_input };
+      edge "e-argument-apply" (pref "argument" "value")
+        { node_id = node_id "apply"; port_key = Port_key.argument };
+      edge "e-apply-result" { node_id = node_id "apply"; port_key = Port_key.result }
+        (pref "result" "value");
+    ]
+  in
+  match
+    validate_with_templates [ template ]
+      (Raw_graph.of_lists ~nodes ~edges
+         ~default_node_order:[ node_id "function"; node_id "apply"; node_id "drop-param" ])
+  with
+  | Ok graph ->
+      assert (
+        match Validated_graph.port_schema graph (node_id "apply") with
+        | Some ports ->
+            List.map (fun port -> Port_key.to_string port.key) ports
+            = [ "function"; "argument"; "result" ]
+        | None -> false)
+  | Error errors ->
+      failwith
+        ("expected Apply graph to validate, got: "
+        ^ String.concat "; " (List.map validation_error_to_string errors))
+
+let () =
+  let template = fn_template () in
+  let signature = function_signature template [] in
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop-param" (Drop Core_type.Unit);
+      node "bad-function" (Nat_literal (nat "1"));
+      node "argument" Unit_literal;
+      node "apply"
+        (Apply { apply_parameter_type = Core_type.Unit; apply_result_type = Core_type.Nat });
+      node "result" (Result Core_type.Nat);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop-param" "input");
+      edge "e-function-apply" (pref "bad-function" "value")
+        { node_id = node_id "apply"; port_key = Port_key.function_input };
+      edge "e-argument-apply" (pref "argument" "value")
+        { node_id = node_id "apply"; port_key = Port_key.argument };
+      edge "e-apply-result" { node_id = node_id "apply"; port_key = Port_key.result }
+        (pref "result" "value");
+    ]
+  in
+  let errors =
+    validate_with_template_errors [ template ]
+      (Raw_graph.of_lists ~nodes ~edges
+         ~default_node_order:[ node_id "apply"; node_id "drop-param" ])
+  in
+  has_error (function Type_mismatch _ -> true | _ -> false) errors;
+  ignore signature
+
+let () =
+  let template = fn_template () in
+  let signature = function_signature template [] in
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop-param" (Drop Core_type.Unit);
+      node "function" (Function signature);
+      node "argument" (Nat_literal (nat "2"));
+      node "apply"
+        (Apply { apply_parameter_type = Core_type.Unit; apply_result_type = Core_type.Nat });
+      node "result" (Result Core_type.Nat);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop-param" "input");
+      edge "e-function-apply" (pref "function" "value")
+        { node_id = node_id "apply"; port_key = Port_key.function_input };
+      edge "e-argument-apply" (pref "argument" "value")
+        { node_id = node_id "apply"; port_key = Port_key.argument };
+      edge "e-apply-result" { node_id = node_id "apply"; port_key = Port_key.result }
+        (pref "result" "value");
+    ]
+  in
+  let errors =
+    validate_with_template_errors [ template ]
+      (Raw_graph.of_lists ~nodes ~edges
+         ~default_node_order:[ node_id "function"; node_id "apply"; node_id "drop-param" ])
+  in
+  has_error (function Type_mismatch _ -> true | _ -> false) errors
+
+let () =
+  let template = fn_template () in
+  let signature = function_signature template [] in
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop-param" (Drop Core_type.Unit);
+      node "function" (Function signature);
+      node "argument" Unit_literal;
+      node "apply"
+        (Apply { apply_parameter_type = Core_type.Unit; apply_result_type = Core_type.Nat });
+      node "result" (Result Core_type.Unit);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop-param" "input");
+      edge "e-function-apply" (pref "function" "value")
+        { node_id = node_id "apply"; port_key = Port_key.function_input };
+      edge "e-argument-apply" (pref "argument" "value")
+        { node_id = node_id "apply"; port_key = Port_key.argument };
+      edge "e-apply-result" { node_id = node_id "apply"; port_key = Port_key.result }
+        (pref "result" "value");
+    ]
+  in
+  let errors =
+    validate_with_template_errors [ template ]
+      (Raw_graph.of_lists ~nodes ~edges
+         ~default_node_order:[ node_id "function"; node_id "apply"; node_id "drop-param" ])
+  in
+  has_error (function Type_mismatch _ -> true | _ -> false) errors

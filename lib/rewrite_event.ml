@@ -3,14 +3,18 @@ type rule =
   | Drop
   | Copy
   | Function
+  | ApplyEnter
+  | ApplyReturn
 
 type t = {
   index : int;
   rule : rule;
+  instance_id : string;
   subject : Core_graph.Node_id.t;
   ready_epoch : int;
   consumed : Runtime_value.Value_id.t list;
   created : Runtime_value.t list;
+  callee_instance_id : string option;
 }
 
 let rule_to_string = function
@@ -18,8 +22,15 @@ let rule_to_string = function
   | Drop -> "Drop"
   | Copy -> "Copy"
   | Function -> "Function"
+  | ApplyEnter -> "ApplyEnter"
+  | ApplyReturn -> "ApplyReturn"
 
 let to_string event =
   "event " ^ string_of_int event.index ^ " " ^ rule_to_string event.rule
-  ^ " subject=" ^ Core_graph.Node_id.to_string event.subject
+  ^ " instance=" ^ event.instance_id ^ " subject="
+  ^ Core_graph.Node_id.to_string event.subject
   ^ " ready_epoch=" ^ string_of_int event.ready_epoch
+  ^
+  match event.callee_instance_id with
+  | None -> ""
+  | Some callee -> " callee=" ^ callee

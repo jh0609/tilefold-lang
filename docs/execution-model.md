@@ -51,10 +51,10 @@ The current OCaml runtime implements validation and execution for a subset:
 
 - implemented: `Unit` and `Nat` literals, `Succ`, `Copy`, `Drop`,
   `Parameter`, `Result`, `Function` closure creation, Arrow closure
-  `Copy`/`Drop`, `default_node_order`, and static single-scope
-  `PrioritySpine`;
-- confirmed but not implemented: `ApplyEnter`, function body rewrites,
-  `ApplyReturn`, function graph instances, and `NatRec`.
+  `Copy`/`Drop`, `ApplyEnter`, independent function instances, function body
+  rewrites, nested depth-first `Apply`, `ApplyReturn`, `default_node_order`,
+  and static single-scope `PrioritySpine`;
+- confirmed but not implemented: `NatRec`.
 
 The `transparent-v0` settings remain:
 
@@ -149,7 +149,7 @@ it does not merge logical value identity or change trace observations.
 
 ### Apply Instance
 
-Status: Confirmed lifecycle, detailed representation deferred.
+Status: Current implementation for depth-first function calls.
 
 Each `Apply` creates an independent function graph instance. The template is
 immutable and is not executed directly. The instance has identity and execution
@@ -168,9 +168,20 @@ ApplyEnter
 `Engine.step` calls. Function body nodes run under the same scheduler and trace
 discipline as all other active runtime graph nodes.
 
-Deferred details include CallFrame structure, instance ID format, graph
-materialization, cross-scope scheduling, and precise identity derivation across
-function boundaries.
+The current implementation uses an explicit internal call stack. `ApplyEnter`
+pushes a call frame, suspends the caller instance, creates a deterministic
+callee instance ID from the caller instance, Apply node, and event index, and
+makes the callee the active instance. Caller and callee ready nodes are not
+interleaved in this slice. The active callee runs depth-first until it either
+completes, gets stuck, or reports a runtime error.
+
+`ApplyReturn` occurs in a later `Engine.step` after the callee has a result and
+no unresolved executable work. It consumes the callee result, pops the call
+frame, creates a new caller-scope result value for the Apply output, restores
+the caller as active, and lets the caller's existing scheduler continue.
+
+Deferred details include final instance ID serialization, graph snapshot
+representation, cross-scope scheduling experiments, and checkpoint persistence.
 
 ## Scheduler Model
 

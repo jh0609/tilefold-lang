@@ -31,6 +31,8 @@ module Port_key = struct
   let result = "result"
   let left = "left"
   let right = "right"
+  let function_input = "function"
+  let argument = "argument"
   let capture name = "capture:" ^ name
   let equal = String.equal
   let compare = String.compare
@@ -67,11 +69,13 @@ type node_kind =
   | Unit_literal
   | Nat_literal of Nat.t
   | Parameter of Core_type.t
+  | Capture of capture
   | Result of Core_type.t
   | Succ
   | Drop of Core_type.t
   | Copy of Core_type.t
   | Function of function_signature
+  | Apply of apply_signature
 
 and capture = {
   key : Port_key.t;
@@ -83,6 +87,11 @@ and function_signature = {
   parameter_type : Core_type.t;
   result_type : Core_type.t;
   captures : capture list;
+}
+
+and apply_signature = {
+  apply_parameter_type : Core_type.t;
+  apply_result_type : Core_type.t;
 }
 
 type node = {
@@ -113,6 +122,7 @@ let ports_of_node_kind = function
   | Unit_literal -> [ port Port_key.value Output Core_type.Unit ]
   | Nat_literal _ -> [ port Port_key.value Output Core_type.Nat ]
   | Parameter typ -> [ port Port_key.value Output typ ]
+  | Capture capture -> [ port Port_key.value Output capture.typ ]
   | Result typ -> [ port Port_key.value Input typ ]
   | Succ ->
       [
@@ -134,10 +144,18 @@ let ports_of_node_kind = function
           port Port_key.value Output
             (Core_type.Arrow (signature.parameter_type, signature.result_type));
         ]
+  | Apply signature ->
+      [
+        port Port_key.function_input Input
+          (Core_type.Arrow
+             (signature.apply_parameter_type, signature.apply_result_type));
+        port Port_key.argument Input signature.apply_parameter_type;
+        port Port_key.result Output signature.apply_result_type;
+      ]
 
 let is_executable_node_kind = function
-  | Succ | Drop _ | Copy _ | Function _ -> true
-  | Unit_literal | Nat_literal _ | Parameter _ | Result _ -> false
+  | Succ | Drop _ | Copy _ | Function _ | Apply _ -> true
+  | Unit_literal | Nat_literal _ | Parameter _ | Capture _ | Result _ -> false
 
 module Raw_graph = struct
   type t = {
@@ -314,6 +332,11 @@ type validation_error =
       expected : Core_type.t;
       actual : Core_type.t;
     }
+  | Function_template_capture_boundary_mismatch of {
+      template_id : Function_template_id.t;
+      expected : capture list;
+      actual : capture list;
+    }
   | Function_template_cycle of Function_template_id.t list
 
 let find_duplicates items compare =
@@ -343,6 +366,11 @@ let parameter_nodes (nodes : node list) =
 
 let result_nodes (nodes : node list) =
   List.filter (function { kind = Result _; _ } -> true | _ -> false) nodes
+
+let capture_boundary_nodes (nodes : node list) =
+  List.filter_map
+    (function { kind = Capture capture; _ } -> Some capture | _ -> None)
+    nodes
 
 let boundary_errors nodes =
   let parameters = parameter_nodes nodes in
@@ -631,7 +659,28 @@ let template_registry_errors templates =
                (Function_template_body_signature_mismatch
                   { template_id = Function_template.id template; expected; actual }))
   in
+  let capture_boundary_errors =
+    templates
+    |> List.filter_map (fun template ->
+           let expected = Function_template.captures template in
+           let actual =
+             Function_template.body template |> Validated_graph.nodes
+             |> capture_boundary_nodes
+           in
+           let capture_equal (left : capture) (right : capture) =
+             Port_key.equal left.key right.key && Core_type.equal left.typ right.typ
+           in
+           if
+             List.length expected = List.length actual
+             && List.for_all2 capture_equal expected actual
+           then None
+           else
+             Some
+               (Function_template_capture_boundary_mismatch
+                  { template_id = Function_template.id template; expected; actual }))
+  in
   duplicate_template_errors @ capture_errors @ signature_errors
+  @ capture_boundary_errors
   @ template_cycle_errors templates
 
 let function_node_errors templates nodes =
@@ -848,6 +897,17 @@ let validation_error_to_string = function
       "function template body signature mismatch for "
       ^ Function_template_id.to_string template_id ^ ": expected "
       ^ Core_type.to_string expected ^ ", actual " ^ Core_type.to_string actual
+  | Function_template_capture_boundary_mismatch
+      { template_id; expected; actual } ->
+      let render (captures : capture list) =
+        captures
+        |> List.map (fun (capture : capture) ->
+               Port_key.to_string capture.key ^ ":" ^ Core_type.to_string capture.typ)
+        |> String.concat ", "
+      in
+      "function template capture boundary mismatch for "
+      ^ Function_template_id.to_string template_id ^ ": expected "
+      ^ render expected ^ ", actual " ^ render actual
   | Function_template_cycle ids ->
       "function template dependency cycle: "
       ^ String.concat " -> " (List.map Function_template_id.to_string ids)

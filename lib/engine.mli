@@ -7,6 +7,7 @@ type initialization_error =
   | Initial_delivery_invariant_violation of string
 
 type ready_candidate = {
+  instance_id : string;
   node_id : Core_graph.Node_id.t;
   ready_epoch : int;
   priority_spine_rank : int option;
@@ -14,6 +15,7 @@ type ready_candidate = {
 }
 
 type stuck_reason = {
+  instance_id : string;
   unexecuted_nodes : Core_graph.Node_id.t list;
   result_missing : bool;
 }
@@ -36,11 +38,27 @@ type runtime_error =
       expected : Core_type.t;
       actual : Core_type.t;
     }
+  | Invalid_apply_runtime_payload of {
+      node_id : Core_graph.Node_id.t;
+      expected : Core_type.t;
+      actual : Core_type.t;
+    }
+  | Apply_template_not_found of {
+      node_id : Core_graph.Node_id.t;
+      template_id : Core_graph.Function_template_id.t;
+    }
+  | Apply_result_type_mismatch of {
+      node_id : Core_graph.Node_id.t;
+      expected : Core_type.t;
+      actual : Core_type.t;
+    }
   | Runtime_invariant_violation of string
 
 module Machine : sig
   type t
 
+  val active_instance_id : t -> string
+  val call_depth : t -> int
   val ready_candidates : t -> ready_candidate list
   val result_value : t -> Runtime_value.t option
   val trace_events : t -> Rewrite_event.t list

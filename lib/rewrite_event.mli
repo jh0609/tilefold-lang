@@ -3,14 +3,18 @@ type rule =
   | Drop
   | Copy
   | Function
+  | ApplyEnter
+  | ApplyReturn
 
 type t = {
   index : int;
   rule : rule;
+  instance_id : string;
   subject : Core_graph.Node_id.t;
   ready_epoch : int;
   consumed : Runtime_value.Value_id.t list;
   created : Runtime_value.t list;
+  callee_instance_id : string option;
 }
 
 val rule_to_string : rule -> string

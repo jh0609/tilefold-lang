@@ -9,8 +9,18 @@ end
 type origin =
   | Execution_input
   | Program_literal of Core_graph.Node_id.t
+  | Instance_literal of {
+      instance_id : string;
+      node_id : Core_graph.Node_id.t;
+    }
   | Rewrite_output of {
       event_index : int;
+      node_id : Core_graph.Node_id.t;
+      port_key : Core_graph.Port_key.t;
+    }
+  | Scoped_rewrite_output of {
+      event_index : int;
+      instance_id : string;
       node_id : Core_graph.Node_id.t;
       port_key : Core_graph.Port_key.t;
     }
@@ -44,8 +54,16 @@ let execution_input_id = "input"
 let program_literal_id node_id =
   "literal:" ^ Core_graph.Node_id.to_string node_id
 
+let instance_literal_id instance_id node_id =
+  "instance:" ^ instance_id ^ ":literal:" ^ Core_graph.Node_id.to_string node_id
+
 let rewrite_output_id event_index node_id port_key =
   "event:" ^ string_of_int event_index ^ ":"
+  ^ Core_graph.Node_id.to_string node_id
+  ^ ":" ^ Core_graph.Port_key.to_string port_key
+
+let scoped_rewrite_output_id event_index instance_id node_id port_key =
+  "event:" ^ string_of_int event_index ^ ":instance:" ^ instance_id ^ ":"
   ^ Core_graph.Node_id.to_string node_id
   ^ ":" ^ Core_graph.Port_key.to_string port_key
 
@@ -103,8 +121,16 @@ let origin_to_string = function
   | Execution_input -> "Execution_input"
   | Program_literal node_id ->
       "Program_literal(" ^ Core_graph.Node_id.to_string node_id ^ ")"
+  | Instance_literal { instance_id; node_id } ->
+      "Instance_literal(instance=" ^ instance_id ^ ", node="
+      ^ Core_graph.Node_id.to_string node_id ^ ")"
   | Rewrite_output { event_index; node_id; port_key } ->
       "Rewrite_output(event=" ^ string_of_int event_index ^ ", node="
+      ^ Core_graph.Node_id.to_string node_id
+      ^ ", port=" ^ Core_graph.Port_key.to_string port_key ^ ")"
+  | Scoped_rewrite_output { event_index; instance_id; node_id; port_key } ->
+      "Scoped_rewrite_output(event=" ^ string_of_int event_index
+      ^ ", instance=" ^ instance_id ^ ", node="
       ^ Core_graph.Node_id.to_string node_id
       ^ ", port=" ^ Core_graph.Port_key.to_string port_key ^ ")"
 

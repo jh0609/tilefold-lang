@@ -87,11 +87,13 @@ member priority, identical explicit spine-position order for members, identical
 `default_node_order` fallback for non-members, and the rule that spine
 membership never overtakes a lower `ready_epoch`.
 
-For future `Apply` support, conformance must compare the observable
-`ApplyEnter` and `ApplyReturn` lifecycle rather than a single run-to-completion
-host call. A conforming engine must preserve the call-site state transition,
-the `CallFrame` return relation, function body rewrite trace events, and the
-one-rewrite-per-step policy.
+For `Apply` support, conformance compares the observable `ApplyEnter` and
+`ApplyReturn` lifecycle rather than a single run-to-completion host call. A
+conforming engine must preserve the call-site state transition, the internal
+call-frame return relation, deterministic per-Apply instance identity,
+depth-first caller suspension, function body rewrite trace events, scoped
+literal and rewrite-output logical IDs, the new caller-scope return value on
+`ApplyReturn`, and the one-rewrite-per-step policy.
 
 For future checkpoint and replay support, conformance must distinguish semantic
 trace from execution-management provenance. Creating a checkpoint, pausing,

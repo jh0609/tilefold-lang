@@ -112,10 +112,12 @@ one `WorldTransition`, then resource acquire/transition events for the same
 and abort without appending normal transition events.
 
 The current executable slices implement a minimal typed `RewriteEvent` subset
-for `Succ`, `Copy`, `Drop`, and `Function`. It records:
+for `Succ`, `Copy`, `Drop`, `Function`, `ApplyEnter`, and `ApplyReturn`. It
+records:
 
 - sequential event index starting at `0`,
 - rule,
+- runtime instance ID,
 - subject node ID,
 - ready epoch,
 - consumed runtime value IDs,
@@ -133,10 +135,22 @@ order and creates exactly one closure runtime value. A capture-free Function
 event records `consumed = []`. Registry lookup and closure payload allocation
 are not separate semantic trace events.
 
+An `ApplyEnter` event consumes the caller closure value and caller argument
+value, creates no runtime values directly, and records the deterministic callee
+instance ID. Argument and capture boundary binding, instance allocation, call
+frame push, and instance literal materialization are not separate semantic
+events.
+
+An `ApplyReturn` event consumes the callee result value, creates one new
+caller-scope return value for the Apply output, and records the callee instance
+ID. The new value preserves payload meaning but has a distinct causal logical
+ID and `ApplyReturn` rewrite-output origin.
+
 Literal materialization, execution input materialization, delivery along edges,
-ready-candidate maintenance, and other mechanical state construction are not
-separate rewrite events. Full graph patches, `GraphSnapshot`, canonical JSON,
-trace headers, and the Apply call lifecycle are still not implemented.
+ready-candidate maintenance, call-frame push/pop, caller suspension/resumption,
+and other mechanical state construction are not separate rewrite events. Full
+graph patches, `GraphSnapshot`, canonical JSON, and trace headers are still not
+implemented.
 
 Diagnostic scheduling context may include the selected node's `ready_epoch`,
 spine ID, slot ID, and selection reason. This diagnostic information must be
@@ -176,7 +190,7 @@ An `ApplyEnter` event must record:
 - closure ID,
 - instance ID,
 - argument value,
-- capture values,
+- capture values, either directly or through the referenced closure payload,
 - external port correspondence,
 - CallFrame identity or equivalent return-link identity.
 
@@ -185,6 +199,11 @@ creates the `CallFrame`. It must not serialize the full function body for every
 application. The canonical program and function template data, together with
 the `ApplyEnter` event, must be enough to reconstruct the instance graph
 deterministically.
+
+The current minimal event records `consumed = [closure; argument]` and the
+callee instance ID. Capture values are not duplicated in `consumed`; they are
+recovered from the immutable closure payload and moved to callee capture
+boundaries during the same committed transition.
 
 Template node copying, port object creation, edge object creation, memory
 allocation, map updates, and cache construction are mechanical implementation

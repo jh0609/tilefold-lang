@@ -59,11 +59,12 @@ used as fallback scheduling metadata. This is recorded in
 `docs/decisions/0009-canonical-default-node-order.md`.
 
 The runtime vertical slices are now implemented for validated graphs with
-`Unit`, `Nat`, `Succ`, `Copy`, `Drop`, `Function`, `Parameter`, and `Result`. They
-materializes input and literals, executes `Succ`, `Copy`, and `Drop`, records
-minimal rewrite events, creates closure values through `Function`, supports
-Arrow closure `Copy`/`Drop`, and reports `Completed`, `Stuck`, or typed
-runtime errors. This started in
+`Unit`, `Nat`, `Succ`, `Copy`, `Drop`, `Function`, `Apply`, `Parameter`,
+`Capture`, and `Result`. They materialize input and literals, execute `Succ`,
+`Copy`, `Drop`, `Function`, `ApplyEnter`, function body rewrites, and
+`ApplyReturn`, support nested depth-first calls, support Arrow closure
+`Copy`/`Drop`, and report `Completed`, `Stuck`, or typed runtime errors. This
+started in
 `docs/decisions/0010-first-runtime-interpreter-vertical-slice.md` and was
 extended by `docs/decisions/0011-copy-rewrite-and-linear-duplication.md`.
 `docs/decisions/0012-priority-spine-static-scheduling.md` implements the first
@@ -73,6 +74,9 @@ multi-step `ApplyEnter` -> function body rewrites -> `ApplyReturn` lifecycle
 and keeps several function scheduling and boundary policies deferred.
 `docs/decisions/0019-function-closure-creation-and-arrow-copy.md` implements
 Function template references, closure creation, and Arrow closure Copy/Drop.
+`docs/decisions/0020-apply-instance-call-stack-and-return-boundary.md`
+implements Apply, independent function instances, depth-first call stack
+scheduling, scoped instance/value identity, and ApplyReturn.
 
 `linear-v0` is now recorded as a separate provisional semantics profile in
 `docs/language-spec.md` and
@@ -171,9 +175,9 @@ Still open:
 - Impact on future compatibility: Once golden traces exist, port schemas and
   rule identities are expensive to change.
 - Recommendation: The implemented rewrite subset is now `Succ`, `Copy`,
-  `Drop`, and `Function`. `Copy (Arrow _)` is supported for closure payloads.
-  Keep `Apply`, function instance execution, and `NatRec` open until their
-  graph patch, scheduling, trace, and termination details are specified.
+  `Drop`, `Function`, `ApplyEnter`, and `ApplyReturn`. `Copy (Arrow _)` is
+  supported for closure payloads. Keep `NatRec` open until its graph patch,
+  scheduling, trace, and termination details are specified.
 
 ## 2. How are immutable logical values represented?
 
@@ -727,8 +731,9 @@ Still open:
   scheduling understandable.
 - Impact on future compatibility: Golden traces will lock in the interleaving
   behavior.
-- Recommendation: Keep deferred until concrete trace examples compare caller
-  and callee interleaving. Also keep deferred whether `Parameter` and `Result`
-  are executable runtime nodes or boundary markers, function-boundary logical
-  value identity, runtime scope and instance ordering, PrioritySpine instance
-  inheritance, callee-local `Stuck` propagation, and instance cleanup.
+- Recommendation: The current Apply runtime chooses depth-first active-callee
+  execution, treats `Parameter`, `Capture`, and `Result` as boundary markers,
+  gives each Apply an independent deterministic instance ID, propagates
+  callee-local `Stuck` as whole-run stuck, and creates a new caller-scope value
+  on `ApplyReturn`. Keep cross-scope interleaving, dynamic PrioritySpine,
+  richer instance cleanup snapshots, and final public diagnostics open.

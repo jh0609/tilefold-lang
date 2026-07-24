@@ -28,8 +28,18 @@ type payload =
 type origin =
   | Execution_input
   | Program_literal of Core_graph.Node_id.t
+  | Instance_literal of {
+      instance_id : string;
+      node_id : Core_graph.Node_id.t;
+    }
   | Rewrite_output of {
       event_index : int;
+      node_id : Core_graph.Node_id.t;
+      port_key : Core_graph.Port_key.t;
+    }
+  | Scoped_rewrite_output of {
+      event_index : int;
+      instance_id : string;
       node_id : Core_graph.Node_id.t;
       port_key : Core_graph.Port_key.t;
     }
@@ -37,7 +47,10 @@ type origin =
 val create : id:Value_id.t -> payload:payload -> origin:origin -> t
 val execution_input_id : Value_id.t
 val program_literal_id : Core_graph.Node_id.t -> Value_id.t
+val instance_literal_id : string -> Core_graph.Node_id.t -> Value_id.t
 val rewrite_output_id : int -> Core_graph.Node_id.t -> Core_graph.Port_key.t -> Value_id.t
+val scoped_rewrite_output_id :
+  int -> string -> Core_graph.Node_id.t -> Core_graph.Port_key.t -> Value_id.t
 val id : t -> Value_id.t
 val payload : t -> payload
 val origin : t -> origin

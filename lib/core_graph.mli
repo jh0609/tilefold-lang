@@ -25,6 +25,8 @@ module Port_key : sig
   val result : t
   val left : t
   val right : t
+  val function_input : t
+  val argument : t
   val capture : string -> t
   val equal : t -> t -> bool
   val compare : t -> t -> int
@@ -53,11 +55,13 @@ type node_kind =
   | Unit_literal
   | Nat_literal of Nat.t
   | Parameter of Core_type.t
+  | Capture of capture
   | Result of Core_type.t
   | Succ
   | Drop of Core_type.t
   | Copy of Core_type.t
   | Function of function_signature
+  | Apply of apply_signature
 
 and capture = {
   key : Port_key.t;
@@ -69,6 +73,11 @@ and function_signature = {
   parameter_type : Core_type.t;
   result_type : Core_type.t;
   captures : capture list;
+}
+
+and apply_signature = {
+  apply_parameter_type : Core_type.t;
+  apply_result_type : Core_type.t;
 }
 
 type node = {
@@ -238,6 +247,11 @@ type validation_error =
       template_id : Function_template_id.t;
       expected : Core_type.t;
       actual : Core_type.t;
+    }
+  | Function_template_capture_boundary_mismatch of {
+      template_id : Function_template_id.t;
+      expected : capture list;
+      actual : capture list;
     }
   | Function_template_cycle of Function_template_id.t list
 

@@ -105,15 +105,10 @@ reports a typed runtime invariant error.
 
 ## Still Deferred
 
-This decision does not implement:
+This decision did not implement Apply. Decision 0020 later implements the first
+depth-first Apply runtime slice. This decision still does not implement:
 
-- `Apply`,
-- `ApplyEnter`,
-- `ApplyReturn`,
-- function body instance activation,
-- CallFrame,
 - cross-scope scheduling,
-- instance-local literal materialization,
 - `NatRec`,
 - checkpoint, pause/resume, fork/join,
 - effect, World, or resource extensions,

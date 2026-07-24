@@ -152,9 +152,10 @@ share the same immutable template and physical payload, but only when that
 sharing does not alter observable semantics, logical identity, or provenance.
 
 Each `ApplyEnter` creates an independent logical runtime instance.
-Instance-internal nodes and ports have IDs derived deterministically from the
-call event and template element IDs. Different instances have separate logical
-identity and execution state even if they share one immutable template.
+Instance-internal nodes and ports are scoped by a deterministic instance ID
+derived from the caller instance, Apply node, and ApplyEnter event index.
+Different instances have separate logical identity and execution state even if
+they share one immutable template.
 
 Physical template sharing is an implementation detail. It must not make
 separate runtime instances appear merged in graph snapshots or traces.
@@ -168,15 +169,18 @@ ApplyEnter
 ```
 
 `ApplyEnter` and `ApplyReturn` are separate rewrites, each occurring in its own
-`Engine.step`. `ApplyEnter` activates the function body's logical runtime
-instance, creates the callee parameter value, creates a `CallFrame`, and moves
-the static call site into `WaitingForReturn`. It does not compute the whole
-function result. Body rewrites such as `Succ`, `NatRec`, `Copy`, `Drop`, and
+`Engine.step`. `ApplyEnter` consumes the caller closure and argument values,
+activates the function body's logical runtime instance, binds the existing
+argument and captured values to the callee parameter and capture boundaries
+without changing their logical IDs, creates a `CallFrame`, and moves the static
+call site into `WaitingForReturn`. It does not compute the whole function
+result. Body rewrites such as `Succ`, `NatRec`, `Copy`, `Drop`, `Function`, and
 nested `Apply` remain separate semantic rewrites and standard trace events.
 
 `ApplyReturn` consumes the callee result, closes the corresponding `CallFrame`,
-creates the caller-scope output value for the apply site, and marks the call
-site `Completed`.
+creates a new caller-scope output value for the apply site, and marks the call
+site `Completed`. The returned payload meaning is preserved, but the caller
+return value has a fresh causal logical ID and `ApplyReturn` origin.
 
 `WaitingForReturn` does not mean the `Apply` node is still executing. After
 `ApplyEnter`, the active calculation subject is the function instance.
@@ -192,9 +196,11 @@ allocation, map updates, or cache construction, is compressed into the canonical
 graph patch for the `ApplyEnter` event rather than exposed as separate semantic
 events.
 
-For an identity function with no internal calculation nodes, the exact
-`ApplyEnter`/`ApplyReturn` graph patches and value identity policy remain
-deferred.
+The current implementation uses depth-first call scheduling: after
+`ApplyEnter`, the caller is suspended and the callee is the only active
+instance until it completes, gets stuck, or errors. Nested Apply pushes another
+frame and returns from the innermost call first. Cross-scope interleaving
+remains outside this slice.
 
 ## Program Packages and Entry Execution
 
@@ -415,6 +421,10 @@ The first implemented validation subset fixes these node-derived schemas:
 - `Drop A`: `input` input of type `A`.
 - `Function`: capture input ports derived from the referenced template's
   ordered capture declarations, plus `value` output of type `A -> B`.
+- `Capture`: function-template capture boundary with `value` output of the
+  declared capture type.
+- `Apply`: `function` input of type `A -> B`, `argument` input of type `A`,
+  and `result` output of type `B`.
 
 For this subset, a valid template body has exactly one `Parameter` boundary and
 one `Result` boundary. The template type is derived as `A -> B`. Every input
@@ -429,15 +439,17 @@ non-executable. The validator requires `default_node_order` to include every
 executable node exactly once and to exclude non-executable nodes.
 
 This validator does not implement full graph cycle rules, reachability,
-`Apply`, `NatRec`, multi-scope scheduling, or full trace schemas. The first
-runtime slices implement `Succ`, `Copy` for `Unit`, `Nat`, and closure Arrow
-values, `Drop`, `Function` closure creation, and static single-scope
+`NatRec`, multi-scope scheduling, or full trace schemas. The current runtime
+slices implement `Succ`, `Copy` for `Unit`, `Nat`, and closure Arrow values,
+`Drop`, `Function` closure creation, `ApplyEnter`/callee body
+execution/`ApplyReturn`, nested depth-first calls, and static single-scope
 `PrioritySpine` scheduling. See
 `docs/decisions/0008-explicit-port-graph-and-validation-boundary.md`,
 `docs/decisions/0009-canonical-default-node-order.md`, and
 `docs/decisions/0010-first-runtime-interpreter-vertical-slice.md`, followed by
-`docs/decisions/0011-copy-rewrite-and-linear-duplication.md` and
-`docs/decisions/0019-function-closure-creation-and-arrow-copy.md`.
+`docs/decisions/0011-copy-rewrite-and-linear-duplication.md`,
+`docs/decisions/0019-function-closure-creation-and-arrow-copy.md`, and
+`docs/decisions/0020-apply-instance-call-stack-and-return-boundary.md`.
 
 Long-term execution-management topics such as pause, checkpoint, fork, join,
 and equivalence comparison are outside Core rewrite semantics and are recorded
@@ -517,11 +529,13 @@ The `transparent-v0` profile records these current choices:
 - `port-schema = derived-from-node-kind`
 - `raw-and-validated-graph = distinct-abstract-types`
 - `runtime-input = validated-graph-only`
-- `initial-implementation-scope = Unit + Nat + Succ + Copy + Drop + Parameter/Result boundaries`
+- `initial-implementation-scope = Unit + Nat + Succ + Copy + Drop + Function + Apply + Parameter/Capture/Result boundaries`
 - `canonical-node-order = explicit-ordered-executable-node-list`
 - `runtime-value = immutable-logical-value-with-typed-origin`
 - `runtime-logical-id = deterministic-provisional-id`
-- `implemented-rewrite-subset = Succ + Copy + Drop + Function`
+- `implemented-rewrite-subset = Succ + Copy + Drop + Function + ApplyEnter + ApplyReturn`
+- `apply-runtime = implemented-depth-first-instance-call-stack`
+- `apply-return-value = new-caller-scope-logical-value`
 - `function-closure-creation = implemented-template-reference-and-ordered-captures`
 - `arrow-copy-drop = closure-payload-supported`
 - `copy-semantics = consume-one-create-two-distinct-linear-values`

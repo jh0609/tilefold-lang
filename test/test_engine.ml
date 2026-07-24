@@ -281,6 +281,27 @@ let init_with_templates_ok templates graph input =
   | Error error -> failwith (Engine.initialization_error_to_string error)
 
 let function_template ?(id = "f") ?(captures = []) () =
+  let capture_nodes =
+    captures
+    |> List.mapi (fun index capture ->
+           [
+             node ("body-capture-" ^ string_of_int index) (Capture capture);
+             node ("body-capture-drop-" ^ string_of_int index) (Drop capture.typ);
+           ])
+    |> List.flatten
+  in
+  let capture_edges =
+    captures
+    |> List.mapi (fun index _capture ->
+           edge
+             ("body-e-capture-drop-" ^ string_of_int index)
+             (pref ("body-capture-" ^ string_of_int index) "value")
+             (pref ("body-capture-drop-" ^ string_of_int index) "input"))
+  in
+  let capture_order =
+    captures
+    |> List.mapi (fun index _ -> node_id ("body-capture-drop-" ^ string_of_int index))
+  in
   let nodes =
     [
       node "body-param" (Parameter Core_type.Unit);
@@ -288,15 +309,18 @@ let function_template ?(id = "f") ?(captures = []) () =
       node "body-lit" (Nat_literal (nat "7"));
       node "body-result" (Result Core_type.Nat);
     ]
+    @ capture_nodes
   in
   let edges =
     [
       edge "body-e-param-drop" (pref "body-param" "value") (pref "body-drop" "input");
       edge "body-e-lit-result" (pref "body-lit" "value") (pref "body-result" "value");
     ]
+    @ capture_edges
   in
   let body =
-    Raw_graph.of_lists ~nodes ~edges ~default_node_order:[ node_id "body-drop" ]
+    Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:([ node_id "body-drop" ] @ capture_order)
     |> validate_ok
   in
   Function_template.create ~id:(template_id id) ~parameter_type:Core_type.Unit
@@ -444,6 +468,127 @@ let closure_drop_graph () =
     Raw_graph.of_lists ~nodes ~edges
       ~default_node_order:[ node_id "function"; node_id "drop-closure"; node_id "drop-unit" ]
     |> validate_with_templates_ok [ template ] )
+
+let succ_function_template ?(id = "succ-f") () =
+  let nodes =
+    [
+      node "body-param" (Parameter Core_type.Unit);
+      node "body-drop" (Drop Core_type.Unit);
+      node "body-lit" (Nat_literal (nat "3"));
+      node "body-succ" Succ;
+      node "body-result" (Result Core_type.Nat);
+    ]
+  in
+  let edges =
+    [
+      edge "body-e-param-drop" (pref "body-param" "value") (pref "body-drop" "input");
+      edge "body-e-lit-succ" (pref "body-lit" "value") (pref "body-succ" "input");
+      edge "body-e-succ-result" (pref "body-succ" "result")
+        (pref "body-result" "value");
+    ]
+  in
+  let body =
+    Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:[ node_id "body-succ"; node_id "body-drop" ]
+    |> validate_ok
+  in
+  Function_template.create ~id:(template_id id) ~parameter_type:Core_type.Unit
+    ~result_type:Core_type.Nat ~captures:[] ~body ()
+
+let capture_succ_template ?(id = "capture-f") () =
+  let captures = [ capture "n" Core_type.Nat ] in
+  let nodes =
+    [
+      node "body-param" (Parameter Core_type.Unit);
+      node "body-drop" (Drop Core_type.Unit);
+      node "body-capture" (Capture (List.hd captures));
+      node "body-succ" Succ;
+      node "body-result" (Result Core_type.Nat);
+    ]
+  in
+  let edges =
+    [
+      edge "body-e-param-drop" (pref "body-param" "value") (pref "body-drop" "input");
+      edge "body-e-capture-succ" (pref "body-capture" "value")
+        (pref "body-succ" "input");
+      edge "body-e-succ-result" (pref "body-succ" "result")
+        (pref "body-result" "value");
+    ]
+  in
+  let body =
+    Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:[ node_id "body-succ"; node_id "body-drop" ]
+    |> validate_ok
+  in
+  Function_template.create ~id:(template_id id) ~parameter_type:Core_type.Unit
+    ~result_type:Core_type.Nat ~captures ~body ()
+
+let apply_graph template ?(function_id = "function") ?(apply_id = "apply")
+    ?(order = [ "function"; "apply"; "drop-param" ]) ?priority_spine () =
+  let apply_signature =
+    { apply_parameter_type = Core_type.Unit; apply_result_type = Core_type.Nat }
+  in
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop-param" (Drop Core_type.Unit);
+      node function_id (Function (function_signature template []));
+      node "argument" Unit_literal;
+      node apply_id (Apply apply_signature);
+      node "result" (Result Core_type.Nat);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop-param" "input");
+      edge "e-function-apply" (pref function_id "value")
+        { node_id = node_id apply_id; port_key = Port_key.function_input };
+      edge "e-argument-apply" (pref "argument" "value")
+        { node_id = node_id apply_id; port_key = Port_key.argument };
+      edge "e-apply-result" { node_id = node_id apply_id; port_key = Port_key.result }
+        (pref "result" "value");
+    ]
+  in
+  Raw_graph.of_lists_with_priority_spine ~nodes ~edges
+    ~default_node_order:(List.map node_id order)
+    ~priority_spine:(Option.map (List.map node_id) priority_spine)
+  |> validate_with_templates_ok [ template ]
+
+let apply_capture_graph template ?(order = [ "copy"; "function"; "apply"; "drop-param"; "drop-cap" ]) () =
+  let captures = Function_template.captures template in
+  let apply_signature =
+    { apply_parameter_type = Core_type.Unit; apply_result_type = Core_type.Nat }
+  in
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop-param" (Drop Core_type.Unit);
+      node "capture-lit" (Nat_literal (nat "5"));
+      node "copy" (Copy Core_type.Nat);
+      node "drop-cap" (Drop Core_type.Nat);
+      node "function" (Function (function_signature template captures));
+      node "argument" Unit_literal;
+      node "apply" (Apply apply_signature);
+      node "result" (Result Core_type.Nat);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop-param" "input");
+      edge "e-lit-copy" (pref "capture-lit" "value") (pref "copy" "input");
+      edge "e-copy-left-function" (pref "copy" "left")
+        { node_id = node_id "function"; port_key = Port_key.capture "n" };
+      edge "e-copy-right-drop" (pref "copy" "right") (pref "drop-cap" "input");
+      edge "e-function-apply" (pref "function" "value")
+        { node_id = node_id "apply"; port_key = Port_key.function_input };
+      edge "e-argument-apply" (pref "argument" "value")
+        { node_id = node_id "apply"; port_key = Port_key.argument };
+      edge "e-apply-result" { node_id = node_id "apply"; port_key = Port_key.result }
+        (pref "result" "value");
+    ]
+  in
+  Raw_graph.of_lists ~nodes ~edges ~default_node_order:(List.map node_id order)
+  |> validate_with_templates_ok [ template ]
 
 let stuck_copy_self_cycle () =
   let nodes =
@@ -1059,3 +1204,253 @@ let () =
   assert (
     Runtime_value.payload_equal (Runtime_value.payload value_a)
       (Runtime_value.payload value_b))
+
+let () =
+  let template = succ_function_template () in
+  let graph = apply_graph template () in
+  let value, trace =
+    run_completed (init_with_templates_ok [ template ] graph Runtime_value.Unit)
+  in
+  assert (payload_nat_string value = "4");
+  assert_rules
+    [ "Function"; "Drop"; "ApplyEnter"; "Succ"; "Drop"; "ApplyReturn" ]
+    trace;
+  let enter = List.nth trace 2 in
+  let callee_id =
+    match enter.Rewrite_event.callee_instance_id with
+    | Some id -> id
+    | None -> assert false
+  in
+  assert (enter.Rewrite_event.instance_id = "root");
+  assert (Node_id.to_string enter.Rewrite_event.subject = "apply");
+  assert (List.length enter.Rewrite_event.consumed = 2);
+  assert (enter.Rewrite_event.created = []);
+  let succ_event = List.nth trace 3 in
+  assert (succ_event.Rewrite_event.instance_id = callee_id);
+  assert (Node_id.to_string succ_event.Rewrite_event.subject = "body-succ");
+  let succ_value = List.hd succ_event.Rewrite_event.created in
+  assert (
+    String.starts_with ~prefix:("event:3:instance:" ^ callee_id)
+      (Runtime_value.Value_id.to_string (Runtime_value.id succ_value)));
+  let return_event = List.nth trace 5 in
+  assert (return_event.Rewrite_event.instance_id = "root");
+  assert (return_event.Rewrite_event.callee_instance_id = Some callee_id);
+  assert (
+    List.map Runtime_value.Value_id.to_string return_event.Rewrite_event.consumed
+    = [ Runtime_value.Value_id.to_string (Runtime_value.id succ_value) ]);
+  let returned = List.hd return_event.Rewrite_event.created in
+  assert (payload_nat_string returned = "4");
+  assert (
+    not
+      (Runtime_value.Value_id.equal (Runtime_value.id returned)
+         (Runtime_value.id succ_value)));
+  assert (
+    Runtime_value.origin returned
+    = Runtime_value.Rewrite_output
+        { event_index = 5; node_id = node_id "apply"; port_key = Port_key.result })
+
+let () =
+  let template = succ_function_template () in
+  let graph = apply_graph template () in
+  let machine = init_with_templates_ok [ template ] graph Runtime_value.Unit in
+  match Engine.step machine with
+  | Engine.Rewritten { machine; event } -> (
+      assert (Rewrite_event.rule_to_string event.Rewrite_event.rule = "Function");
+      match Engine.step machine with
+      | Engine.Rewritten { machine; event } -> (
+          assert (Rewrite_event.rule_to_string event.Rewrite_event.rule = "Drop");
+          match Engine.step machine with
+          | Engine.Rewritten { machine; event } -> (
+              assert (Rewrite_event.rule_to_string event.Rewrite_event.rule = "ApplyEnter");
+              assert (Engine.Machine.call_depth machine = 1);
+              assert (Engine.Machine.active_instance_id machine <> "root");
+              match Engine.step machine with
+              | Engine.Rewritten { event; _ } ->
+                  assert (Rewrite_event.rule_to_string event.Rewrite_event.rule = "Succ")
+              | _ -> assert false)
+          | _ -> assert false)
+      | _ -> assert false)
+  | _ -> assert false
+
+let () =
+  let template = capture_succ_template () in
+  let graph = apply_capture_graph template () in
+  let value, trace =
+    run_completed (init_with_templates_ok [ template ] graph Runtime_value.Unit)
+  in
+  assert (payload_nat_string value = "6");
+  assert_rules
+    [ "Copy"; "Drop"; "Function"; "Drop"; "ApplyEnter"; "Succ"; "Drop"; "ApplyReturn" ]
+    trace;
+  let function_event = List.nth trace 2 in
+  assert (
+    List.map Runtime_value.Value_id.to_string function_event.Rewrite_event.consumed
+    = [ "event:0:copy:left" ]);
+  let enter = List.nth trace 4 in
+  assert (List.length enter.Rewrite_event.consumed = 2);
+  let succ_event = List.nth trace 5 in
+  assert (succ_event.Rewrite_event.instance_id <> "root");
+  assert (
+    List.map Runtime_value.Value_id.to_string succ_event.Rewrite_event.consumed
+    = [ "event:0:copy:left" ])
+
+let () =
+  let template = succ_function_template () in
+  let graph =
+    let apply_signature =
+      { apply_parameter_type = Core_type.Unit; apply_result_type = Core_type.Nat }
+    in
+    let nodes =
+      [
+        node "param" (Parameter Core_type.Unit);
+        node "drop-param" (Drop Core_type.Unit);
+        node "function-a" (Function (function_signature template []));
+        node "argument-a" Unit_literal;
+        node "apply-a" (Apply apply_signature);
+        node "drop-a" (Drop Core_type.Nat);
+        node "function-b" (Function (function_signature template []));
+        node "argument-b" Unit_literal;
+        node "apply-b" (Apply apply_signature);
+        node "result" (Result Core_type.Nat);
+      ]
+    in
+    let edges =
+      [
+        edge "e-param-drop" (pref "param" "value") (pref "drop-param" "input");
+        edge "e-function-a" (pref "function-a" "value")
+          { node_id = node_id "apply-a"; port_key = Port_key.function_input };
+        edge "e-arg-a" (pref "argument-a" "value")
+          { node_id = node_id "apply-a"; port_key = Port_key.argument };
+        edge "e-apply-a-drop" { node_id = node_id "apply-a"; port_key = Port_key.result }
+          (pref "drop-a" "input");
+        edge "e-function-b" (pref "function-b" "value")
+          { node_id = node_id "apply-b"; port_key = Port_key.function_input };
+        edge "e-arg-b" (pref "argument-b" "value")
+          { node_id = node_id "apply-b"; port_key = Port_key.argument };
+        edge "e-apply-b-result" { node_id = node_id "apply-b"; port_key = Port_key.result }
+          (pref "result" "value");
+      ]
+    in
+    Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:
+        (List.map node_id
+           [ "function-a"; "apply-a"; "function-b"; "apply-b"; "drop-param"; "drop-a" ])
+    |> validate_with_templates_ok [ template ]
+  in
+  let value, trace =
+    run_completed (init_with_templates_ok [ template ] graph Runtime_value.Unit)
+  in
+  assert (payload_nat_string value = "4");
+  let enter_events =
+    List.filter
+      (fun event -> event.Rewrite_event.rule = Rewrite_event.ApplyEnter)
+      trace
+  in
+  assert (List.length enter_events = 2);
+  let callee_ids =
+    List.map
+      (fun event -> Option.get event.Rewrite_event.callee_instance_id)
+      enter_events
+  in
+  assert (List.nth callee_ids 0 <> List.nth callee_ids 1);
+  let succ_created_ids =
+    trace
+    |> List.filter (fun event -> event.Rewrite_event.rule = Rewrite_event.Succ)
+    |> List.map (fun event ->
+           Runtime_value.Value_id.to_string
+             (Runtime_value.id (List.hd event.Rewrite_event.created)))
+  in
+  assert (List.length succ_created_ids = 2);
+  assert (List.nth succ_created_ids 0 <> List.nth succ_created_ids 1)
+
+let () =
+  let inner = succ_function_template ~id:"inner" () in
+  let outer_body =
+    let nodes =
+      [
+        node "outer-param" (Parameter Core_type.Unit);
+        node "outer-drop" (Drop Core_type.Unit);
+        node "outer-function" (Function (function_signature inner []));
+        node "outer-arg" Unit_literal;
+        node "outer-apply"
+          (Apply { apply_parameter_type = Core_type.Unit; apply_result_type = Core_type.Nat });
+        node "outer-result" (Result Core_type.Nat);
+      ]
+    in
+    let edges =
+      [
+        edge "outer-e-param-drop" (pref "outer-param" "value") (pref "outer-drop" "input");
+        edge "outer-e-function" (pref "outer-function" "value")
+          { node_id = node_id "outer-apply"; port_key = Port_key.function_input };
+        edge "outer-e-arg" (pref "outer-arg" "value")
+          { node_id = node_id "outer-apply"; port_key = Port_key.argument };
+        edge "outer-e-apply-result"
+          { node_id = node_id "outer-apply"; port_key = Port_key.result }
+          (pref "outer-result" "value");
+      ]
+    in
+    Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:
+        [ node_id "outer-function"; node_id "outer-apply"; node_id "outer-drop" ]
+    |> validate_with_templates_ok [ inner ]
+  in
+  let outer =
+    Function_template.create ~dependencies:[ Function_template.id inner ]
+      ~id:(template_id "outer") ~parameter_type:Core_type.Unit
+      ~result_type:Core_type.Nat ~captures:[] ~body:outer_body ()
+  in
+  let graph = apply_graph outer () in
+  let value, trace =
+    run_completed (init_with_templates_ok [ inner; outer ] graph Runtime_value.Unit)
+  in
+  assert (payload_nat_string value = "4");
+  assert_rules
+    [
+      "Function";
+      "Drop";
+      "ApplyEnter";
+      "Function";
+      "Drop";
+      "ApplyEnter";
+      "Succ";
+      "Drop";
+      "ApplyReturn";
+      "ApplyReturn";
+    ]
+    trace;
+  let depths =
+    List.map
+      (fun event ->
+        (Rewrite_event.rule_to_string event.Rewrite_event.rule, event.Rewrite_event.instance_id))
+      trace
+  in
+  assert (snd (List.nth depths 5) <> "root");
+  assert (snd (List.nth depths 6) <> snd (List.nth depths 5))
+
+let () =
+  let template = succ_function_template () in
+  let graph = apply_graph template () in
+  let value_a, trace_a =
+    run_completed (init_with_templates_ok [ template ] graph Runtime_value.Unit)
+  in
+  let value_b, trace_b =
+    run_completed (init_with_templates_ok [ template ] graph Runtime_value.Unit)
+  in
+  assert (Runtime_value.equal value_a value_b);
+  assert (List.map Rewrite_event.to_string trace_a = List.map Rewrite_event.to_string trace_b);
+  assert (
+    List.map
+      (fun event ->
+        ( event.Rewrite_event.instance_id,
+          Option.value event.Rewrite_event.callee_instance_id ~default:"",
+          List.map Runtime_value.Value_id.to_string event.Rewrite_event.consumed,
+          List.map Runtime_value.to_string event.Rewrite_event.created ))
+      trace_a
+    =
+    List.map
+      (fun event ->
+        ( event.Rewrite_event.instance_id,
+          Option.value event.Rewrite_event.callee_instance_id ~default:"",
+          List.map Runtime_value.Value_id.to_string event.Rewrite_event.consumed,
+          List.map Runtime_value.to_string event.Rewrite_event.created ))
+      trace_b)

@@ -4,6 +4,9 @@
 
 Confirmed.
 
+Implemented for the first depth-first runtime slice by
+Decision 0020.
+
 ## Context
 
 Earlier documents described `Apply` as a semantic activation event for a
