@@ -24,9 +24,12 @@ The language aims to make programs inspectable at several levels:
 - execution results and errors.
 
 The central problem is to support visual composition without hiding the formal
-execution model. A program should be explainable as a sequence of local graph
-rewrites, and that sequence should be reproducible from the program, inputs,
-semantics version, and execution policy.
+execution model. Tilefold is not merely a general programming language drawn as
+a graph. It is a language where calculation structure, rewrite order, value
+identity, and execution history should be explainable to the user. A program
+should be explainable as a sequence of local graph rewrites, and that sequence
+should be reproducible from the program, inputs, semantics version, and
+execution policy.
 
 Geometry may be part of Tilefold Surface syntax, but only through discrete
 symbolic spatial relations that can be validated, serialized, compared, and
@@ -115,6 +118,11 @@ event. Hidden implementation state must not affect observable results. If
 internal state is required for an implementation, every part that affects
 calculation must be observable and replayable through the standard trace or
 graph snapshots.
+
+Execution management is separate from Core semantics. Pause, resume,
+checkpoint creation, fork, join decisions, branch aliasing, debugger
+navigation, and storage deduplication are not Core rewrites. Their long-term
+model is recorded in `docs/execution-model.md`.
 
 The same program, inputs, semantics version, and execution policy must produce
 the same standard trace. Iteration order from hash tables, memory addresses,

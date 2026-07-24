@@ -216,6 +216,12 @@ input value of type `A`. An input-free program is represented as `Unit -> B` and
 receives the `Unit` value. Tilefold does not add a zero-argument function form
 or a nullary `Apply` rule.
 
+The long-term execution model also records `Unit -> B` as the standard
+top-level package entry convention. This does not silently remove the broader
+`A -> B` execution-request model above; the exact compatibility boundary
+between standard packages and explicit external input requests remains
+deferred.
+
 The entry template is a closed template. It must not depend on hidden host
 state or an ambient environment. If its capture boundary is unresolved, the
 package is not a valid executable program. External input must pass through the
@@ -422,6 +428,11 @@ and static single-scope `PrioritySpine` scheduling. See
 `docs/decisions/0009-canonical-default-node-order.md`, and
 `docs/decisions/0010-first-runtime-interpreter-vertical-slice.md`, followed by
 `docs/decisions/0011-copy-rewrite-and-linear-duplication.md`.
+
+Long-term execution-management topics such as pause, checkpoint, fork, join,
+and equivalence comparison are outside Core rewrite semantics and are recorded
+in `docs/execution-model.md` and
+`docs/decisions/0018-long-term-execution-model-checkpoint-fork-join.md`.
 
 `Unit` and `Nat(n)` are value constructors, not executable rewrite nodes. Their
 runtime logical values are materialized during machine initialization or

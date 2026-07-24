@@ -113,6 +113,37 @@ while keeping any compilation or meaning-preserving translation between
     or semantic equivalence claim before trace examples and conformance tests
     exist.
 
+## Long-Term Execution Model Direction
+
+Pause, checkpoint, fork, limited join, and branch equivalence are now recorded
+as long-term direction in `docs/execution-model.md` and
+`docs/decisions/0018-long-term-execution-model-checkpoint-fork-join.md`.
+
+Resolved at the architectural level:
+
+- pause and checkpoint occur only at committed rewrite boundaries,
+- checkpoint is resumable execution state, not just a graph snapshot,
+- fork is a checkpoint-based provenance operation, not a semantic rewrite,
+- general execution merge is forbidden,
+- join is limited to equivalence-checked representative selection,
+- observable equivalence alone is not safe for future execution sharing,
+- fork and join metadata are provenance, not standard semantic trace.
+
+Still open:
+
+- checkpoint schema and persistence format,
+- branch and logical ID namespace encoding,
+- the compatibility boundary between the earlier `A -> B` execution-request
+  model and the long-term `Unit -> B` standard package entry convention,
+- replay script data model,
+- effect provider API,
+- World/resource capability model for profiles with effects,
+- semantic equivalence normalization rules,
+- equivalence comparison algorithm,
+- witness serialization and cryptographic hash format,
+- automatic equivalence detection timing and cost limits,
+- debugger UI.
+
 ## 1. Which details of the Core v0 primitive candidates are normative?
 
 - Question: Which exact port schemas, typing rules, and rewrite rules define

@@ -43,6 +43,12 @@ to locate the entry template and the root call lifecycle. The root entry
 application uses ordinary `ApplyEnter` and `ApplyReturn` events, not a special
 program execution event.
 
+Execution-management and debugger facts are not semantic trace events. Pause
+requests, resume requests, checkpoint creation, fork requests, join decisions,
+branch aliasing, debugger display state, host time, and storage deduplication
+belong to provenance or debugger metadata. They must not be inserted into the
+standard semantic rewrite trace as if the program executed them.
+
 ## GraphSnapshot
 
 A `GraphSnapshot` records a canonical representation of a graph at a point in
@@ -276,6 +282,12 @@ inputs, semantics version, execution policy, snapshots, and rewrite events.
 Undo or reverse navigation may be implemented by storing snapshots, inverse
 patches, or replay checkpoints. This document does not mandate one strategy.
 The standard trace must not depend on UI animation or editor state.
+
+Long-term checkpoint and fork/join semantics are specified in
+`docs/execution-model.md`. Checkpoints are created only at committed rewrite
+boundaries. Fork and join provenance does not synthesize new semantic trace
+history, and observable equivalence alone is not enough to continue from either
+branch.
 
 ## Standard Trace vs Visualization Animation
 

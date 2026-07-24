@@ -93,6 +93,17 @@ host call. A conforming engine must preserve the call-site state transition,
 the `CallFrame` return relation, function body rewrite trace events, and the
 one-rewrite-per-step policy.
 
+For future checkpoint and replay support, conformance must distinguish semantic
+trace from execution-management provenance. Creating a checkpoint, pausing,
+resuming, forking, selecting a join representative, aliasing a branch, or
+deduplicating stored state must not change the standard semantic trace.
+
+For future join support, observable equivalence is not sufficient for
+continuing from either branch. A conforming implementation must preserve the
+distinction between exact equivalence, semantic equivalence, and observable
+equivalence, and must require both state equivalence and continuation
+equivalence before a branch can share representative future execution.
+
 ## Same Trace vs Same Observable Result
 
 There are two possible compatibility levels:
