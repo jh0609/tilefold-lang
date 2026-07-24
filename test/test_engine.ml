@@ -592,6 +592,196 @@ let apply_capture_graph template ?(order = [ "copy"; "function"; "apply"; "drop-
   Raw_graph.of_lists ~nodes ~edges ~default_node_order:(List.map node_id order)
   |> validate_with_templates_ok [ template ]
 
+let natrec_step_succ_templates () =
+  let inner_nodes =
+    [
+      node "acc" (Parameter Core_type.Nat);
+      node "succ" Succ;
+      node "result" (Result Core_type.Nat);
+    ]
+  in
+  let inner_edges =
+    [
+      edge "inner-e-acc-succ" (pref "acc" "value") (pref "succ" "input");
+      edge "inner-e-succ-result" (pref "succ" "result") (pref "result" "value");
+    ]
+  in
+  let inner_body =
+    Raw_graph.of_lists ~nodes:inner_nodes ~edges:inner_edges
+      ~default_node_order:[ node_id "succ" ]
+    |> validate_ok
+  in
+  let inner =
+    Function_template.create ~id:(template_id "natrec-succ-inner")
+      ~parameter_type:Core_type.Nat ~result_type:Core_type.Nat ~captures:[]
+      ~body:inner_body ()
+  in
+  let outer_result = Core_type.Arrow (Core_type.Nat, Core_type.Nat) in
+  let outer_nodes =
+    [
+      node "pred" (Parameter Core_type.Nat);
+      node "drop-pred" (Drop Core_type.Nat);
+      node "inner-function" (Function (function_signature inner []));
+      node "result" (Result outer_result);
+    ]
+  in
+  let outer_edges =
+    [
+      edge "outer-e-pred-drop" (pref "pred" "value") (pref "drop-pred" "input");
+      edge "outer-e-function-result" (pref "inner-function" "value")
+        (pref "result" "value");
+    ]
+  in
+  let outer_body =
+    Raw_graph.of_lists ~nodes:outer_nodes ~edges:outer_edges
+      ~default_node_order:[ node_id "inner-function"; node_id "drop-pred" ]
+    |> validate_with_templates_ok [ inner ]
+  in
+  let outer =
+    Function_template.create ~dependencies:[ Function_template.id inner ]
+      ~id:(template_id "natrec-succ-step") ~parameter_type:Core_type.Nat
+      ~result_type:outer_result ~captures:[] ~body:outer_body ()
+  in
+  (inner, outer)
+
+let natrec_step_unit_templates () =
+  let inner_nodes =
+    [ node "acc" (Parameter Core_type.Unit); node "result" (Result Core_type.Unit) ]
+  in
+  let inner_edges =
+    [ edge "inner-e-acc-result" (pref "acc" "value") (pref "result" "value") ]
+  in
+  let inner_body =
+    Raw_graph.of_lists ~nodes:inner_nodes ~edges:inner_edges ~default_node_order:[]
+    |> validate_ok
+  in
+  let inner =
+    Function_template.create ~id:(template_id "natrec-unit-inner")
+      ~parameter_type:Core_type.Unit ~result_type:Core_type.Unit ~captures:[]
+      ~body:inner_body ()
+  in
+  let outer_result = Core_type.Arrow (Core_type.Unit, Core_type.Unit) in
+  let outer_nodes =
+    [
+      node "pred" (Parameter Core_type.Nat);
+      node "drop-pred" (Drop Core_type.Nat);
+      node "inner-function" (Function (function_signature inner []));
+      node "result" (Result outer_result);
+    ]
+  in
+  let outer_edges =
+    [
+      edge "outer-e-pred-drop" (pref "pred" "value") (pref "drop-pred" "input");
+      edge "outer-e-function-result" (pref "inner-function" "value")
+        (pref "result" "value");
+    ]
+  in
+  let outer_body =
+    Raw_graph.of_lists ~nodes:outer_nodes ~edges:outer_edges
+      ~default_node_order:[ node_id "inner-function"; node_id "drop-pred" ]
+    |> validate_with_templates_ok [ inner ]
+  in
+  let outer =
+    Function_template.create ~dependencies:[ Function_template.id inner ]
+      ~id:(template_id "natrec-unit-step") ~parameter_type:Core_type.Nat
+      ~result_type:outer_result ~captures:[] ~body:outer_body ()
+  in
+  (inner, outer)
+
+let natrec_step_arrow_templates base_template =
+  let arrow = Core_type.Arrow (Core_type.Unit, Core_type.Nat) in
+  let inner_nodes = [ node "acc" (Parameter arrow); node "result" (Result arrow) ] in
+  let inner_edges =
+    [ edge "inner-e-acc-result" (pref "acc" "value") (pref "result" "value") ]
+  in
+  let inner_body =
+    Raw_graph.of_lists ~nodes:inner_nodes ~edges:inner_edges ~default_node_order:[]
+    |> validate_ok
+  in
+  let inner =
+    Function_template.create ~id:(template_id "natrec-arrow-inner")
+      ~parameter_type:arrow ~result_type:arrow ~captures:[] ~body:inner_body ()
+  in
+  let outer_result = Core_type.Arrow (arrow, arrow) in
+  let outer_nodes =
+    [
+      node "pred" (Parameter Core_type.Nat);
+      node "drop-pred" (Drop Core_type.Nat);
+      node "inner-function" (Function (function_signature inner []));
+      node "result" (Result outer_result);
+    ]
+  in
+  let outer_edges =
+    [
+      edge "outer-e-pred-drop" (pref "pred" "value") (pref "drop-pred" "input");
+      edge "outer-e-function-result" (pref "inner-function" "value")
+        (pref "result" "value");
+    ]
+  in
+  let outer_body =
+    Raw_graph.of_lists ~nodes:outer_nodes ~edges:outer_edges
+      ~default_node_order:[ node_id "inner-function"; node_id "drop-pred" ]
+    |> validate_with_templates_ok [ inner; base_template ]
+  in
+  let outer =
+    Function_template.create ~dependencies:[ Function_template.id inner ]
+      ~id:(template_id "natrec-arrow-step") ~parameter_type:Core_type.Nat
+      ~result_type:outer_result ~captures:[] ~body:outer_body ()
+  in
+  (inner, outer)
+
+let natrec_graph ?(result_type = Core_type.Nat) ?(base_node = Nat_literal (nat "10"))
+    ?(count_literal = "0") ?(order = [ "step-function"; "natrec"; "drop-param" ])
+    ?(base_template = None) step_template =
+  let base_nodes, base_edges =
+    match base_template with
+    | None -> ([ node "base" base_node ], [])
+    | Some template ->
+        ( [ node "base-function" (Function (function_signature template [])) ],
+          [] )
+  in
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop-param" (Drop Core_type.Unit);
+      node "step-function"
+        (Function
+           {
+             template_id = Function_template.id step_template;
+             parameter_type = Core_type.Nat;
+             result_type = Core_type.Arrow (result_type, result_type);
+             captures = [];
+           });
+      node "count" (Nat_literal (nat count_literal));
+      node "natrec" (NatRec result_type);
+      node "result" (Result result_type);
+    ]
+    @ base_nodes
+  in
+  let base_source =
+    match base_template with
+    | None -> pref "base" "value"
+    | Some _ -> pref "base-function" "value"
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop-param" "input");
+      edge "e-base-natrec" base_source { node_id = node_id "natrec"; port_key = Port_key.base };
+      edge "e-step-natrec" (pref "step-function" "value")
+        { node_id = node_id "natrec"; port_key = Port_key.step };
+      edge "e-count-natrec" (pref "count" "value")
+        { node_id = node_id "natrec"; port_key = Port_key.count };
+      edge "e-natrec-result" { node_id = node_id "natrec"; port_key = Port_key.result }
+        (pref "result" "value");
+    ]
+    @ base_edges
+  in
+  Raw_graph.of_lists ~nodes ~edges ~default_node_order:(List.map node_id order)
+  |> validate_with_templates_ok
+       (match base_template with
+       | None -> [ step_template ]
+       | Some base_template -> [ base_template; step_template ])
+
 let stuck_copy_self_cycle () =
   let nodes =
     [
@@ -631,6 +821,319 @@ let rec step_trace machine =
   | Engine.Completed _ -> []
   | Engine.Stuck _ | Engine.Runtime_error _ -> assert false
   | Engine.Rewritten { machine; event } -> event :: step_trace machine
+
+let natrec_succ_graph count =
+  let inner, outer = natrec_step_succ_templates () in
+  ([ inner; outer ], natrec_graph ~count_literal:count outer)
+
+let () =
+  let inner, outer = natrec_step_succ_templates () in
+  ignore
+    (natrec_graph ~count_literal:"0" outer
+     |> fun graph -> init_with_templates_ok [ inner; outer ] graph Runtime_value.Unit);
+  let unit_inner, unit_outer = natrec_step_unit_templates () in
+  ignore
+    (natrec_graph ~result_type:Core_type.Unit ~base_node:Unit_literal
+       ~count_literal:"0" unit_outer
+     |> fun graph -> init_with_templates_ok [ unit_inner; unit_outer ] graph Runtime_value.Unit);
+  let base_template = succ_function_template ~id:"natrec-arrow-base" () in
+  let arrow_inner, arrow_outer = natrec_step_arrow_templates base_template in
+  let arrow = Core_type.Arrow (Core_type.Unit, Core_type.Nat) in
+  ignore
+    (natrec_graph ~result_type:arrow ~base_template:(Some base_template)
+       ~count_literal:"0"
+       ~order:[ "base-function"; "step-function"; "natrec"; "drop-param" ]
+       arrow_outer
+     |> fun graph ->
+     init_with_templates_ok [ base_template; arrow_inner; arrow_outer ] graph
+       Runtime_value.Unit)
+
+let () =
+  let inner, outer = natrec_step_succ_templates () in
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop-param" (Drop Core_type.Unit);
+      node "base" Unit_literal;
+      node "step-function" (Function (function_signature outer []));
+      node "count" (Nat_literal (nat "0"));
+      node "natrec" (NatRec Core_type.Nat);
+      node "result" (Result Core_type.Nat);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop-param" "input");
+      edge "e-base-natrec" (pref "base" "value")
+        { node_id = node_id "natrec"; port_key = Port_key.base };
+      edge "e-step-natrec" (pref "step-function" "value")
+        { node_id = node_id "natrec"; port_key = Port_key.step };
+      edge "e-count-natrec" (pref "count" "value")
+        { node_id = node_id "natrec"; port_key = Port_key.count };
+      edge "e-natrec-result" { node_id = node_id "natrec"; port_key = Port_key.result }
+        (pref "result" "value");
+    ]
+  in
+  let raw =
+    Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:(List.map node_id [ "step-function"; "natrec"; "drop-param" ])
+  in
+  match validate_with_templates [ inner; outer ] raw with
+  | Ok _ -> assert false
+  | Error errors ->
+      assert (
+        List.exists
+          (function Type_mismatch _ -> true | _ -> false)
+          errors)
+
+let () =
+  let wrong_step = function_template ~id:"natrec-wrong-step" () in
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop-param" (Drop Core_type.Unit);
+      node "base" (Nat_literal (nat "10"));
+      node "step-function" (Function (function_signature wrong_step []));
+      node "count" (Nat_literal (nat "1"));
+      node "natrec" (NatRec Core_type.Nat);
+      node "result" (Result Core_type.Nat);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop-param" "input");
+      edge "e-base-natrec" (pref "base" "value")
+        { node_id = node_id "natrec"; port_key = Port_key.base };
+      edge "e-step-natrec" (pref "step-function" "value")
+        { node_id = node_id "natrec"; port_key = Port_key.step };
+      edge "e-count-natrec" (pref "count" "value")
+        { node_id = node_id "natrec"; port_key = Port_key.count };
+      edge "e-natrec-result" { node_id = node_id "natrec"; port_key = Port_key.result }
+        (pref "result" "value");
+    ]
+  in
+  let raw =
+    Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:(List.map node_id [ "step-function"; "natrec"; "drop-param" ])
+  in
+  match validate_with_templates [ wrong_step ] raw with
+  | Ok _ -> assert false
+  | Error errors -> assert (List.exists (function Type_mismatch _ -> true | _ -> false) errors)
+
+let () =
+  let inner, outer = natrec_step_succ_templates () in
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop-param" (Drop Core_type.Unit);
+      node "base" (Nat_literal (nat "10"));
+      node "step-function" (Function (function_signature outer []));
+      node "count" Unit_literal;
+      node "natrec" (NatRec Core_type.Nat);
+      node "result" (Result Core_type.Unit);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop-param" "input");
+      edge "e-base-natrec" (pref "base" "value")
+        { node_id = node_id "natrec"; port_key = Port_key.base };
+      edge "e-step-natrec" (pref "step-function" "value")
+        { node_id = node_id "natrec"; port_key = Port_key.step };
+      edge "e-count-natrec" (pref "count" "value")
+        { node_id = node_id "natrec"; port_key = Port_key.count };
+      edge "e-natrec-result" { node_id = node_id "natrec"; port_key = Port_key.result }
+        (pref "result" "value");
+    ]
+  in
+  let raw =
+    Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:(List.map node_id [ "step-function"; "natrec"; "drop-param" ])
+  in
+  match validate_with_templates [ inner; outer ] raw with
+  | Ok _ -> assert false
+  | Error errors ->
+      assert (
+        List.length
+          (List.filter (function Type_mismatch _ -> true | _ -> false) errors)
+        >= 2)
+
+let () =
+  let templates, graph = natrec_succ_graph "0" in
+  let value, trace =
+    run_completed (init_with_templates_ok templates graph Runtime_value.Unit)
+  in
+  assert (payload_nat_string value = "10");
+  assert_rules [ "Function"; "Drop"; "NatRecZero" ] trace;
+  let zero = List.nth trace 2 in
+  assert (zero.Rewrite_event.consumed |> List.length = 3);
+  assert (zero.Rewrite_event.created |> List.length = 1);
+  assert (
+    not
+      (Runtime_value.Value_id.equal
+         (Runtime_value.id (List.hd zero.Rewrite_event.created))
+         (List.hd zero.Rewrite_event.consumed)));
+  assert (
+    List.for_all
+      (fun event ->
+        not
+          (match event.Rewrite_event.callee_instance_id with
+          | Some _ -> true
+          | None -> false))
+      trace)
+
+let () =
+  let templates, graph = natrec_succ_graph "1" in
+  let value, trace =
+    run_completed (init_with_templates_ok templates graph Runtime_value.Unit)
+  in
+  assert (payload_nat_string value = "11");
+  assert_rules
+    [
+      "Function";
+      "Drop";
+      "NatRecStart";
+      "NatRecUnfold";
+      "NatRecStepFunctionEnter";
+      "Function";
+      "Drop";
+      "NatRecStepFunctionReturn";
+      "NatRecStepAccumulatorEnter";
+      "Succ";
+      "NatRecStepAccumulatorReturn";
+      "NatRecComplete";
+    ]
+    trace;
+  let function_event = List.nth trace 0 in
+  let step_id =
+    Runtime_value.id (List.hd function_event.Rewrite_event.created)
+  in
+  let start = List.nth trace 2 in
+  assert (
+    List.exists
+      (Runtime_value.Value_id.equal step_id)
+      start.Rewrite_event.consumed);
+  let unfold = List.nth trace 3 in
+  assert (payload_nat_string (List.hd unfold.Rewrite_event.created) = "0");
+  let enter = List.nth trace 4 in
+  assert (enter.Rewrite_event.used = [ step_id ]);
+  let accumulator_return = List.nth trace 10 in
+  let next_acc = List.hd accumulator_return.Rewrite_event.created in
+  let complete = List.nth trace 11 in
+  let final = List.hd complete.Rewrite_event.created in
+  assert (
+    List.map Runtime_value.Value_id.to_string complete.Rewrite_event.consumed
+    = [ Runtime_value.Value_id.to_string (Runtime_value.id next_acc) ]);
+  assert (
+    not
+      (Runtime_value.Value_id.equal (Runtime_value.id next_acc)
+         (Runtime_value.id final)));
+  assert (Rewrite_event.rule_to_string (List.nth trace 1).Rewrite_event.rule = "Drop")
+
+let () =
+  let templates, graph = natrec_succ_graph "2" in
+  let value, trace =
+    run_completed (init_with_templates_ok templates graph Runtime_value.Unit)
+  in
+  assert (payload_nat_string value = "12");
+  assert_rules
+    [
+      "Function";
+      "Drop";
+      "NatRecStart";
+      "NatRecUnfold";
+      "NatRecStepFunctionEnter";
+      "Function";
+      "Drop";
+      "NatRecStepFunctionReturn";
+      "NatRecStepAccumulatorEnter";
+      "Succ";
+      "NatRecStepAccumulatorReturn";
+      "NatRecUnfold";
+      "NatRecStepFunctionEnter";
+      "Function";
+      "Drop";
+      "NatRecStepFunctionReturn";
+      "NatRecStepAccumulatorEnter";
+      "Succ";
+      "NatRecStepAccumulatorReturn";
+      "NatRecComplete";
+    ]
+    trace;
+  let predecessors =
+    trace
+    |> List.filter (fun event -> event.Rewrite_event.rule = Rewrite_event.NatRecUnfold)
+    |> List.map (fun event -> payload_nat_string (List.hd event.Rewrite_event.created))
+  in
+  assert (predecessors = [ "0"; "1" ]);
+  let callee_ids =
+    trace |> List.filter_map (fun event -> event.Rewrite_event.callee_instance_id)
+  in
+  let unique_callee_ids =
+    List.sort_uniq Runtime_value.Instance_id.compare callee_ids
+  in
+  assert (List.length callee_ids = 8);
+  assert (List.length unique_callee_ids = 4);
+  assert (
+    List.exists
+      (function
+        | Runtime_value.Instance_id.Call
+            { call_site = Runtime_value.Instance_id.NatRec_step_function _; _ } ->
+            true
+        | _ -> false)
+      unique_callee_ids);
+  assert (
+    List.exists
+      (function
+        | Runtime_value.Instance_id.Call
+            { call_site = Runtime_value.Instance_id.NatRec_step_accumulator _; _ } ->
+            true
+        | _ -> false)
+      unique_callee_ids);
+  let _, trace_b =
+    run_completed (init_with_templates_ok templates graph Runtime_value.Unit)
+  in
+  assert (List.map Rewrite_event.to_string trace = List.map Rewrite_event.to_string trace_b)
+
+let () =
+  let inner, outer = natrec_step_unit_templates () in
+  let graph =
+    natrec_graph ~result_type:Core_type.Unit ~base_node:Unit_literal
+      ~count_literal:"3" outer
+  in
+  let value, trace =
+    run_completed (init_with_templates_ok [ inner; outer ] graph Runtime_value.Unit)
+  in
+  assert (Runtime_value.payload value = Runtime_value.Unit);
+  assert (
+    trace
+    |> List.filter (fun event -> event.Rewrite_event.rule = Rewrite_event.NatRecUnfold)
+    |> List.length = 3)
+
+let () =
+  let base_template = succ_function_template ~id:"natrec-arrow-base-run" () in
+  let inner, outer = natrec_step_arrow_templates base_template in
+  let arrow = Core_type.Arrow (Core_type.Unit, Core_type.Nat) in
+  let graph =
+    natrec_graph ~result_type:arrow ~base_template:(Some base_template)
+      ~count_literal:"2"
+      ~order:[ "base-function"; "step-function"; "natrec"; "drop-param" ]
+      outer
+  in
+  let value, trace =
+    run_completed
+      (init_with_templates_ok [ base_template; inner; outer ] graph Runtime_value.Unit)
+  in
+  (match Runtime_value.payload value with
+  | Runtime_value.Closure closure ->
+      assert (
+        Function_template_id.equal closure.template_id
+          (Function_template.id base_template))
+  | Runtime_value.Unit | Runtime_value.Nat _ -> assert false);
+  assert (
+    trace
+    |> List.filter (fun event -> event.Rewrite_event.rule = Rewrite_event.NatRecUnfold)
+    |> List.length = 2)
 
 let () =
   let graph = entry_unit_to_nat () in

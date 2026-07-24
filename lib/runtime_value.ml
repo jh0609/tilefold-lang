@@ -7,36 +7,68 @@ module Value_id = struct
 end
 
 module Instance_id = struct
+  type call_site =
+    | Apply_node of Core_graph.Node_id.t
+    | NatRec_step_function of {
+        node_id : Core_graph.Node_id.t;
+        iteration : Nat.t;
+      }
+    | NatRec_step_accumulator of {
+        node_id : Core_graph.Node_id.t;
+        iteration : Nat.t;
+      }
+
   type t =
     | Root
     | Call of {
         parent : t;
-        apply_node : Core_graph.Node_id.t;
+        call_site : call_site;
         call_index : int;
       }
 
   let root = Root
-  let call ~parent ~apply_node ~call_index = Call { parent; apply_node; call_index }
+  let call_at ~parent ~call_site ~call_index = Call { parent; call_site; call_index }
+  let call ~parent ~apply_node ~call_index =
+    call_at ~parent ~call_site:(Apply_node apply_node) ~call_index
+
+  let call_site_equal left right =
+    match (left, right) with
+    | Apply_node left, Apply_node right -> Core_graph.Node_id.equal left right
+    | ( NatRec_step_function { node_id = left_node; iteration = left_iteration },
+        NatRec_step_function { node_id = right_node; iteration = right_iteration } )
+    | ( NatRec_step_accumulator { node_id = left_node; iteration = left_iteration },
+        NatRec_step_accumulator { node_id = right_node; iteration = right_iteration } ) ->
+        Core_graph.Node_id.equal left_node right_node
+        && Nat.equal left_iteration right_iteration
+    | _ -> false
+
+  let call_site_to_string = function
+    | Apply_node node_id -> "Apply(" ^ Core_graph.Node_id.to_string node_id ^ ")"
+    | NatRec_step_function { node_id; iteration } ->
+        "NatRecStepFunction(" ^ Core_graph.Node_id.to_string node_id ^ ","
+        ^ Nat.to_string iteration ^ ")"
+    | NatRec_step_accumulator { node_id; iteration } ->
+        "NatRecStepAccumulator(" ^ Core_graph.Node_id.to_string node_id ^ ","
+        ^ Nat.to_string iteration ^ ")"
 
   let rec equal left right =
     match (left, right) with
     | Root, Root -> true
     | ( Call
-          { parent = left_parent; apply_node = left_apply; call_index = left_index },
+          { parent = left_parent; call_site = left_site; call_index = left_index },
         Call
-          { parent = right_parent; apply_node = right_apply; call_index = right_index }
+          { parent = right_parent; call_site = right_site; call_index = right_index }
       ) ->
         equal left_parent right_parent
-        && Core_graph.Node_id.equal left_apply right_apply
+        && call_site_equal left_site right_site
         && left_index = right_index
     | _ -> false
 
   let rec to_string = function
     | Root -> "Root"
-    | Call { parent; apply_node; call_index } ->
+    | Call { parent; call_site; call_index } ->
         "Call(" ^ to_string parent ^ ","
-        ^ Core_graph.Node_id.to_string apply_node
-        ^ "," ^ string_of_int call_index ^ ")"
+        ^ call_site_to_string call_site ^ "," ^ string_of_int call_index ^ ")"
 
   let compare left right = String.compare (to_string left) (to_string right)
 end

@@ -20,9 +20,30 @@ type stuck_reason = {
   result_missing : bool;
 }
 
+type natrec_phase =
+  | Need_unfold
+  | Predecessor_ready
+  | Waiting_for_step_function of Runtime_value.Instance_id.t
+  | Partial_ready
+  | Waiting_for_step_accumulator of Runtime_value.Instance_id.t
+  | Ready_to_complete
+
+type natrec_state = {
+  result_type : Core_type.t;
+  count : Runtime_value.t;
+  total_count : Nat.t;
+  step : Runtime_value.t;
+  next_predecessor : Nat.t;
+  accumulator : Runtime_value.t;
+  predecessor : Runtime_value.t option;
+  partial : Runtime_value.t option;
+  phase : natrec_phase;
+}
+
 type node_state =
   | Pending
   | Waiting_for_return of Runtime_value.Instance_id.t
+  | NatRec_active of natrec_state
   | Completed
 
 type runtime_error =
@@ -56,6 +77,15 @@ type runtime_error =
       node_id : Core_graph.Node_id.t;
       expected : Core_type.t;
       actual : Core_type.t;
+    }
+  | Invalid_natrec_runtime_payload of {
+      node_id : Core_graph.Node_id.t;
+      expected : Core_type.t;
+      actual : Core_type.t;
+    }
+  | NatRec_lifecycle_error of {
+      node_id : Core_graph.Node_id.t;
+      message : string;
     }
   | Runtime_invariant_violation of string
 

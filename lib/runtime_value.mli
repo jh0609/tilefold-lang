@@ -7,18 +7,32 @@ module Value_id : sig
 end
 
 module Instance_id : sig
+  type call_site =
+    | Apply_node of Core_graph.Node_id.t
+    | NatRec_step_function of {
+        node_id : Core_graph.Node_id.t;
+        iteration : Nat.t;
+      }
+    | NatRec_step_accumulator of {
+        node_id : Core_graph.Node_id.t;
+        iteration : Nat.t;
+      }
+
   type t =
     | Root
     | Call of {
         parent : t;
-        apply_node : Core_graph.Node_id.t;
+        call_site : call_site;
         call_index : int;
       }
 
   val root : t
   val call : parent:t -> apply_node:Core_graph.Node_id.t -> call_index:int -> t
+  val call_at : parent:t -> call_site:call_site -> call_index:int -> t
   val equal : t -> t -> bool
   val compare : t -> t -> int
+  val call_site_equal : call_site -> call_site -> bool
+  val call_site_to_string : call_site -> string
   val to_string : t -> string
 end
 

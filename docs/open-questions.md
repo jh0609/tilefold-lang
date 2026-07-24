@@ -59,10 +59,10 @@ used as fallback scheduling metadata. This is recorded in
 `docs/decisions/0009-canonical-default-node-order.md`.
 
 The runtime vertical slices are now implemented for validated graphs with
-`Unit`, `Nat`, `Succ`, `Copy`, `Drop`, `Function`, `Apply`, `Parameter`,
+`Unit`, `Nat`, `Succ`, `Copy`, `Drop`, `Function`, `Apply`, `NatRec`, `Parameter`,
 `Capture`, and `Result`. They materialize input and literals, execute `Succ`,
 `Copy`, `Drop`, `Function`, `ApplyEnter`, function body rewrites, and
-`ApplyReturn`, support nested depth-first calls, support Arrow closure
+`ApplyReturn`, execute `NatRec`, support nested depth-first calls, support Arrow closure
 `Copy`/`Drop`, and report `Completed`, `Stuck`, or typed runtime errors. This
 started in
 `docs/decisions/0010-first-runtime-interpreter-vertical-slice.md` and was
@@ -77,6 +77,8 @@ Function template references, closure creation, and Arrow closure Copy/Drop.
 `docs/decisions/0020-apply-instance-call-stack-and-return-boundary.md`
 implements Apply, independent function instances, depth-first call stack
 scheduling, scoped instance/value identity, and ApplyReturn.
+`docs/decisions/0022-natrec-primitive-recursion-runtime.md` implements
+NatRec primitive recursion for `transparent-v0`.
 
 `linear-v0` is now recorded as a separate provisional semantics profile in
 `docs/language-spec.md` and
@@ -175,9 +177,11 @@ Still open:
 - Impact on future compatibility: Once golden traces exist, port schemas and
   rule identities are expensive to change.
 - Recommendation: The implemented rewrite subset is now `Succ`, `Copy`,
-  `Drop`, `Function`, `ApplyEnter`, and `ApplyReturn`. `Copy (Arrow _)` is
-  supported for closure payloads. Keep `NatRec` open until its graph patch,
-  scheduling, trace, and termination details are specified.
+  `Drop`, `Function`, `ApplyEnter`, `ApplyReturn`, and `NatRec`. `Copy
+  (Arrow _)` is supported for closure payloads. NatRec's current graph schema,
+  lifecycle scheduling, trace rules, and bounded primitive recursion behavior
+  are recorded in Decision 0022. Keep final canonical serialization, complete
+  graph cycle policy, and full trace schema details open.
 
 ## 2. How are immutable logical values represented?
 

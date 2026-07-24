@@ -1142,6 +1142,94 @@ let () =
   in
   has_error (function Function_template_cycle _ -> true | _ -> false) errors
 
+let natrec_validation_raw ?(nodes_extra = []) ?(edges_extra = [])
+    ?(edges_drop = []) () =
+  let template = fn_template ~id:"natrec-validation-step" () in
+  let signature = function_signature template [] in
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop-param" (Drop Core_type.Unit);
+      node "base" (Nat_literal (nat "10"));
+      node "count" (Nat_literal (nat "1"));
+      node "step-function" (Function signature);
+      node "natrec" (NatRec Core_type.Nat);
+      node "result" (Result Core_type.Nat);
+    ]
+    @ nodes_extra
+  in
+  let base_edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop-param" "input");
+      edge "e-base-natrec" (pref "base" "value")
+        { node_id = node_id "natrec"; port_key = Port_key.base };
+      edge "e-step-natrec" (pref "step-function" "value")
+        { node_id = node_id "natrec"; port_key = Port_key.step };
+      edge "e-count-natrec" (pref "count" "value")
+        { node_id = node_id "natrec"; port_key = Port_key.count };
+      edge "e-natrec-result" { node_id = node_id "natrec"; port_key = Port_key.result }
+        (pref "result" "value");
+    ]
+  in
+  let edges =
+    base_edges
+    |> List.filter (fun edge ->
+           not (List.exists (fun id -> Edge_id.to_string edge.id = id) edges_drop))
+    |> fun edges -> edges @ edges_extra
+  in
+  ( template,
+    Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:
+        (List.map node_id [ "step-function"; "natrec"; "drop-param" ]) )
+
+let () =
+  let template, graph =
+    natrec_validation_raw ~edges_drop:[ "e-base-natrec" ] ()
+  in
+  let errors = validate_with_template_errors [ template ] graph in
+  has_error
+    (function
+      | Input_port_connection_count { node_id; port_key; actual = 0; _ } ->
+          Node_id.to_string node_id = "natrec"
+          && Port_key.equal port_key Port_key.base
+      | _ -> false)
+    errors
+
+let () =
+  let duplicate =
+    edge "e-count-natrec-2" (pref "count" "value")
+      { node_id = node_id "natrec"; port_key = Port_key.count }
+  in
+  let template, graph = natrec_validation_raw ~edges_extra:[ duplicate ] () in
+  let errors = validate_with_template_errors [ template ] graph in
+  has_error
+    (function
+      | Input_port_connection_count { node_id; port_key; actual = 2; _ } ->
+          Node_id.to_string node_id = "natrec"
+          && Port_key.equal port_key Port_key.count
+      | _ -> false)
+    errors
+
+let () =
+  let extra_edge =
+    edge "e-natrec-result-2"
+      { node_id = node_id "natrec"; port_key = Port_key.result }
+      (pref "result-2" "value")
+  in
+  let template, graph =
+    natrec_validation_raw
+      ~nodes_extra:[ node "result-2" (Result Core_type.Nat) ]
+      ~edges_extra:[ extra_edge ] ()
+  in
+  let errors = validate_with_template_errors [ template ] graph in
+  has_error
+    (function
+      | Output_port_connection_count { node_id; port_key; actual = 2; _ } ->
+          Node_id.to_string node_id = "natrec"
+          && Port_key.equal port_key Port_key.result
+      | _ -> false)
+    errors
+
 let () =
   let template = fn_template () in
   let signature = function_signature template [] in

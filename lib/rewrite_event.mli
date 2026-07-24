@@ -5,6 +5,14 @@ type rule =
   | Function
   | ApplyEnter
   | ApplyReturn
+  | NatRecZero
+  | NatRecStart
+  | NatRecUnfold
+  | NatRecStepFunctionEnter
+  | NatRecStepFunctionReturn
+  | NatRecStepAccumulatorEnter
+  | NatRecStepAccumulatorReturn
+  | NatRecComplete
 
 type t = {
   index : int;
@@ -12,6 +20,7 @@ type t = {
   instance_id : Runtime_value.Instance_id.t;
   subject : Core_graph.Node_id.t;
   ready_epoch : int;
+  used : Runtime_value.Value_id.t list;
   consumed : Runtime_value.Value_id.t list;
   created : Runtime_value.t list;
   callee_instance_id : Runtime_value.Instance_id.t option;

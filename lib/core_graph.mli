@@ -27,6 +27,12 @@ module Port_key : sig
   val right : t
   val function_input : t
   val argument : t
+  val base : t
+  val step : t
+  val count : t
+  val predecessor : t
+  val partial : t
+  val accumulator : t
   val capture : string -> t
   val equal : t -> t -> bool
   val compare : t -> t -> int
@@ -62,6 +68,7 @@ type node_kind =
   | Copy of Core_type.t
   | Function of function_signature
   | Apply of apply_signature
+  | NatRec of Core_type.t
 
 and capture = {
   key : Port_key.t;

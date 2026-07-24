@@ -53,8 +53,10 @@ The current OCaml runtime implements validation and execution for a subset:
   `Parameter`, `Result`, `Function` closure creation, Arrow closure
   `Copy`/`Drop`, `ApplyEnter`, independent function instances, function body
   rewrites, nested depth-first `Apply`, `ApplyReturn`, `default_node_order`,
-  and static single-scope `PrioritySpine`;
-- confirmed but not implemented: `NatRec`.
+  `NatRec`, and static single-scope `PrioritySpine`;
+- confirmed but not implemented: none of the listed primitive candidates in
+  this current runtime slice. `NatRec` is implemented for `transparent-v0`;
+  checkpoint, replay, and execution limits remain deferred execution tooling.
 
 The `transparent-v0` settings remain:
 
@@ -205,6 +207,60 @@ the caller as active, and lets the caller's existing scheduler continue.
 
 Deferred details include final instance ID serialization, graph snapshot
 representation, cross-scope scheduling experiments, and checkpoint persistence.
+
+### NatRec Lifecycle
+
+Status: Current implementation for primitive recursion over `Nat`.
+
+`NatRec[A]` has inputs `base : A`, `step : Nat -> A -> A`, `count : Nat`, and
+output `result : A`. The step function takes `predecessor` before
+`accumulator`. Because Core functions are unary, each positive iteration uses
+two ordinary function instance activations:
+
+```text
+partial  = step predecessor
+next_acc = partial accumulator
+```
+
+The runtime keeps one instance-local lifecycle for the NatRec node. It does
+not create recursive NatRec nodes and does not expand the runtime graph. The
+implemented phases are:
+
+```text
+Need_unfold
+Predecessor_ready
+Waiting_for_step_function
+Partial_ready
+Waiting_for_step_accumulator
+Ready_to_complete
+```
+
+For positive counts, `NatRecStart` consumes `base`, `step`, and `count` into
+that lifecycle. The base value becomes the first accumulator with the same
+logical ID. The step closure is owned once by NatRec and is reused in each
+iteration as a non-consuming callable reference recorded in trace `used`
+values. It is not copied per iteration.
+
+Step function calls are normal depth-first callee instances with generalized
+typed call sites:
+
+```text
+NatRec_step_function(node_id, iteration)
+NatRec_step_accumulator(node_id, iteration)
+```
+
+The iteration ordinal is the arbitrary-precision `Nat` predecessor value. The
+current event index remains part of the provisional call identity used by the
+engine; it is not a final public serialization scheme.
+
+Once NatRec starts, other ready nodes in the same caller instance do not
+interleave until the NatRec completes, gets stuck, or errors. Function bodies
+entered by NatRec still use their own per-instance scheduler.
+
+`NatRecZero` and `NatRecComplete` both create fresh result-boundary logical
+values. The second curried step return creates the next accumulator value, and
+that value ID is reused directly as the next accumulator without an extra
+logical boundary.
 
 ## Scheduler Model
 
@@ -609,18 +665,16 @@ Copy
 -> NatRec
 ```
 
-Debugger UX should be designed after trace, instance, checkpoint, and snapshot
-structures are sufficiently implemented.
+The current implementation has completed this sequence through NatRec for the
+`transparent-v0` runtime slice. Debugger UX should be designed after trace,
+instance, checkpoint, and snapshot structures are sufficiently implemented.
 
 ## Deferred Details
 
 This document intentionally does not decide:
 
 - template canonical serialization and hash format,
-- `Apply` graph instance runtime representation,
-- CallFrame structure,
 - instance scheduler scope,
-- `NatRec` rewrite meaning,
 - final checkpoint schema and persistence format,
 - engine version compatibility policy,
 - branch and logical ID namespace encoding,

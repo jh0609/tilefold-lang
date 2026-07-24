@@ -451,6 +451,9 @@ The first implemented validation subset fixes these node-derived schemas:
   declared capture type.
 - `Apply`: `function` input of type `A -> B`, `argument` input of type `A`,
   and `result` output of type `B`.
+- `NatRec A`: `base` input of type `A`, `step` input of type
+  `Nat -> A -> A`, `count` input of type `Nat`, and `result` output of type
+  `A`.
 
 For this subset, a valid template body has exactly one `Parameter` boundary and
 one `Result` boundary. The template type is derived as `A -> B`. Every input
@@ -458,24 +461,25 @@ port must have exactly one incoming edge and every output port must have
 exactly one outgoing edge, so implicit fan-out, unused outputs, duplicated
 input connections, and unconnected boundary inputs are validation errors.
 
-The current executable node kinds are `Succ`, `Copy _`, `Drop _`, and
-`Function _`.
+The current executable node kinds are `Succ`, `Copy _`, `Drop _`,
+`Function _`, `Apply _`, and `NatRec _`.
 `Unit_literal`, `Nat_literal _`, `Parameter _`, and `Result _` are
 non-executable. The validator requires `default_node_order` to include every
 executable node exactly once and to exclude non-executable nodes.
 
 This validator does not implement full graph cycle rules, reachability,
-`NatRec`, multi-scope scheduling, or full trace schemas. The current runtime
+multi-scope scheduling, or full trace schemas. The current runtime
 slices implement `Succ`, `Copy` for `Unit`, `Nat`, and closure Arrow values,
 `Drop`, `Function` closure creation, `ApplyEnter`/callee body
-execution/`ApplyReturn`, nested depth-first calls, and static single-scope
-`PrioritySpine` scheduling. See
+execution/`ApplyReturn`, nested depth-first calls, `NatRec`, and static
+single-scope `PrioritySpine` scheduling. See
 `docs/decisions/0008-explicit-port-graph-and-validation-boundary.md`,
 `docs/decisions/0009-canonical-default-node-order.md`, and
 `docs/decisions/0010-first-runtime-interpreter-vertical-slice.md`, followed by
 `docs/decisions/0011-copy-rewrite-and-linear-duplication.md`,
-`docs/decisions/0019-function-closure-creation-and-arrow-copy.md`, and
-`docs/decisions/0020-apply-instance-call-stack-and-return-boundary.md`.
+`docs/decisions/0019-function-closure-creation-and-arrow-copy.md`,
+`docs/decisions/0020-apply-instance-call-stack-and-return-boundary.md`, and
+`docs/decisions/0022-natrec-primitive-recursion-runtime.md`.
 
 Long-term execution-management topics such as pause, checkpoint, fork, join,
 and equivalence comparison are outside Core rewrite semantics and are recorded
@@ -555,11 +559,16 @@ The `transparent-v0` profile records these current choices:
 - `port-schema = derived-from-node-kind`
 - `raw-and-validated-graph = distinct-abstract-types`
 - `runtime-input = validated-graph-only`
-- `initial-implementation-scope = Unit + Nat + Succ + Copy + Drop + Function + Apply + Parameter/Capture/Result boundaries`
+- `initial-implementation-scope = Unit + Nat + Succ + Copy + Drop + Function + Apply + NatRec + Parameter/Capture/Result boundaries`
 - `canonical-node-order = explicit-ordered-executable-node-list`
 - `runtime-value = immutable-logical-value-with-typed-origin`
 - `runtime-logical-id = deterministic-provisional-id`
-- `implemented-rewrite-subset = Succ + Copy + Drop + Function + ApplyEnter + ApplyReturn`
+- `implemented-rewrite-subset = Succ + Copy + Drop + Function + ApplyEnter + ApplyReturn + NatRec`
+- `natrec-type = NatRec[A](base: A, step: Nat -> A -> A, count: Nat) -> A`
+- `natrec-step-order = predecessor-then-accumulator`
+- `natrec-execution = single-node-lifecycle-with-two-curried-step-calls-per-iteration`
+- `natrec-step-closure-use = consume-once-then-non-consuming-callable-reference`
+- `natrec-result-boundary = fresh-logical-value`
 - `apply-runtime = implemented-depth-first-instance-call-stack`
 - `apply-return-value = new-caller-scope-logical-value`
 - `function-closure-creation = implemented-template-reference-and-ordered-captures`
@@ -577,8 +586,82 @@ The `transparent-v0` profile records these current choices:
 - `stuck-reporting = unexecuted-nodes-and-result-missing-flag`
 
 These values classify the current design direction and implemented slices. They
-do not freeze final canonical serialization, template hashing, `Apply`,
-`NatRec`, or full trace schemas.
+do not freeze final canonical serialization, template hashing, resource limits,
+checkpoint formats, or full trace schemas.
+
+## NatRec
+
+`NatRec` is the primitive recursion construct for `Nat` in `transparent-v0`.
+It is implemented as a single executable Core node with explicit lifecycle
+state rather than by dynamically expanding the runtime graph.
+
+The canonical type is:
+
+```text
+NatRec[A] :
+  base   : A
+  step   : Nat -> A -> A
+  count  : Nat
+  result : A
+```
+
+The step function is curried because Core functions are unary. Each positive
+iteration calls:
+
+```text
+partial  = step predecessor
+next_acc = partial accumulator
+```
+
+The predecessor argument comes first. `A` may be `Unit`, `Nat`, or an Arrow
+type.
+
+`NatRec` becomes ready only when `base`, `step`, and `count` are all available.
+Strict call-by-value therefore evaluates the step closure even when `count = 0`.
+For zero count, `NatRecZero` consumes all three inputs and creates a fresh
+result value with the same payload as `base`.
+
+For positive count, `NatRecStart` consumes `base`, `step`, and `count` into the
+node lifecycle. The initial accumulator is the base value with the same logical
+ID. The step closure is owned by the NatRec lifecycle and reused as a
+non-consuming callable reference; this does not create hidden Copy events and
+does not change `linear-v0`.
+
+Each iteration commits visible NatRec rewrites:
+
+```text
+NatRecUnfold
+NatRecStepFunctionEnter
+NatRecStepFunctionReturn
+NatRecStepAccumulatorEnter
+NatRecStepAccumulatorReturn
+```
+
+`NatRecUnfold` creates the current predecessor as a fresh compact `Nat` value
+with scoped rewrite-output origin. The function-enter rewrites activate normal
+function instances depth-first. The first return creates a fresh partial
+closure value; the second return creates the next accumulator value. That
+second return value is the next accumulator without another logical boundary.
+After the last iteration, `NatRecComplete` consumes the final accumulator and
+creates a fresh result value on the NatRec `result` port.
+
+Excluding function-body rewrites, the NatRec rewrite count is:
+
+```text
+count = 0: 1
+count = n > 0: 2 + 5n
+```
+
+Once a NatRec node has started, the caller instance does not interleave other
+ready nodes until the NatRec completes, gets stuck, or reports a runtime error.
+Callee function bodies still use their own `ready_epoch`, `PrioritySpine`, and
+`default_node_order` scheduling.
+
+The default 3D Surface may show a NatRec iteration as one folded "step action"
+using the same step function structure. Detailed observation can unfold the two
+curried calls, callee instances, partial closure, logical IDs, provenance, and
+actual rewrite order. This is visualization only and must not alter Core graph
+or standard trace semantics.
 
 ## Atomic Rewriting
 

@@ -33,6 +33,12 @@ module Port_key = struct
   let right = "right"
   let function_input = "function"
   let argument = "argument"
+  let base = "base"
+  let step = "step"
+  let count = "count"
+  let predecessor = "predecessor"
+  let partial = "partial"
+  let accumulator = "accumulator"
   let capture name = "capture:" ^ name
   let equal = String.equal
   let compare = String.compare
@@ -76,6 +82,7 @@ type node_kind =
   | Copy of Core_type.t
   | Function of function_signature
   | Apply of apply_signature
+  | NatRec of Core_type.t
 
 and capture = {
   key : Port_key.t;
@@ -152,9 +159,18 @@ let ports_of_node_kind = function
         port Port_key.argument Input signature.apply_parameter_type;
         port Port_key.result Output signature.apply_result_type;
       ]
+  | NatRec result_type ->
+      [
+        port Port_key.base Input result_type;
+        port Port_key.step Input
+          (Core_type.Arrow
+             (Core_type.Nat, Core_type.Arrow (result_type, result_type)));
+        port Port_key.count Input Core_type.Nat;
+        port Port_key.result Output result_type;
+      ]
 
 let is_executable_node_kind = function
-  | Succ | Drop _ | Copy _ | Function _ | Apply _ -> true
+  | Succ | Drop _ | Copy _ | Function _ | Apply _ | NatRec _ -> true
   | Unit_literal | Nat_literal _ | Parameter _ | Capture _ | Result _ -> false
 
 module Raw_graph = struct

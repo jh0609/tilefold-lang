@@ -55,6 +55,15 @@ type runtime_error =
       expected : Core_type.t;
       actual : Core_type.t;
     }
+  | Invalid_natrec_runtime_payload of {
+      node_id : CG.Node_id.t;
+      expected : Core_type.t;
+      actual : Core_type.t;
+    }
+  | NatRec_lifecycle_error of {
+      node_id : CG.Node_id.t;
+      message : string;
+    }
   | Runtime_invariant_violation of string
 
 type port_binding = {
@@ -62,9 +71,30 @@ type port_binding = {
   value : Runtime_value.t;
 }
 
+type natrec_phase =
+  | Need_unfold
+  | Predecessor_ready
+  | Waiting_for_step_function of Instance_id.t
+  | Partial_ready
+  | Waiting_for_step_accumulator of Instance_id.t
+  | Ready_to_complete
+
+type natrec_state = {
+  result_type : Core_type.t;
+  count : Runtime_value.t;
+  total_count : Nat.t;
+  step : Runtime_value.t;
+  next_predecessor : Nat.t;
+  accumulator : Runtime_value.t;
+  predecessor : Runtime_value.t option;
+  partial : Runtime_value.t option;
+  phase : natrec_phase;
+}
+
 type node_state =
   | Pending
   | Waiting_for_return of Instance_id.t
+  | NatRec_active of natrec_state
   | Completed
 
 type instance = {
@@ -76,11 +106,26 @@ type instance = {
   result_value : Runtime_value.t option;
 }
 
+type natrec_stage =
+  | Step_function
+  | Step_accumulator
+
+type return_target =
+  | Apply_result of {
+      apply_node_id : CG.Node_id.t;
+      expected_result_type : Core_type.t;
+    }
+  | NatRec_step of {
+      node_id : CG.Node_id.t;
+      iteration : Nat.t;
+      stage : natrec_stage;
+      expected_result_type : Core_type.t;
+    }
+
 type call_frame = {
   caller_instance_id : Instance_id.t;
-  apply_node_id : CG.Node_id.t;
   callee_instance_id : Instance_id.t;
-  expected_result_type : Core_type.t;
+  return_target : return_target;
 }
 
 module Machine = struct
@@ -122,16 +167,32 @@ module Machine = struct
         | None -> Some Pending)
 
   let values machine =
+    let natrec_state_values state =
+      [
+        Some state.count;
+        Some state.step;
+        Some state.accumulator;
+        state.predecessor;
+        state.partial;
+      ]
+      |> List.filter_map (fun value -> value)
+    in
     let instance_values =
       machine.instances
       |> List.concat_map (fun instance ->
              let binding_values = List.map (fun binding -> binding.value) instance.bindings in
+             let lifecycle_values =
+               instance.node_states
+               |> List.concat_map (function
+                    | _, NatRec_active state -> natrec_state_values state
+                    | _ -> [])
+             in
              let result_values =
                match instance.result_value with
                | Some value -> [ value ]
                | None -> []
              in
-             binding_values @ result_values)
+             binding_values @ lifecycle_values @ result_values)
     in
     let created_values =
       machine.trace_events |> List.concat_map (fun event -> event.Rewrite_event.created)
@@ -253,7 +314,7 @@ let set_node_state instance node_id state =
 
 let is_ready instance node_id =
   match node_state instance node_id with
-  | Completed | Waiting_for_return _ -> false
+  | Completed | Waiting_for_return _ | NatRec_active _ -> false
   | Pending ->
     match node_by_id instance.graph node_id with
     | None -> false
@@ -287,6 +348,19 @@ let is_ready instance node_id =
                  (signature.apply_parameter_type, signature.apply_result_type))
             && Core_type.equal (Runtime_value.typ argument_value)
                  signature.apply_parameter_type
+        | _ -> false)
+    | Some { kind = CG.NatRec result_type; _ } -> (
+        match
+          ( binding_for instance.bindings node_id CG.Port_key.base,
+            binding_for instance.bindings node_id CG.Port_key.step,
+            binding_for instance.bindings node_id CG.Port_key.count )
+        with
+        | Some base, Some step, Some count ->
+            Core_type.equal (Runtime_value.typ base) result_type
+            && Core_type.equal (Runtime_value.typ step)
+                 (Core_type.Arrow
+                    (Core_type.Nat, Core_type.Arrow (result_type, result_type)))
+            && Core_type.equal (Runtime_value.typ count) Core_type.Nat
         | _ -> false)
     | Some _ -> false
 
@@ -429,13 +503,15 @@ let remove_ready instance node_id =
 let refresh_after_event instance event_index =
   { instance with ready_candidates = refresh_ready_candidates instance event_index }
 
-let make_event machine instance candidate rule consumed created ?callee_instance_id () =
+let make_event machine instance candidate rule ?(used = []) consumed created
+    ?callee_instance_id () =
   {
     Rewrite_event.index = machine.Machine.next_event_index;
     rule;
     instance_id = instance.id;
     subject = event_subject_id instance candidate.node_id;
     ready_epoch = candidate.ready_epoch;
+    used;
     consumed;
     created;
     callee_instance_id;
@@ -544,7 +620,7 @@ let unexecuted_nodes instance =
   |> List.filter (fun node_id ->
          match node_state instance node_id with
          | Completed -> false
-         | Pending | Waiting_for_return _ -> true)
+         | Pending | Waiting_for_return _ | NatRec_active _ -> true)
 
 let stuck_reason instance =
   {
@@ -752,17 +828,16 @@ let rewrite_drop machine instance candidate =
                 ^ CG.Node_id.to_string candidate.node_id)))
   | None -> Stuck (stuck_reason instance)
 
-let instantiate_callee machine caller candidate closure argument =
+let instantiate_closure_callee machine caller ~node_id ~call_site closure argument =
   match function_template_by_id machine.Machine.function_templates closure.Runtime_value.template_id with
   | None ->
       Error
         (Apply_template_not_found
-           { node_id = candidate.node_id; template_id = closure.template_id })
+           { node_id; template_id = closure.template_id })
   | Some template ->
       let event_index = machine.Machine.next_event_index in
       let callee_id =
-        Instance_id.call ~parent:caller.id ~apply_node:candidate.node_id
-          ~call_index:event_index
+        Instance_id.call_at ~parent:caller.id ~call_site ~call_index:event_index
       in
       let body = CG.Function_template.body template in
       let result =
@@ -772,6 +847,10 @@ let instantiate_callee machine caller candidate closure argument =
       result
       |> Result.map_error (fun message -> Runtime_invariant_violation message)
       |> Result.map (fun callee -> (template, callee_id, callee))
+
+let instantiate_callee machine caller candidate closure argument =
+  instantiate_closure_callee machine caller ~node_id:candidate.node_id
+    ~call_site:(Instance_id.Apply_node candidate.node_id) closure argument
 
 let rewrite_apply_enter machine caller candidate signature =
   match
@@ -822,9 +901,13 @@ let rewrite_apply_enter machine caller candidate signature =
                 let frame =
                   {
                     caller_instance_id = caller.id;
-                    apply_node_id = candidate.node_id;
                     callee_instance_id = callee_id;
-                    expected_result_type = signature.apply_result_type;
+                    return_target =
+                      Apply_result
+                        {
+                          apply_node_id = candidate.node_id;
+                          expected_result_type = signature.apply_result_type;
+                        };
                   }
                 in
                 let machine =
@@ -853,58 +936,59 @@ let rewrite_apply_enter machine caller candidate signature =
                }))
   | _ -> Stuck (stuck_reason caller)
 
-let rewrite_apply_return machine callee frame =
+let rewrite_apply_return machine callee frame apply_node_id expected_result_type =
   match (callee.result_value, Machine.instance_by_id machine frame.caller_instance_id) with
   | Some result_value, Some caller ->
-      if not (Core_type.equal (Runtime_value.typ result_value) frame.expected_result_type)
+      if not (Core_type.equal (Runtime_value.typ result_value) expected_result_type)
       then
         Runtime_error
           (Apply_result_type_mismatch
              {
-               node_id = frame.apply_node_id;
-               expected = frame.expected_result_type;
+               node_id = apply_node_id;
+               expected = expected_result_type;
                actual = Runtime_value.typ result_value;
              })
       else if
         not
-          (match node_state caller frame.apply_node_id with
+          (match node_state caller apply_node_id with
           | Waiting_for_return waiting ->
               Instance_id.equal waiting frame.callee_instance_id
-          | Pending | Completed -> false)
+          | Pending | NatRec_active _ | Completed -> false)
       then
         Runtime_error
           (Runtime_invariant_violation
              ("ApplyReturn frame does not match caller node lifecycle at "
-            ^ CG.Node_id.to_string frame.apply_node_id))
+            ^ CG.Node_id.to_string apply_node_id))
       else
         let candidate =
           {
             instance_id = caller.id;
-            node_id = frame.apply_node_id;
+            node_id = apply_node_id;
             ready_epoch = machine.Machine.next_event_index;
             priority_spine_rank = None;
-            default_order_rank = Option.value (default_order_rank caller.graph frame.apply_node_id) ~default:0;
+            default_order_rank =
+              Option.value (default_order_rank caller.graph apply_node_id) ~default:0;
           }
         in
         let created =
           Runtime_value.create
             ~id:
               (rewrite_output_id caller machine.Machine.next_event_index
-                 frame.apply_node_id CG.Port_key.result)
+                 apply_node_id CG.Port_key.result)
             ~payload:(Runtime_value.payload result_value)
             ~origin:
               (rewrite_output_origin caller machine.Machine.next_event_index
-                 frame.apply_node_id CG.Port_key.result)
+                 apply_node_id CG.Port_key.result)
         in
         let event =
           make_event machine caller candidate Rewrite_event.ApplyReturn
             [ Runtime_value.id result_value ] [ created ]
             ~callee_instance_id:callee.id ()
         in
-        let caller = mark_completed caller frame.apply_node_id in
+        let caller = mark_completed caller apply_node_id in
         let machine = append_event (update_instance machine caller) event in
         let caller = Machine.instance_by_id machine caller.id |> Option.get in
-        (match deliver_output caller.graph caller frame.apply_node_id CG.Port_key.result created with
+        (match deliver_output caller.graph caller apply_node_id CG.Port_key.result created with
         | Error message -> Runtime_error (Runtime_invariant_violation message)
         | Ok caller ->
             let caller = refresh_after_event caller machine.Machine.next_event_index in
@@ -919,19 +1003,463 @@ let rewrite_apply_return machine callee frame =
   | None, _ -> Stuck (stuck_reason callee)
   | _, None -> Runtime_error (Runtime_invariant_violation "caller instance missing")
 
+let natrec_candidate machine instance node_id =
+  {
+    instance_id = instance.id;
+    node_id;
+    ready_epoch = machine.Machine.next_event_index;
+    priority_spine_rank = None;
+    default_order_rank = Option.value (default_order_rank instance.graph node_id) ~default:0;
+  }
+
+let natrec_error node_id message =
+  Runtime_error (NatRec_lifecycle_error { node_id; message })
+
+let natrec_state_for instance node_id =
+  match node_state instance node_id with
+  | NatRec_active state -> Some state
+  | _ -> None
+
+let natrec_created_value instance machine node_id port_key payload =
+  Runtime_value.create
+    ~id:(rewrite_output_id instance machine.Machine.next_event_index node_id port_key)
+    ~payload
+    ~origin:(rewrite_output_origin instance machine.Machine.next_event_index node_id port_key)
+
+let rewrite_natrec_zero machine instance candidate base step count =
+  let created =
+    natrec_created_value instance machine candidate.node_id CG.Port_key.result
+      (Runtime_value.payload base)
+  in
+  if Runtime_value.Value_id.equal (Runtime_value.id created) (Runtime_value.id base)
+  then Runtime_error (Runtime_invariant_violation "NatRecZero result aliases base")
+  else
+    let event =
+      make_event machine instance candidate Rewrite_event.NatRecZero
+        [ Runtime_value.id base; Runtime_value.id step; Runtime_value.id count ]
+        [ created ] ()
+    in
+    let instance =
+      remove_ready instance candidate.node_id
+      |> fun instance -> mark_completed instance candidate.node_id
+    in
+    let machine = append_event (update_instance machine instance) event in
+    let instance = Machine.instance_by_id machine instance.id |> Option.get in
+    match deliver_output instance.graph instance candidate.node_id CG.Port_key.result created with
+    | Error message -> Runtime_error (Runtime_invariant_violation message)
+    | Ok instance ->
+        let instance = refresh_after_event instance machine.Machine.next_event_index in
+        Rewritten { machine = update_instance machine instance; event }
+
+let rewrite_natrec_start machine instance candidate result_type base step count total_count =
+  let state =
+    {
+      result_type;
+      count;
+      total_count;
+      step;
+      next_predecessor = Nat.zero;
+      accumulator = base;
+      predecessor = None;
+      partial = None;
+      phase = Need_unfold;
+    }
+  in
+  let event =
+    make_event machine instance candidate Rewrite_event.NatRecStart
+      [ Runtime_value.id base; Runtime_value.id step; Runtime_value.id count ]
+      [] ()
+  in
+  let instance =
+    remove_ready instance candidate.node_id
+    |> fun instance -> set_node_state instance candidate.node_id (NatRec_active state)
+  in
+  Rewritten { machine = append_event (update_instance machine instance) event; event }
+
+let rewrite_natrec_initial machine instance candidate result_type =
+  match
+    ( binding_for instance.bindings candidate.node_id CG.Port_key.base,
+      binding_for instance.bindings candidate.node_id CG.Port_key.step,
+      binding_for instance.bindings candidate.node_id CG.Port_key.count )
+  with
+  | Some base, Some step, Some count -> (
+      let expected_step =
+        Core_type.Arrow
+          (Core_type.Nat, Core_type.Arrow (result_type, result_type))
+      in
+      if not (Core_type.equal (Runtime_value.typ base) result_type) then
+        Runtime_error
+          (Invalid_natrec_runtime_payload
+             { node_id = candidate.node_id; expected = result_type; actual = Runtime_value.typ base })
+      else if not (Core_type.equal (Runtime_value.typ step) expected_step) then
+        Runtime_error
+          (Invalid_natrec_runtime_payload
+             { node_id = candidate.node_id; expected = expected_step; actual = Runtime_value.typ step })
+      else if not (Core_type.equal (Runtime_value.typ count) Core_type.Nat) then
+        Runtime_error
+          (Invalid_natrec_runtime_payload
+             { node_id = candidate.node_id; expected = Core_type.Nat; actual = Runtime_value.typ count })
+      else
+        match Runtime_value.payload count with
+        | Runtime_value.Nat total_count ->
+            if Nat.equal total_count Nat.zero then
+              rewrite_natrec_zero machine instance candidate base step count
+            else rewrite_natrec_start machine instance candidate result_type base step count total_count
+        | Runtime_value.Unit | Runtime_value.Closure _ ->
+            Runtime_error
+              (Invalid_natrec_runtime_payload
+                 { node_id = candidate.node_id; expected = Core_type.Nat; actual = Runtime_value.typ count }))
+  | _ -> Stuck (stuck_reason instance)
+
+let rewrite_natrec_unfold machine instance node_id state =
+  if not (Nat.compare state.next_predecessor state.total_count < 0) then
+    natrec_error node_id "NatRecUnfold iteration is out of range"
+  else
+    let candidate = natrec_candidate machine instance node_id in
+    let predecessor =
+      natrec_created_value instance machine node_id CG.Port_key.predecessor
+        (Runtime_value.Nat state.next_predecessor)
+    in
+    let state =
+      {
+        state with
+        predecessor = Some predecessor;
+        partial = None;
+        phase = Predecessor_ready;
+      }
+    in
+    let event =
+      make_event machine instance candidate Rewrite_event.NatRecUnfold []
+        [ predecessor ] ()
+    in
+    let instance = set_node_state instance node_id (NatRec_active state) in
+    Rewritten { machine = append_event (update_instance machine instance) event; event }
+
+let closure_payload node_id expected value =
+  match Runtime_value.payload value with
+  | Runtime_value.Closure closure
+    when Core_type.equal (Runtime_value.typ value) expected ->
+      Ok closure
+  | Runtime_value.Closure _ ->
+      Error
+        (Invalid_natrec_runtime_payload
+           { node_id; expected; actual = Runtime_value.typ value })
+  | Runtime_value.Unit | Runtime_value.Nat _ ->
+      Error
+        (Invalid_natrec_runtime_payload
+           { node_id; expected; actual = Runtime_value.typ value })
+
+let rewrite_natrec_step_function_enter machine instance node_id state =
+  match state.predecessor with
+  | None -> natrec_error node_id "NatRec step predecessor is missing"
+  | Some predecessor -> (
+      let expected_step =
+        Core_type.Arrow
+          (Core_type.Nat, Core_type.Arrow (state.result_type, state.result_type))
+      in
+      match closure_payload node_id expected_step state.step with
+      | Error error -> Runtime_error error
+      | Ok closure -> (
+          let call_site =
+            Instance_id.NatRec_step_function
+              { node_id; iteration = state.next_predecessor }
+          in
+          match
+            instantiate_closure_callee machine instance ~node_id ~call_site closure
+              predecessor
+          with
+          | Error error -> Runtime_error error
+          | Ok (_template, callee_id, callee) ->
+              let candidate = natrec_candidate machine instance node_id in
+              let event =
+                make_event machine instance candidate
+                  Rewrite_event.NatRecStepFunctionEnter
+                  ~used:[ Runtime_value.id state.step ]
+                  [ Runtime_value.id predecessor ] [] ~callee_instance_id:callee_id ()
+              in
+              let state =
+                {
+                  state with
+                  predecessor = None;
+                  phase = Waiting_for_step_function callee_id;
+                }
+              in
+              let caller = set_node_state instance node_id (NatRec_active state) in
+              let frame =
+                {
+                  caller_instance_id = caller.id;
+                  callee_instance_id = callee_id;
+                  return_target =
+                    NatRec_step
+                      {
+                        node_id;
+                        iteration = state.next_predecessor;
+                        stage = Step_function;
+                        expected_result_type =
+                          Core_type.Arrow (state.result_type, state.result_type);
+                      };
+                }
+              in
+              let machine =
+                {
+                  machine with
+                  Machine.instances =
+                    callee
+                    :: List.map
+                         (fun existing ->
+                           if Instance_id.equal existing.id caller.id then caller
+                           else existing)
+                         machine.Machine.instances;
+                  active_instance_id = callee_id;
+                  call_stack = frame :: machine.Machine.call_stack;
+                }
+              in
+              Rewritten { machine = append_event machine event; event }))
+
+let rewrite_natrec_step_accumulator_enter machine instance node_id state =
+  match state.partial with
+  | None -> natrec_error node_id "NatRec partial closure is missing"
+  | Some partial -> (
+      let expected_partial = Core_type.Arrow (state.result_type, state.result_type) in
+      match closure_payload node_id expected_partial partial with
+      | Error error -> Runtime_error error
+      | Ok closure -> (
+          let call_site =
+            Instance_id.NatRec_step_accumulator
+              { node_id; iteration = state.next_predecessor }
+          in
+          match
+            instantiate_closure_callee machine instance ~node_id ~call_site closure
+              state.accumulator
+          with
+          | Error error -> Runtime_error error
+          | Ok (_template, callee_id, callee) ->
+              let candidate = natrec_candidate machine instance node_id in
+              let event =
+                make_event machine instance candidate
+                  Rewrite_event.NatRecStepAccumulatorEnter
+                  [ Runtime_value.id partial; Runtime_value.id state.accumulator ]
+                  [] ~callee_instance_id:callee_id ()
+              in
+              let state =
+                {
+                  state with
+                  partial = None;
+                  phase = Waiting_for_step_accumulator callee_id;
+                }
+              in
+              let caller = set_node_state instance node_id (NatRec_active state) in
+              let frame =
+                {
+                  caller_instance_id = caller.id;
+                  callee_instance_id = callee_id;
+                  return_target =
+                    NatRec_step
+                      {
+                        node_id;
+                        iteration = state.next_predecessor;
+                        stage = Step_accumulator;
+                        expected_result_type = state.result_type;
+                      };
+                }
+              in
+              let machine =
+                {
+                  machine with
+                  Machine.instances =
+                    callee
+                    :: List.map
+                         (fun existing ->
+                           if Instance_id.equal existing.id caller.id then caller
+                           else existing)
+                         machine.Machine.instances;
+                  active_instance_id = callee_id;
+                  call_stack = frame :: machine.Machine.call_stack;
+                }
+              in
+              Rewritten { machine = append_event machine event; event }))
+
+let rewrite_natrec_complete machine instance node_id state =
+  let candidate = natrec_candidate machine instance node_id in
+  let created =
+    natrec_created_value instance machine node_id CG.Port_key.result
+      (Runtime_value.payload state.accumulator)
+  in
+  if
+    Runtime_value.Value_id.equal (Runtime_value.id created)
+      (Runtime_value.id state.accumulator)
+  then Runtime_error (Runtime_invariant_violation "NatRecComplete result aliases accumulator")
+  else
+    let event =
+      make_event machine instance candidate Rewrite_event.NatRecComplete
+        [ Runtime_value.id state.accumulator ] [ created ] ()
+    in
+    let instance = mark_completed instance node_id in
+    let machine = append_event (update_instance machine instance) event in
+    let instance = Machine.instance_by_id machine instance.id |> Option.get in
+    match deliver_output instance.graph instance node_id CG.Port_key.result created with
+    | Error message -> Runtime_error (Runtime_invariant_violation message)
+    | Ok instance ->
+        let instance = refresh_after_event instance machine.Machine.next_event_index in
+        Rewritten { machine = update_instance machine instance; event }
+
+let rewrite_natrec_active machine instance node_id state =
+  match state.phase with
+  | Need_unfold -> rewrite_natrec_unfold machine instance node_id state
+  | Predecessor_ready -> rewrite_natrec_step_function_enter machine instance node_id state
+  | Partial_ready -> rewrite_natrec_step_accumulator_enter machine instance node_id state
+  | Ready_to_complete -> rewrite_natrec_complete machine instance node_id state
+  | Waiting_for_step_function _ | Waiting_for_step_accumulator _ ->
+      natrec_error node_id "NatRec is waiting for a callee return"
+
+let rewrite_natrec_step_function_return machine callee frame node_id iteration
+    expected_result_type =
+  match (callee.result_value, Machine.instance_by_id machine frame.caller_instance_id) with
+  | Some result_value, Some caller -> (
+      match natrec_state_for caller node_id with
+      | None -> natrec_error node_id "NatRec state missing for step function return"
+      | Some state -> (
+          match state.phase with
+          | Waiting_for_step_function waiting
+            when Instance_id.equal waiting frame.callee_instance_id
+                 && Nat.equal iteration state.next_predecessor ->
+              if
+                not
+                  (Core_type.equal (Runtime_value.typ result_value)
+                     expected_result_type)
+              then
+                Runtime_error
+                  (Invalid_natrec_runtime_payload
+                     {
+                       node_id;
+                       expected = expected_result_type;
+                       actual = Runtime_value.typ result_value;
+                     })
+              else
+                let candidate = natrec_candidate machine caller node_id in
+                let partial =
+                  natrec_created_value caller machine node_id CG.Port_key.partial
+                    (Runtime_value.payload result_value)
+                in
+                let event =
+                  make_event machine caller candidate
+                    Rewrite_event.NatRecStepFunctionReturn
+                    [ Runtime_value.id result_value ] [ partial ]
+                    ~callee_instance_id:callee.id ()
+                in
+                let state =
+                  { state with partial = Some partial; phase = Partial_ready }
+                in
+                let caller = set_node_state caller node_id (NatRec_active state) in
+                let machine =
+                  {
+                    (append_event (update_instance machine caller) event) with
+                    Machine.active_instance_id = caller.id;
+                    call_stack = List.tl machine.Machine.call_stack;
+                  }
+                in
+                Rewritten { machine; event }
+          | Waiting_for_step_function _ ->
+              natrec_error node_id "NatRec step function return instance mismatch"
+          | _ -> natrec_error node_id "NatRec is not waiting for step function return"))
+  | None, _ -> Stuck (stuck_reason callee)
+  | _, None -> Runtime_error (Runtime_invariant_violation "caller instance missing")
+
+let rewrite_natrec_step_accumulator_return machine callee frame node_id iteration
+    expected_result_type =
+  match (callee.result_value, Machine.instance_by_id machine frame.caller_instance_id) with
+  | Some result_value, Some caller -> (
+      match natrec_state_for caller node_id with
+      | None -> natrec_error node_id "NatRec state missing for step accumulator return"
+      | Some state -> (
+          match state.phase with
+          | Waiting_for_step_accumulator waiting
+            when Instance_id.equal waiting frame.callee_instance_id
+                 && Nat.equal iteration state.next_predecessor ->
+              if
+                not
+                  (Core_type.equal (Runtime_value.typ result_value)
+                     expected_result_type)
+              then
+                Runtime_error
+                  (Invalid_natrec_runtime_payload
+                     {
+                       node_id;
+                       expected = expected_result_type;
+                       actual = Runtime_value.typ result_value;
+                     })
+              else
+                let candidate = natrec_candidate machine caller node_id in
+                let next_accumulator =
+                  natrec_created_value caller machine node_id CG.Port_key.accumulator
+                    (Runtime_value.payload result_value)
+                in
+                let next_predecessor = Nat.succ state.next_predecessor in
+                let phase =
+                  if Nat.compare next_predecessor state.total_count >= 0 then
+                    Ready_to_complete
+                  else Need_unfold
+                in
+                let event =
+                  make_event machine caller candidate
+                    Rewrite_event.NatRecStepAccumulatorReturn
+                    [ Runtime_value.id result_value ] [ next_accumulator ]
+                    ~callee_instance_id:callee.id ()
+                in
+                let state =
+                  {
+                    state with
+                    next_predecessor;
+                    accumulator = next_accumulator;
+                    phase;
+                  }
+                in
+                let caller = set_node_state caller node_id (NatRec_active state) in
+                let machine =
+                  {
+                    (append_event (update_instance machine caller) event) with
+                    Machine.active_instance_id = caller.id;
+                    call_stack = List.tl machine.Machine.call_stack;
+                  }
+                in
+                Rewritten { machine; event }
+          | Waiting_for_step_accumulator _ ->
+              natrec_error node_id "NatRec step accumulator return instance mismatch"
+          | _ -> natrec_error node_id "NatRec is not waiting for step accumulator return"))
+  | None, _ -> Stuck (stuck_reason callee)
+  | _, None -> Runtime_error (Runtime_invariant_violation "caller instance missing")
+
 let step machine =
   match Machine.active_instance machine with
   | None -> Runtime_error (Runtime_invariant_violation "active instance missing")
   | Some active when Machine.instance_completed active -> (
       match machine.Machine.call_stack with
-      | frame :: _ when Instance_id.equal frame.callee_instance_id active.id ->
-          rewrite_apply_return machine active frame
+      | frame :: _ when Instance_id.equal frame.callee_instance_id active.id -> (
+          match frame.return_target with
+          | Apply_result { apply_node_id; expected_result_type } ->
+              rewrite_apply_return machine active frame apply_node_id
+                expected_result_type
+          | NatRec_step { node_id; iteration; stage = Step_function; expected_result_type } ->
+              rewrite_natrec_step_function_return machine active frame node_id
+                iteration expected_result_type
+          | NatRec_step { node_id; iteration; stage = Step_accumulator; expected_result_type } ->
+              rewrite_natrec_step_accumulator_return machine active frame node_id
+                iteration expected_result_type)
       | [] when Instance_id.equal active.id root_instance_id -> (
           match active.result_value with
           | Some value -> Completed value
           | None -> Stuck (stuck_reason active))
       | _ -> Runtime_error (Runtime_invariant_violation "completed instance without matching frame"))
   | Some active -> (
+      match
+        active.node_states
+        |> List.find_opt (function
+             | _, NatRec_active _ -> true
+             | _ -> false)
+      with
+      | Some (node_id, NatRec_active state) ->
+          rewrite_natrec_active machine active node_id state
+      | _ -> (
       match select_ready active.ready_candidates with
       | None -> Stuck (stuck_reason active)
       | Some candidate -> (
@@ -943,7 +1471,9 @@ let step machine =
               rewrite_function machine active candidate signature
           | Some { kind = CG.Apply signature; _ } ->
               rewrite_apply_enter machine active candidate signature
-          | _ -> Stuck (stuck_reason active)))
+          | Some { kind = CG.NatRec result_type; _ } ->
+              rewrite_natrec_initial machine active candidate result_type
+          | _ -> Stuck (stuck_reason active))))
 
 let run machine =
   let rec loop machine =
@@ -989,4 +1519,11 @@ let runtime_error_to_string = function
       "Apply result type mismatch at " ^ CG.Node_id.to_string node_id
       ^ ": expected " ^ Core_type.to_string expected ^ ", actual "
       ^ Core_type.to_string actual
+  | Invalid_natrec_runtime_payload { node_id; expected; actual } ->
+      "invalid NatRec runtime payload at " ^ CG.Node_id.to_string node_id
+      ^ ": expected " ^ Core_type.to_string expected ^ ", actual "
+      ^ Core_type.to_string actual
+  | NatRec_lifecycle_error { node_id; message } ->
+      "NatRec lifecycle error at " ^ CG.Node_id.to_string node_id ^ ": "
+      ^ message
   | Runtime_invariant_violation message -> "runtime invariant violation: " ^ message

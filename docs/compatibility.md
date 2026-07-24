@@ -103,6 +103,16 @@ node lifecycle: ordinary nodes complete once, an Apply node waits for its
 specific callee after `ApplyEnter`, and the same Apply node completes only on
 the matching `ApplyReturn`.
 
+For `NatRec` support, conformance compares the single-node lifecycle trace
+rather than an expanded runtime graph. A conforming engine must preserve the
+canonical port schema `base`, `step`, `count`, `result`; the step type
+`Nat -> A -> A`; the predecessor-before-accumulator call order; `NatRecZero`
+for zero count; and, for positive count, `NatRecStart`, five per-iteration
+NatRec rewrites, and `NatRecComplete`. It must record repeated step closure
+invocation as non-consuming `used` references to the same owned step closure,
+create fresh predecessor values, preserve the second step-return value as the
+next accumulator, and create a fresh final result-boundary value.
+
 For future checkpoint and replay support, conformance must distinguish semantic
 trace from execution-management provenance. Creating a checkpoint, pausing,
 resuming, forking, selecting a join representative, aliasing a branch, or

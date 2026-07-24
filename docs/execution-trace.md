@@ -112,14 +112,15 @@ one `WorldTransition`, then resource acquire/transition events for the same
 and abort without appending normal transition events.
 
 The current executable slices implement a minimal typed `RewriteEvent` subset
-for `Succ`, `Copy`, `Drop`, `Function`, `ApplyEnter`, and `ApplyReturn`. It
-records:
+for `Succ`, `Copy`, `Drop`, `Function`, `ApplyEnter`, `ApplyReturn`, and
+`NatRec`. It records:
 
 - sequential event index starting at `0`,
 - rule,
 - runtime instance ID,
 - subject node ID,
 - ready epoch,
+- non-consuming used runtime value IDs,
 - consumed runtime value IDs,
 - created runtime values.
 
@@ -158,6 +159,50 @@ An `ApplyReturn` event consumes the callee result value, creates one new
 caller-scope return value for the Apply output, and records the callee instance
 ID. The new value preserves payload meaning but has a distinct causal logical
 ID and `ApplyReturn` rewrite-output origin.
+
+`NatRec` adds the following implemented rewrite rules:
+
+```text
+NatRecZero
+NatRecStart
+NatRecUnfold
+NatRecStepFunctionEnter
+NatRecStepFunctionReturn
+NatRecStepAccumulatorEnter
+NatRecStepAccumulatorReturn
+NatRecComplete
+```
+
+The `used` field records semantic non-consuming references. It is currently
+used by `NatRecStepFunctionEnter` to identify the step closure owned by the
+NatRec lifecycle and invoked repeatedly without hidden Copy events or repeated
+consumption. Existing consuming rewrites keep `used = []`.
+
+For `count = 0`, the NatRec trace has one NatRec rewrite after inputs are
+ready: `NatRecZero`, which consumes `base`, `step`, and `count` and creates a
+fresh result value.
+
+For each positive iteration, the NatRec-only trace is:
+
+```text
+NatRecUnfold
+NatRecStepFunctionEnter
+... function body rewrites for step predecessor ...
+NatRecStepFunctionReturn
+NatRecStepAccumulatorEnter
+... function body rewrites for partial accumulator ...
+NatRecStepAccumulatorReturn
+```
+
+After the last iteration, `NatRecComplete` consumes the last accumulator and
+creates the final result-boundary value. The step result ID from
+`NatRecStepAccumulatorReturn` is the next accumulator ID; NatRec does not create
+an extra accumulator value between iterations.
+
+NatRec step call instance IDs distinguish `NatRec_step_function` from
+`NatRec_step_accumulator` and include the arbitrary-precision iteration
+ordinal. The rendered diagnostic form is not a public canonical serialization
+format.
 
 Literal materialization, execution input materialization, delivery along edges,
 ready-candidate maintenance, call-frame push/pop, caller suspension/resumption,
