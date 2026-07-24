@@ -474,9 +474,10 @@ The current executable node kinds are `Succ`, `Copy _`, `Drop _`,
 non-executable. The validator requires `default_node_order` to include every
 executable node exactly once and to exclude non-executable nodes.
 
-This validator does not implement full graph cycle rules, reachability,
-multi-scope scheduling, or full trace schemas. The current runtime
-slices implement `Succ`, `Copy` for `Unit`, `Nat`, and closure Arrow values,
+The current validator rejects directed value dependency cycles. It does not
+yet implement a full reachability policy, multi-scope scheduling, or full trace
+schemas. The current runtime slices implement `Succ`, `Copy` for `Unit`, `Nat`,
+and closure Arrow values,
 `Drop`, `Function` closure creation, `ApplyEnter`/callee body
 execution/`ApplyReturn`, nested depth-first calls, `NatRec`, and static
 single-scope `PrioritySpine` scheduling. See
@@ -486,7 +487,8 @@ single-scope `PrioritySpine` scheduling. See
 `docs/decisions/0011-copy-rewrite-and-linear-duplication.md`,
 `docs/decisions/0019-function-closure-creation-and-arrow-copy.md`,
 `docs/decisions/0020-apply-instance-call-stack-and-return-boundary.md`, and
-`docs/decisions/0022-natrec-primitive-recursion-runtime.md`.
+`docs/decisions/0022-natrec-primitive-recursion-runtime.md`. The current
+totality-boundary audit is summarized in `docs/totality-audit.md`.
 
 Long-term execution-management topics such as pause, checkpoint, fork, join,
 and equivalence comparison are outside Core rewrite semantics and are recorded
@@ -767,19 +769,25 @@ information to replay the selected branch exactly.
 Tilefold Core should eventually support formal statements analogous to:
 
 - type preservation: applying a valid rewrite to a well-typed validated graph
-  preserves graph well-typedness,
-- progress: a valid non-final graph is either able to take a rewrite step or
-  reports a specified execution error state.
+  preserves runtime value, port, activation, and result type relationships,
+- progress: a valid non-final machine state is completed, able to take a
+  rewrite step, or in a normal waiting state for an active callee or NatRec
+  step.
 
 The exact theorem statements depend on the final type language, primitive tile
-set, and machine-state model.
+set, and machine-state model. The current OCaml tests exercise these
+relationships for the implemented rewrite subset but do not constitute a
+formal proof.
 
 ## Future Termination Measure Goals
 
 Tilefold should eventually define a termination argument for all valid Core
 programs.
 
-Possible directions include:
+Current implementation evidence includes finite validated graphs, directed
+value-dependency acyclicity, conservative template dependency cycle rejection,
+immutable closure captures, and structurally bounded `NatRec`. Remaining proof
+directions include:
 
 - a structurally decreasing measure over finite data,
 - the termination argument for System T-inspired primitive recursion,
@@ -787,7 +795,7 @@ Possible directions include:
 - a fuel-independent static acceptance criterion,
 - a combination of structural restrictions and rule-specific measures.
 
-This document does not choose one yet.
+This document does not claim a machine-checked termination or totality proof.
 
 ## Primitive Tile List
 

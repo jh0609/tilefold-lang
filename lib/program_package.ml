@@ -67,6 +67,10 @@ type validation_error =
       expected : Core_type.t;
       actual : Core_type.t;
     }
+  | Unsupported_program_literal_payload of {
+      literal_id : Literal_id.t;
+      typ : Core_type.t;
+    }
 
 type t = {
   raw : Raw.t;
@@ -134,6 +138,19 @@ let literal_node_kind payload =
   | Runtime_value.Unit -> Ok CG.Unit_literal
   | Runtime_value.Nat nat -> Ok (CG.Nat_literal nat)
   | Runtime_value.Closure _ -> Error "closure program literals are not supported"
+
+let unsupported_literal_payload_errors raw =
+  Raw.literals raw
+  |> List.filter_map (fun literal ->
+         match literal_node_kind literal.payload with
+         | Ok _ -> None
+         | Error _ ->
+             Some
+               (Unsupported_program_literal_payload
+                  {
+                    literal_id = literal.id;
+                    typ = Runtime_value.payload_type literal.payload;
+                  }))
 
 let launcher_graph_raw raw entry_template =
   let captures = CG.Function_template.captures entry_template in
@@ -310,8 +327,15 @@ let validate raw =
             ]
         in
         let capture_errors = validate_entry_captures raw entry in
-        if parameter_errors @ result_errors @ capture_errors <> [] then
-          (parameter_errors @ result_errors @ capture_errors, None)
+        let literal_payload_errors = unsupported_literal_payload_errors raw in
+        if
+          parameter_errors @ result_errors @ capture_errors
+          @ literal_payload_errors
+          <> []
+        then
+          ( parameter_errors @ result_errors @ capture_errors
+            @ literal_payload_errors,
+            None )
         else
           let launcher_raw, program_literal_nodes = launcher_graph_raw raw entry in
           ( [],
@@ -461,6 +485,9 @@ let validation_error_to_string = function
       "program literal " ^ Literal_id.to_string literal_id
       ^ " type mismatch: expected " ^ Core_type.to_string expected
       ^ ", actual " ^ Core_type.to_string actual
+  | Unsupported_program_literal_payload { literal_id; typ } ->
+      "unsupported program literal payload for " ^ Literal_id.to_string literal_id
+      ^ ": " ^ Core_type.to_string typ
 
 let execution_error_to_string = function
   | Initialization_error error -> Engine.initialization_error_to_string error

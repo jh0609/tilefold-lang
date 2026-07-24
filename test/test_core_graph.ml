@@ -182,6 +182,72 @@ let () =
   has_error (function Source_port_not_output _ -> true | _ -> false) errors
 
 let () =
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop" (Drop Core_type.Unit);
+      node "lit" (Nat_literal (nat "1"));
+      node "cycle" Succ;
+      node "result" (Result Core_type.Nat);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop" "input");
+      edge "e-lit-result" (pref "lit" "value") (pref "result" "value");
+      edge "e-cycle" (pref "cycle" "result") (pref "cycle" "input");
+    ]
+  in
+  let graph =
+    Raw_graph.of_lists ~nodes ~edges ~default_node_order:[ node_id "cycle"; node_id "drop" ]
+  in
+  let errors = validate_errors graph in
+  has_error
+    (function
+      | Cyclic_value_dependency ids ->
+          List.hd (List.map Node_id.to_string ids) = "cycle"
+          && List.length ids >= 2
+      | _ -> false)
+    errors;
+  let errors_again = validate_errors graph in
+  assert (
+    List.map validation_error_to_string errors
+    = List.map validation_error_to_string errors_again)
+
+let () =
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop" (Drop Core_type.Unit);
+      node "lit" (Nat_literal (nat "1"));
+      node "cycle-a" Succ;
+      node "cycle-b" Succ;
+      node "result" (Result Core_type.Nat);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop" "input");
+      edge "e-lit-result" (pref "lit" "value") (pref "result" "value");
+      edge "e-cycle-a-b" (pref "cycle-a" "result") (pref "cycle-b" "input");
+      edge "e-cycle-b-a" (pref "cycle-b" "result") (pref "cycle-a" "input");
+    ]
+  in
+  let errors =
+    validate_errors
+      (Raw_graph.of_lists ~nodes ~edges
+         ~default_node_order:[ node_id "cycle-a"; node_id "cycle-b"; node_id "drop" ])
+  in
+  has_error
+    (function
+      | Cyclic_value_dependency ids ->
+          let path = List.map Node_id.to_string ids in
+          List.length path >= 3
+          && List.mem "cycle-a" path && List.mem "cycle-b" path
+      | _ -> false)
+    errors
+
+let () =
   let bad =
     edge "e-target-output" (pref "lit" "value") (pref "succ" "result")
   in

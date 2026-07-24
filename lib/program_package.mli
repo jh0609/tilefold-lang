@@ -61,6 +61,10 @@ type validation_error =
       expected : Core_type.t;
       actual : Core_type.t;
     }
+  | Unsupported_program_literal_payload of {
+      literal_id : Literal_id.t;
+      typ : Core_type.t;
+    }
 
 type t
 

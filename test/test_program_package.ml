@@ -256,7 +256,29 @@ let () =
          [
            { id = literal_id "dup"; payload = Runtime_value.Unit };
            { id = literal_id "dup"; payload = Runtime_value.Nat (nat "1") };
-         ]
+       ]
+       ())
+
+let () =
+  let entry = unit_entry_template () in
+  let closure_literal =
+    Runtime_value.Closure
+      {
+        template_id = template_id "literal-closure-template";
+        parameter_type = Core_type.Unit;
+        result_type = Core_type.Unit;
+        captures = [];
+      }
+  in
+  expect_validation_error
+    (function
+      | P.Unsupported_program_literal_payload { literal_id = actual; typ } ->
+          P.Literal_id.equal actual (literal_id "closure")
+          && Core_type.equal typ (Core_type.Arrow (Core_type.Unit, Core_type.Unit))
+      | _ -> false)
+    (P.Raw.create ~templates:[ entry ] ~entry_template_id:(Function_template.id entry)
+       ~result_type:Core_type.Unit
+       ~literals:[ { id = literal_id "closure"; payload = closure_literal } ]
        ())
 
 let () =

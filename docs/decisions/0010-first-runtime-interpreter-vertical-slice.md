@@ -100,7 +100,9 @@ If the result arrives before pending `Drop` work, execution continues.
 `Stuck` records unexecuted executable node IDs and whether the result is
 missing. The validator does not yet reject all cycles, so a validated cyclic
 graph can become `Stuck`. The engine reports this rather than looping forever
-or using an assertion.
+or using an assertion. Decision 0024 later tightened the current
+`transparent-v0` validator to reject directed value dependency cycles before
+execution.
 
 ## Minimal RewriteEvent
 

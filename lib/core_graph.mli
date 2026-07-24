@@ -261,6 +261,7 @@ type validation_error =
       actual : capture list;
     }
   | Function_template_cycle of Function_template_id.t list
+  | Cyclic_value_dependency of Node_id.t list
 
 val validate : Raw_graph.t -> (Validated_graph.t, validation_error list) result
 

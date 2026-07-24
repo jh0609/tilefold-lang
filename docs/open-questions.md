@@ -182,8 +182,9 @@ Still open:
   `Drop`, `Function`, `ApplyEnter`, `ApplyReturn`, and `NatRec`. `Copy
   (Arrow _)` is supported for closure payloads. NatRec's current graph schema,
   lifecycle scheduling, trace rules, and bounded primitive recursion behavior
-  are recorded in Decision 0022. Keep final canonical serialization, complete
-  graph cycle policy, and full trace schema details open.
+  are recorded in Decision 0022. Directed value dependency cycles are rejected
+  by Decision 0024. Keep final canonical serialization, broader productivity
+  policy, and full trace schema details open.
 
 ## 2. How are immutable logical values represented?
 
@@ -631,10 +632,13 @@ Still open:
 - Recommendation: Keep resource budgets open. Do not treat Nat overflow as a
   language error; only future explicit resource limits may reject large values.
 
-## 19. What graph cycle policy should validated Core enforce?
+## 19. What graph cycle policy remains beyond directed value cycles?
 
-- Question: Are graph cycles rejected syntactically, accepted only through
-  total constructs, or accepted with a separate proof obligation?
+- Confirmed: the current `transparent-v0` validator rejects directed value
+  dependency cycles with `Cyclic_value_dependency`. `NatRec` repetition is not
+  encoded as a graph cycle; it is an explicit bounded lifecycle.
+- Question: Should future Core versions accept additional syntactic cycles
+  through specified total constructs or with a separate proof obligation?
 - Alternatives:
   - Reject all cycles in the validated directed port graph.
   - Allow only cycles introduced by specified total constructs.
@@ -653,8 +657,9 @@ Still open:
   transparent rewrites and traces.
 - Impact on future compatibility: Changing cycle acceptance will alter
   validation conformance.
-- Recommendation: Keep open. Do not implement cycle checks before `Copy`,
-  `Function`, `Apply`, and `NatRec` validation are designed.
+- Recommendation: Keep the broader productivity question open. Do not weaken
+  the current directed value-cycle rejection without a replacement progress and
+  termination argument.
 
 ## 20. What is the final reachability requirement?
 

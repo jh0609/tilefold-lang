@@ -110,6 +110,11 @@ node lifecycle: ordinary nodes complete once, an Apply node waits for its
 specific callee after `ApplyEnter`, and the same Apply node completes only on
 the matching `ApplyReturn`.
 
+Validated Core graphs must reject directed value dependency cycles
+deterministically. Self-cycles and indirect cycles that would otherwise be
+well-typed at the port level must fail validation with a typed cycle diagnostic
+rather than reaching runtime `Run_stuck`.
+
 For `NatRec` support, conformance compares the single-node lifecycle trace
 rather than an expanded runtime graph. A conforming engine must preserve the
 canonical port schema `base`, `step`, `count`, `result`; the step type

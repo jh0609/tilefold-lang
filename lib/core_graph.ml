@@ -354,6 +354,7 @@ type validation_error =
       actual : capture list;
     }
   | Function_template_cycle of Function_template_id.t list
+  | Cyclic_value_dependency of Node_id.t list
 
 let find_duplicates items compare =
   let sorted = List.sort compare items in
@@ -586,6 +587,63 @@ let priority_spine_errors (nodes : node list) = function
       in
       duplicate_errors @ member_errors
 
+let value_dependency_cycle_errors (nodes : node list) edges =
+  let sorted_nodes =
+    List.sort
+      (fun (left : node) (right : node) -> Node_id.compare left.id right.id)
+      nodes
+  in
+  let node_exists node_id =
+    List.exists (fun (node : node) -> Node_id.equal node.id node_id) nodes
+  in
+  let successors node_id =
+    edges
+    |> List.filter_map (fun edge ->
+           if
+             Node_id.equal edge.source.node_id node_id
+             && node_exists edge.target.node_id
+           then Some edge.target.node_id
+           else None)
+    |> List.sort_uniq Node_id.compare
+  in
+  let path_from ancestor path =
+    let rec prefix acc = function
+      | [] -> []
+      | current :: rest ->
+          let acc = current :: acc in
+          if Node_id.equal current ancestor then List.rev acc
+          else prefix acc rest
+    in
+    match prefix [] path with
+    | [] -> []
+    | prefix -> List.rev (ancestor :: prefix)
+  in
+  let rec visit visiting visited node_id =
+    if List.exists (Node_id.equal node_id) visiting then
+      (visited, Some (path_from node_id visiting))
+    else if List.exists (Node_id.equal node_id) visited then (visited, None)
+    else
+      let visiting = node_id :: visiting in
+      let rec visit_successors visited = function
+        | [] -> (node_id :: visited, None)
+        | successor :: rest -> (
+            let visited, cycle = visit visiting visited successor in
+            match cycle with
+            | Some _ -> (visited, cycle)
+            | None -> visit_successors visited rest)
+      in
+      visit_successors visited (successors node_id)
+  in
+  let rec loop visited = function
+    | [] -> []
+    | (node : node) :: rest -> (
+        let visited, cycle = visit [] visited node.id in
+        match cycle with
+        | Some cycle -> [ Cyclic_value_dependency cycle ]
+        | None -> loop visited rest)
+  in
+  loop [] sorted_nodes
+
 let capture_keys (captures : capture list) =
   List.map (fun (capture : capture) -> capture.key) captures
 
@@ -808,6 +866,7 @@ let validate_with_templates templates raw_graph =
     @ duplicate_errors nodes edges @ boundary_errors nodes
     @ List.concat_map (reference_errors nodes) edges
     @ connectivity_errors nodes edges
+    @ value_dependency_cycle_errors nodes edges
     @ default_order_errors nodes default_node_order
     @ priority_spine_errors nodes priority_spine
     @ function_node_errors templates nodes
@@ -927,3 +986,6 @@ let validation_error_to_string = function
   | Function_template_cycle ids ->
       "function template dependency cycle: "
       ^ String.concat " -> " (List.map Function_template_id.to_string ids)
+  | Cyclic_value_dependency ids ->
+      "cyclic value dependency: "
+      ^ String.concat " -> " (List.map Node_id.to_string ids)

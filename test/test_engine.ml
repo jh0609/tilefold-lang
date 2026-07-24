@@ -116,7 +116,7 @@ let result_before_cleanup () =
   Raw_graph.of_lists ~nodes ~edges ~default_node_order:[ node_id "drop" ]
   |> validate_ok
 
-let stuck_cycle () =
+let stuck_cycle_raw () =
   let nodes =
     [
       node "param" (Parameter Core_type.Unit);
@@ -131,7 +131,6 @@ let stuck_cycle () =
     ]
   in
   Raw_graph.of_lists ~nodes ~edges ~default_node_order:[ node_id "succ" ]
-  |> validate_ok
 
 let copy_nat_graph ?(order = [ "copy"; "succ"; "drop" ]) ?priority_spine
     ?(edges =
@@ -782,7 +781,7 @@ let natrec_graph ?(result_type = Core_type.Nat) ?(base_node = Nat_literal (nat "
        | None -> [ step_template ]
        | Some base_template -> [ base_template; step_template ])
 
-let stuck_copy_self_cycle () =
+let stuck_copy_self_cycle_raw () =
   let nodes =
     [
       node "param" (Parameter Core_type.Unit);
@@ -800,7 +799,6 @@ let stuck_copy_self_cycle () =
   in
   Raw_graph.of_lists ~nodes ~edges
     ~default_node_order:[ node_id "copy"; node_id "drop-unit" ]
-  |> validate_ok
 
 let assert_rules expected trace =
   assert (List.map (fun event -> Rewrite_event.rule_to_string event.Rewrite_event.rule) trace = expected)
@@ -1236,17 +1234,16 @@ let () =
   | _ -> assert false
 
 let () =
-  let machine = init_ok (stuck_cycle ()) Runtime_value.Unit in
-  (match Engine.step machine with
-  | Engine.Stuck reason ->
-      assert (List.map Node_id.to_string reason.Engine.unexecuted_nodes = [ "succ" ]);
-      assert (reason.Engine.result_missing = false)
-  | _ -> assert false);
-  match Engine.run machine with
-  | Engine.Run_stuck { reason; trace } ->
-      assert (trace = []);
-      assert (List.map Node_id.to_string reason.Engine.unexecuted_nodes = [ "succ" ])
-  | _ -> assert false
+  match validate (stuck_cycle_raw ()) with
+  | Error errors ->
+      assert (
+        List.exists
+          (function
+            | Cyclic_value_dependency ids ->
+                List.map Node_id.to_string ids = [ "succ"; "succ" ]
+            | _ -> false)
+          errors)
+  | Ok _ -> assert false
 
 let () =
   let graph = entry_unit_to_nat () in
@@ -1402,13 +1399,16 @@ let () =
       copy_event.Rewrite_event.created)
 
 let () =
-  let machine = init_ok (stuck_copy_self_cycle ()) Runtime_value.Unit in
-  match Engine.run machine with
-  | Engine.Run_stuck { reason; trace } ->
-      assert_rules [ "Drop" ] trace;
-      assert (List.map Node_id.to_string reason.Engine.unexecuted_nodes = [ "copy" ]);
-      assert (reason.Engine.result_missing = true)
-  | _ -> assert false
+  match validate (stuck_copy_self_cycle_raw ()) with
+  | Error errors ->
+      assert (
+        List.exists
+          (function
+            | Cyclic_value_dependency ids ->
+                List.map Node_id.to_string ids = [ "copy"; "copy" ]
+            | _ -> false)
+          errors)
+  | Ok _ -> assert false
 
 let () =
   let value, trace =
