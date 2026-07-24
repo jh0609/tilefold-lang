@@ -99,6 +99,16 @@ Entry execution is ordinary function application. There is no separate
 creates or identifies the entry closure, applies it to `Unit`, and observes the
 root result boundary.
 
+The current implementation provides a validated `ProgramPackage` boundary for
+`entry : Unit -> B`. The package runner constructs a small launcher graph with
+`Function(entry)`, an ordinary `Apply`, and a root `Result B`. Entry closure
+creation, `ApplyEnter`, body rewrites, and `ApplyReturn` are normal semantic
+trace events. The runner does not evaluate the entry body through a shortcut.
+
+Package literals used to satisfy explicit entry captures are materialized with
+`Program_literal` provenance. The runtime-supplied entry argument is a `Unit`
+value with `Execution_input` provenance.
+
 Earlier Core documents also allow an execution request for an entry template
 `A -> B` with an explicit runtime-supplied input of type `A`. Reconciling that
 broader execution-request model with the long-term standard package entry

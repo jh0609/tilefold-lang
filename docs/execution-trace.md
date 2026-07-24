@@ -134,6 +134,11 @@ Literal(instance_id, node_id)
 Rewrite_output(instance_id, event_index, node_id, port_key)
 ```
 
+ProgramPackage entry execution additionally uses `Program_literal(literal_id)`
+for package literals materialized to satisfy entry captures. The entry `Unit`
+argument uses `Execution_input`. The entry closure is created by the launcher
+`Function` rewrite and therefore has ordinary `Rewrite_output` provenance.
+
 The rendered ID strings used by tests are provisional diagnostics, not final
 canonical trace serialization.
 
@@ -276,11 +281,12 @@ Function body rewrites such as `Succ`, `NatRec`, `Copy`, `Drop`, and nested
 record the function result, matching `CallFrame`, apply site, caller-scope
 output value, and return target correspondence needed for replay.
 
-Entry execution still starts by activating the root instance rather than by
-emitting a synthetic root `ApplyEnter`. Future `ProgramPackage` entry execution
-may align entry packaging with ordinary closure application, but the current
-standard trace does not add root entry enter/return events. A valid executable
-package must not leave unresolved entry captures.
+Entry execution still starts by activating the root launcher instance rather
+than by emitting a synthetic root `ApplyEnter`. The implemented
+`ProgramPackage` entry runner uses ordinary `Function` and `Apply` nodes in
+that launcher graph, so the entry body is entered through a normal
+`ApplyEnter`. The standard trace still does not add root entry enter/return
+events. A valid executable package must not leave unresolved entry captures.
 
 ## Literal Provenance
 

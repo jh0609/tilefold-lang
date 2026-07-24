@@ -462,18 +462,22 @@ let rewrite_output_origin instance event_index node_id port_key =
 let literal_id instance node_id =
   Runtime_value.literal_id instance.id node_id
 
-let literal_origin instance node_id =
-  Runtime_value.Literal { instance_id = instance.id; node_id }
+let literal_origin ?literal_origin_for_node instance node_id =
+  match literal_origin_for_node with
+  | Some origin_for_node -> origin_for_node instance node_id
+  | None -> Runtime_value.Literal { instance_id = instance.id; node_id }
 
-let materialize_literal instance = function
+let materialize_literal ?literal_origin_for_node instance = function
   | { CG.kind = CG.Unit_literal; id } ->
       Some
         (Runtime_value.create ~id:(literal_id instance id)
-           ~payload:Runtime_value.Unit ~origin:(literal_origin instance id))
+           ~payload:Runtime_value.Unit
+           ~origin:(literal_origin ?literal_origin_for_node instance id))
   | { CG.kind = CG.Nat_literal nat; id } ->
       Some
         (Runtime_value.create ~id:(literal_id instance id)
-           ~payload:(Runtime_value.Nat nat) ~origin:(literal_origin instance id))
+           ~payload:(Runtime_value.Nat nat)
+           ~origin:(literal_origin ?literal_origin_for_node instance id))
   | _ -> None
 
 let bind_boundary_output instance node_id value =
@@ -538,9 +542,9 @@ let materialize_input graph input =
              ~origin:Runtime_value.Execution_input)
       else Error (Input_type_mismatch { expected; actual = Runtime_value.payload_type input })
 
-let initialize_instance_literals instance =
+let initialize_instance_literals ?literal_origin_for_node instance =
   CG.Validated_graph.nodes instance.graph
-  |> List.filter_map (materialize_literal instance)
+  |> List.filter_map (materialize_literal ?literal_origin_for_node instance)
   |> List.fold_left
        (fun state_result value ->
          match state_result with
@@ -549,6 +553,17 @@ let initialize_instance_literals instance =
              match Runtime_value.origin value with
              | Literal { node_id; _ } ->
                  deliver_output instance.graph instance node_id CG.Port_key.value value
+             | Program_literal _ -> (
+                 let origin_node =
+                   CG.Validated_graph.nodes instance.graph
+                   |> List.find_opt (fun (node : CG.node) ->
+                          Runtime_value.Value_id.equal
+                            (Runtime_value.literal_id instance.id node.CG.id)
+                            (Runtime_value.id value))
+                 in
+                 match origin_node with
+                 | Some node -> deliver_output instance.graph instance node.id CG.Port_key.value value
+                 | None -> Error "program literal origin node not found")
              | Execution_input | Rewrite_output _ ->
                  Error "unexpected non-literal value during literal materialization"))
        (Ok instance)
@@ -568,7 +583,7 @@ let bind_capture_boundary instance (captured : Runtime_value.captured_value) =
         ^ CG.Port_key.to_string captured.capture_key)
   | Some node -> bind_boundary_output instance node.id captured.value
 
-let activate_instance ~id ~graph ~parameter_value ~captures =
+let activate_instance ~literal_origin_for_node ~id ~graph ~parameter_value ~captures =
   let initial = empty_instance id graph in
   let parameter = CG.Validated_graph.parameter_node graph in
   let result = bind_boundary_output initial parameter.id parameter_value in
@@ -586,20 +601,32 @@ let activate_instance ~id ~graph ~parameter_value ~captures =
   let result =
     match result with
     | Error _ as error -> error
-    | Ok instance -> initialize_instance_literals instance
+    | Ok instance -> initialize_instance_literals ?literal_origin_for_node instance
   in
   Result.map
     (fun instance ->
       { instance with ready_candidates = initial_ready_candidates instance })
     result
 
-let initialize_with_templates function_templates graph ~input =
+let initialize_with_templates_and_program_literals function_templates graph
+    ~program_literals ~input =
+  let literal_origin_for_node instance node_id =
+    match
+      List.find_opt
+        (fun (literal_node_id, _) -> CG.Node_id.equal literal_node_id node_id)
+        program_literals
+    with
+    | Some (_, literal_id) when Instance_id.equal instance.id root_instance_id ->
+        Runtime_value.Program_literal literal_id
+    | _ -> Runtime_value.Literal { instance_id = instance.id; node_id }
+  in
   match materialize_input graph input with
   | Error error -> Error error
   | Ok input_value ->
       let result =
-        activate_instance ~id:root_instance_id ~graph ~parameter_value:input_value
-          ~captures:[]
+        activate_instance
+          ~literal_origin_for_node:(Some literal_origin_for_node)
+          ~id:root_instance_id ~graph ~parameter_value:input_value ~captures:[]
       in
       result
       |> Result.map_error (fun message -> Initial_delivery_invariant_violation message)
@@ -612,6 +639,10 @@ let initialize_with_templates function_templates graph ~input =
                next_event_index = 0;
                trace_events = [];
              })
+
+let initialize_with_templates function_templates graph ~input =
+  initialize_with_templates_and_program_literals function_templates graph
+    ~program_literals:[] ~input
 
 let initialize graph ~input = initialize_with_templates [] graph ~input
 
@@ -841,8 +872,8 @@ let instantiate_closure_callee machine caller ~node_id ~call_site closure argume
       in
       let body = CG.Function_template.body template in
       let result =
-        activate_instance ~id:callee_id ~graph:body ~parameter_value:argument
-          ~captures:closure.captures
+        activate_instance ~literal_origin_for_node:None ~id:callee_id ~graph:body
+          ~parameter_value:argument ~captures:closure.captures
       in
       result
       |> Result.map_error (fun message -> Runtime_invariant_violation message)

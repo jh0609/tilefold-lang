@@ -137,6 +137,13 @@ val initialize_with_templates :
   input:Runtime_value.payload ->
   (Machine.t, initialization_error) result
 
+val initialize_with_templates_and_program_literals :
+  Core_graph.Function_template.t list ->
+  Core_graph.Validated_graph.t ->
+  program_literals:(Core_graph.Node_id.t * string) list ->
+  input:Runtime_value.payload ->
+  (Machine.t, initialization_error) result
+
 val step : Machine.t -> step_result
 val run : Machine.t -> run_result
 val initialization_error_to_string : initialization_error -> string

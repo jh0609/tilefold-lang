@@ -48,6 +48,13 @@ runtime instance identity, root result boundary, literal materialization
 provenance, and standard trace behavior. There is no separate `ProgramResult`
 primitive or nullary `Apply` conformance path.
 
+For `ProgramPackage` entry execution, conformance starts at the validated
+package boundary. A conforming engine must reject the same invalid packages,
+materialize the entry `Unit` argument as `Execution_input`, materialize package
+literals for entry captures as `Program_literal`, create the entry closure via
+ordinary `Function`, enter the entry template via ordinary `ApplyEnter`, and
+observe the final root result produced by the matching `ApplyReturn`.
+
 Tilefold `Nat` conformance is independent of platform integer width. Later
 engines must implement `Nat` as an arbitrary-precision nonnegative integer
 domain and must not introduce host `int`, `int64`, or machine-word overflow as

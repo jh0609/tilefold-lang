@@ -40,9 +40,10 @@ slice, materializes the input and `Unit`/`Nat` literals, delivers values along
 edges, and computes initial ready candidates with `ready_epoch = 0`.
 
 Runtime values are immutable and have an abstract logical value ID, a payload,
-and typed origin. Implemented payloads are `Unit` and `Nat of Nat.t`.
-Implemented origins are `Execution_input`, `Program_literal of Node_id.t`, and
-`Rewrite_output of { event_index; node_id; port_key }`.
+and typed origin. Implemented payloads in this first slice are `Unit` and
+`Nat of Nat.t`. Later decisions unify graph literal and rewrite-output origins
+under explicit instance scope, and Decision 0023 adds package-literal
+provenance for `ProgramPackage` entry captures.
 
 The current ID scheme is deterministic and avoids memory addresses, but it is
 provisional and not a canonical serialization format.

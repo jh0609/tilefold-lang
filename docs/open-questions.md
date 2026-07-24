@@ -79,6 +79,8 @@ implements Apply, independent function instances, depth-first call stack
 scheduling, scoped instance/value identity, and ApplyReturn.
 `docs/decisions/0022-natrec-primitive-recursion-runtime.md` implements
 NatRec primitive recursion for `transparent-v0`.
+`docs/decisions/0023-program-package-entry-execution.md` implements the first
+validated `ProgramPackage` entry execution boundary for `entry : Unit -> B`.
 
 `linear-v0` is now recorded as a separate provisional semantics profile in
 `docs/language-spec.md` and

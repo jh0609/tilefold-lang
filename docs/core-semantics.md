@@ -258,6 +258,11 @@ top-level package entry convention. This does not silently remove the broader
 between standard packages and explicit external input requests remains
 deferred.
 
+The implemented `ProgramPackage` slice supports the standard `Unit -> B`
+package entry boundary. Broader explicit `A -> B` execution requests remain
+available through lower-level graph initialization APIs rather than the package
+runner.
+
 The entry template is a closed template. It must not depend on hidden host
 state or an ambient environment. If its capture boundary is unresolved, the
 package is not a valid executable program. External input must pass through the
@@ -272,9 +277,11 @@ Apply(entry closure, input value)
 -> result value at the root result boundary
 ```
 
-The root runtime instance follows the same identity and trace rules as any
-other `ApplyEnter`/`ApplyReturn` call lifecycle. The entry template's result
-boundary is the program result boundary. There is no `ProgramResult` primitive.
+The implemented package runner realizes this by activating a `Root` launcher
+graph containing `Function(entry)`, an ordinary `Apply`, and `Result B`. The
+entry template body runs in the ordinary callee instance created by
+`ApplyEnter`, and the root result is produced by `ApplyReturn`. There is no
+`ProgramResult` primitive.
 
 For an entry of type `Unit -> B`, the `Unit` parameter remains explicit in
 Core. If the body does not use it, the body must handle it with `Drop`. Surface
@@ -486,6 +493,44 @@ and equivalence comparison are outside Core rewrite semantics and are recorded
 in `docs/execution-model.md` and
 `docs/decisions/0018-long-term-execution-model-checkpoint-fork-join.md`.
 
+## ProgramPackage Entry Execution
+
+The implemented package boundary validates a `ProgramPackage` before execution.
+A package identifies a set of function templates, an entry template, the entry
+result type, and optional package literals used to resolve explicit entry
+captures.
+
+The current entry shape is:
+
+```text
+entry : Unit -> B
+```
+
+The entry template must be present, must accept `Unit`, and must return the
+declared package result type. Entry captures must be explicitly supplied by
+package literals of matching type. Validation preserves the existing
+raw/validated boundary: unvalidated packages do not enter the package execution
+API.
+
+The package runner starts execution by building a small launcher graph that
+uses ordinary Core nodes:
+
+```text
+Parameter Unit -> Apply.argument
+Function(entry template) -> Apply.function
+Apply.result -> Result B
+```
+
+This means entry execution goes through the same `Function`, `ApplyEnter`,
+function-body rewrites, and `ApplyReturn` semantics as any other call. The
+runner does not directly evaluate the entry template body and does not create a
+special entry rewrite event.
+
+The runtime materializes the `Unit` entry argument with `Execution_input`
+origin. Package literals used for entry captures use `Program_literal`
+provenance. Template-local literals still use scoped `Literal(instance_id,
+node_id)` origins.
+
 `Unit` and `Nat(n)` are value constructors, not executable rewrite nodes. Their
 runtime logical values are materialized during machine initialization or
 function instance activation.
@@ -537,6 +582,8 @@ The `transparent-v0` profile records these current choices:
 - `unit-type = singleton-total-value`
 - `program-model = package-with-entry-function`
 - `entry-execution = ordinary-apply`
+- `program-package-entry = implemented-validated-unit-entry-launcher`
+- `program-literal-origin = Program_literal`
 - `nullary-entry = Unit-to-result`
 - `program-result = root-instance-result-boundary`
 - `literal-materialization = initialization-or-instance-activation`

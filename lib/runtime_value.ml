@@ -75,6 +75,7 @@ end
 
 type origin =
   | Execution_input
+  | Program_literal of string
   | Literal of {
       instance_id : Instance_id.t;
       node_id : Core_graph.Node_id.t;
@@ -174,6 +175,7 @@ let payload_to_string = function
 
 let origin_to_string = function
   | Execution_input -> "Execution_input"
+  | Program_literal id -> "Program_literal(" ^ id ^ ")"
   | Literal { instance_id; node_id } ->
       "Literal(instance=" ^ Instance_id.to_string instance_id ^ ", node="
       ^ Core_graph.Node_id.to_string node_id ^ ")"

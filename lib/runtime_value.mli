@@ -57,6 +57,7 @@ type payload =
 
 type origin =
   | Execution_input
+  | Program_literal of string
   | Literal of {
       instance_id : Instance_id.t;
       node_id : Core_graph.Node_id.t;

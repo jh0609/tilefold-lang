@@ -56,9 +56,12 @@ Rewrite_output {
 }
 ```
 
-There is no separate `Program_literal`, `Instance_literal`,
-unscoped `Rewrite_output`, or scoped rewrite-output variant in the current
-runtime model.
+There is no separate `Instance_literal`, unscoped `Rewrite_output`, or scoped
+rewrite-output variant in the current runtime model. Decision 0023 later adds
+`Program_literal(literal_id)` only for package literals used by
+`ProgramPackage` entry-capture materialization. Graph literals in root and
+callee instances still use the unified scoped `Literal(instance_id, node_id)`
+origin.
 
 Root and callee activation use the same internal activation path:
 
