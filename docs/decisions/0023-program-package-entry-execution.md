@@ -93,10 +93,16 @@ The implemented example packages include:
 
 - `add`: `entry : Unit -> Nat`, computing `2 + 3 = 5` through `NatRec`;
 - `multiply`: `entry : Unit -> Nat`, computing `2 * 3 = 6` through nested
-  `NatRec`.
+  `NatRec`;
+- `higher-order-function`: `entry : Unit -> (Nat -> Nat)`, returning
+  `iterateSucc 3` as an actual runtime closure;
+- `higher-order-apply`: `entry : Unit -> Nat`, building `iterateSucc 3` through
+  `NatRec[Nat -> Nat]` and applying the generated closure to `2`, producing
+  `5`.
 
 Both examples are built as Core graphs and function templates. They do not use
-host arithmetic shortcuts for the final computation.
+host arithmetic shortcuts for the final computation, host function composition,
+or package-runner closure invocation shortcuts.
 
 ## Deferred
 

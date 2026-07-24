@@ -209,6 +209,13 @@ NatRec step call instance IDs distinguish `NatRec_step_function` from
 ordinal. The rendered diagnostic form is not a public canonical serialization
 format.
 
+When `A` is an Arrow type, the same trace rules apply. A higher-order
+`NatRec[Nat -> Nat]` can return wrapper closures that capture the previous
+accumulator closure. Those closure creations are ordinary `Function` events in
+the step accumulator callee. Later execution of the generated function is
+ordinary `ApplyEnter`/callee rewrites/`ApplyReturn`; the trace must not collapse
+the closure chain into a host function call or direct arithmetic result.
+
 Literal materialization, execution input materialization, delivery along edges,
 ready-candidate maintenance, call-frame push/pop, caller suspension/resumption,
 and other mechanical state construction are not separate rewrite events. Full

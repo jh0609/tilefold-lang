@@ -661,7 +661,8 @@ next_acc = partial accumulator
 ```
 
 The predecessor argument comes first. `A` may be `Unit`, `Nat`, or an Arrow
-type.
+type. Arrow accumulators are ordinary closure values: they keep their own
+logical identity, immutable payload, ordered captures, and provenance.
 
 `NatRec` becomes ready only when `base`, `step`, and `count` are all available.
 Strict call-by-value therefore evaluates the step closure even when `count = 0`.
@@ -709,6 +710,27 @@ using the same step function structure. Detailed observation can unfold the two
 curried calls, callee instances, partial closure, logical IDs, provenance, and
 actual rewrite order. This is visualization only and must not alter Core graph
 or standard trace semantics.
+
+The current reference tests include a higher-order `NatRec[Nat -> Nat]`
+package. Its base accumulator is an identity closure, and each step returns a
+new wrapper closure that captures the previous accumulator:
+
+```text
+iterateSucc count =
+  NatRec[Nat -> Nat](
+    base = fun value -> value,
+    step = fun predecessor accumulated ->
+      Drop predecessor;
+      fun value -> Succ (accumulated value),
+    count = count
+  )
+```
+
+`entry : Unit -> (Nat -> Nat)` can return `iterateSucc 3` as a runtime closure.
+`entry : Unit -> Nat` can then apply that generated closure to `2`, producing
+`5` through ordinary `Apply` and three `Succ` rewrites. This verifies that
+function-valued accumulators pass through the current Core runtime, but it is
+not a formal proof of all System T properties.
 
 ## Atomic Rewriting
 

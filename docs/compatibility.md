@@ -120,6 +120,14 @@ invocation as non-consuming `used` references to the same owned step closure,
 create fresh predecessor values, preserve the second step-return value as the
 next accumulator, and create a fresh final result-boundary value.
 
+For higher-order `NatRec`, conformance also includes Arrow accumulator values.
+An implementation must allow a closure value as `base`, allow the step function
+to accept and return closures, preserve closure identity and captures through
+accumulator handoff, and execute the generated closure only through ordinary
+`Apply`. The reference example `iterateSucc 3 2` must produce `5` through the
+generated closure chain and visible `Succ` rewrites, not through host arithmetic
+or hidden function application.
+
 For future checkpoint and replay support, conformance must distinguish semantic
 trace from execution-management provenance. Creating a checkpoint, pausing,
 resuming, forking, selecting a join representative, aliasing a branch, or

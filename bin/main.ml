@@ -1,6 +1,6 @@
 let usage () =
   prerr_endline
-    "usage:\n  tilefold example add [--trace]\n  tilefold example multiply [--trace]"
+    "usage:\n  tilefold example add [--trace]\n  tilefold example multiply [--trace]\n  tilefold example higher-order-function [--trace]\n  tilefold example higher-order-apply [--trace]"
 
 let payload_to_string value =
   match Tilefold.Runtime_value.payload value with
@@ -9,11 +9,15 @@ let payload_to_string value =
   | Closure closure ->
       "Closure("
       ^ Tilefold.Core_graph.Function_template_id.to_string closure.template_id
-      ^ ")"
+      ^ ", captures=" ^ string_of_int (List.length closure.captures) ^ ")"
 
 let example_package = function
   | "add" -> Some (Tilefold.Program_package.Examples.add ())
   | "multiply" -> Some (Tilefold.Program_package.Examples.multiply ())
+  | "higher-order-function" ->
+      Some (Tilefold.Program_package.Examples.higher_order_function ())
+  | "higher-order-apply" ->
+      Some (Tilefold.Program_package.Examples.higher_order_apply ())
   | _ -> None
 
 let run_example name ~trace =

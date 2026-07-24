@@ -166,6 +166,26 @@ let payload_nat_string value =
   | Runtime_value.Nat nat -> Nat.to_string nat
   | Runtime_value.Unit | Runtime_value.Closure _ -> assert false
 
+let payload_closure value =
+  match Runtime_value.payload value with
+  | Runtime_value.Closure closure -> closure
+  | Runtime_value.Unit | Runtime_value.Nat _ -> assert false
+
+let rule_count rule trace =
+  trace
+  |> List.filter (fun event -> event.Rewrite_event.rule = rule)
+  |> List.length
+
+let trace_strings trace = List.map Rewrite_event.to_string trace
+
+let rec higher_order_wrapper_depth closure =
+  let template = Function_template_id.to_string closure.Runtime_value.template_id in
+  match (template, closure.captures) with
+  | "example-higher-identity", [] -> 0
+  | "example-higher-wrapper", [ captured ] ->
+      1 + higher_order_wrapper_depth (payload_closure captured.Runtime_value.value)
+  | _ -> assert false
+
 let package_of_entry entry result_type =
   P.Raw.create ~templates:[ entry ] ~entry_template_id:(Function_template.id entry)
     ~result_type ()
@@ -362,6 +382,96 @@ let () =
   assert (List.length natrec_starts > 1);
   let _, trace_again = run_completed package in
   assert (List.map Rewrite_event.to_string trace = List.map Rewrite_event.to_string trace_again)
+
+let () =
+  let package = P.Examples.higher_order_function () in
+  let value, trace = run_completed package in
+  assert (Core_type.equal (Runtime_value.typ value) (Core_type.Arrow (Core_type.Nat, Core_type.Nat)));
+  let closure = payload_closure value in
+  assert (Function_template_id.to_string closure.template_id = "example-higher-wrapper");
+  assert (higher_order_wrapper_depth closure = 3);
+  assert (rule_count Rewrite_event.NatRecStart trace = 1);
+  assert (rule_count Rewrite_event.NatRecUnfold trace = 3);
+  assert (rule_count Rewrite_event.NatRecStepFunctionEnter trace = 3);
+  assert (rule_count Rewrite_event.NatRecStepAccumulatorEnter trace = 3);
+  assert (rule_count Rewrite_event.Succ trace = 0);
+  let step_uses =
+    trace
+    |> List.filter (fun event ->
+           event.Rewrite_event.rule = Rewrite_event.NatRecStepFunctionEnter)
+    |> List.map (fun event -> event.Rewrite_event.used)
+  in
+  assert (List.length step_uses = 3);
+  (match step_uses with
+  | [ [ first ]; [ second ]; [ third ] ] ->
+      assert (Runtime_value.Value_id.equal first second);
+      assert (Runtime_value.Value_id.equal second third)
+  | _ -> assert false);
+  assert (
+    trace
+    |> List.exists (fun event ->
+           match event.Rewrite_event.callee_instance_id with
+           | Some (Runtime_value.Instance_id.Call { call_site = NatRec_step_function { iteration; _ }; _ }) ->
+               Nat.equal iteration (nat "2")
+           | _ -> false));
+  let value_again, trace_again = run_completed package in
+  assert (Runtime_value.equal value value_again);
+  assert (trace_strings trace = trace_strings trace_again)
+
+let () =
+  let package = P.Examples.higher_order_apply () in
+  let value, trace = run_completed package in
+  assert (payload_nat_string value = "5");
+  assert (rule_count Rewrite_event.NatRecStart trace = 1);
+  assert (rule_count Rewrite_event.NatRecUnfold trace = 3);
+  assert (rule_count Rewrite_event.Succ trace = 3);
+  let predecessors =
+    trace
+    |> List.filter (fun event -> event.Rewrite_event.rule = Rewrite_event.NatRecUnfold)
+    |> List.map (fun event ->
+           match event.Rewrite_event.created with
+           | [ value ] -> payload_nat_string value
+           | _ -> assert false)
+  in
+  assert (predecessors = [ "0"; "1"; "2" ]);
+  assert (
+    trace
+    |> List.exists (fun event ->
+           match event.Rewrite_event.callee_instance_id with
+           | Some (Runtime_value.Instance_id.Call { call_site = NatRec_step_accumulator { iteration; _ }; _ }) ->
+               Nat.equal iteration (nat "2")
+           | _ -> false));
+  let value_again, trace_again = run_completed package in
+  assert (Runtime_value.equal value value_again);
+  assert (trace_strings trace = trace_strings trace_again)
+
+let () =
+  let value_zero, trace_zero =
+    run_completed (P.Examples.higher_order_apply ~count:"0" ())
+  in
+  assert (payload_nat_string value_zero = "2");
+  assert (rule_count Rewrite_event.NatRecZero trace_zero = 1);
+  assert (rule_count Rewrite_event.Succ trace_zero = 0);
+  let value_one, trace_one =
+    run_completed (P.Examples.higher_order_apply ~count:"1" ())
+  in
+  assert (payload_nat_string value_one = "3");
+  assert (rule_count Rewrite_event.NatRecStart trace_one = 1);
+  assert (rule_count Rewrite_event.Succ trace_one = 1);
+  let value_three, trace_three =
+    run_completed (P.Examples.higher_order_apply ~count:"3" ())
+  in
+  assert (payload_nat_string value_three = "5");
+  assert (rule_count Rewrite_event.Succ trace_three = 3)
+
+let () =
+  let package = P.Examples.higher_order_function ~count:"0" () in
+  let value, trace = run_completed package in
+  let closure = payload_closure value in
+  assert (Function_template_id.to_string closure.template_id = "example-higher-identity");
+  assert (higher_order_wrapper_depth closure = 0);
+  assert (rule_count Rewrite_event.NatRecZero trace = 1);
+  assert (rule_count Rewrite_event.NatRecStepFunctionEnter trace = 0)
 
 let () =
   let package = P.Examples.add () in

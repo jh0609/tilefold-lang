@@ -108,4 +108,6 @@ val execution_error_to_string : execution_error -> string
 module Examples : sig
   val add : unit -> t
   val multiply : unit -> t
+  val higher_order_function : ?count:string -> unit -> t
+  val higher_order_apply : ?count:string -> ?input:string -> unit -> t
 end

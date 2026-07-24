@@ -115,6 +115,11 @@ let port_key value =
   | Ok key -> key
   | Error message -> failwith message
 
+let literal_id value =
+  match Literal_id.of_string value with
+  | Ok id -> id
+  | Error message -> failwith message
+
 let nat value =
   match Nat.of_string value with
   | Ok nat -> nat
@@ -715,6 +720,234 @@ let entry_multiply_template ~id ~multiply_step =
     ~id:(template_id id) ~parameter_type:Core_type.Unit
     ~result_type:Core_type.Nat ~captures:[] ~body ()
 
+let nat_to_nat = Core_type.Arrow (Core_type.Nat, Core_type.Nat)
+
+let higher_identity_template ~id =
+  let nodes =
+    [
+      node "value" (CG.Parameter Core_type.Nat);
+      node "result" (CG.Result Core_type.Nat);
+    ]
+  in
+  let edges =
+    [ edge "e-value-result" (pref "value" "value") (pref "result" "value") ]
+  in
+  let body = CG.Raw_graph.of_lists ~nodes ~edges ~default_node_order:[] |> validate_graph_or_fail in
+  CG.Function_template.create ~id:(template_id id) ~parameter_type:Core_type.Nat
+    ~result_type:Core_type.Nat ~captures:[] ~body ()
+
+let higher_wrapper_template ~id =
+  let previous = { CG.key = CG.Port_key.capture "previous"; typ = nat_to_nat } in
+  let nodes =
+    [
+      node "value" (CG.Parameter Core_type.Nat);
+      node "previous" (CG.Capture previous);
+      node "apply-previous"
+        (CG.Apply { apply_parameter_type = Core_type.Nat; apply_result_type = Core_type.Nat });
+      node "succ" CG.Succ;
+      node "result" (CG.Result Core_type.Nat);
+    ]
+  in
+  let edges =
+    [
+      edge "e-previous-apply" (pref "previous" "value")
+        { CG.node_id = node_id "apply-previous"; port_key = CG.Port_key.function_input };
+      edge "e-value-apply" (pref "value" "value")
+        { CG.node_id = node_id "apply-previous"; port_key = CG.Port_key.argument };
+      edge "e-apply-succ"
+        { CG.node_id = node_id "apply-previous"; port_key = CG.Port_key.result }
+        (pref "succ" "input");
+      edge "e-succ-result" (pref "succ" "result") (pref "result" "value");
+    ]
+  in
+  let body =
+    CG.Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:[ node_id "apply-previous"; node_id "succ" ]
+    |> validate_graph_or_fail
+  in
+  CG.Function_template.create ~id:(template_id id) ~parameter_type:Core_type.Nat
+    ~result_type:Core_type.Nat ~captures:[ previous ] ~body ()
+
+let higher_partial_template ~id ~wrapper =
+  let wrapper_capture = { CG.key = CG.Port_key.capture "previous"; typ = nat_to_nat } in
+  let nodes =
+    [
+      node "accumulated" (CG.Parameter nat_to_nat);
+      node "wrapper-function"
+        (CG.Function (function_signature wrapper [ wrapper_capture ]));
+      node "result" (CG.Result nat_to_nat);
+    ]
+  in
+  let edges =
+    [
+      edge "e-accumulated-wrapper" (pref "accumulated" "value")
+        { CG.node_id = node_id "wrapper-function"; port_key = wrapper_capture.key };
+      edge "e-wrapper-result" (pref "wrapper-function" "value")
+        (pref "result" "value");
+    ]
+  in
+  let body =
+    CG.Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:[ node_id "wrapper-function" ]
+    |> validate_graph_with_templates_or_fail [ wrapper ]
+  in
+  CG.Function_template.create ~dependencies:[ CG.Function_template.id wrapper ]
+    ~id:(template_id id) ~parameter_type:nat_to_nat ~result_type:nat_to_nat
+    ~captures:[] ~body ()
+
+let higher_step_template ~id ~partial =
+  let partial_arrow = Core_type.Arrow (nat_to_nat, nat_to_nat) in
+  let nodes =
+    [
+      node "predecessor" (CG.Parameter Core_type.Nat);
+      node "drop-predecessor" (CG.Drop Core_type.Nat);
+      node "partial-function" (CG.Function (function_signature partial []));
+      node "result" (CG.Result partial_arrow);
+    ]
+  in
+  let edges =
+    unit_drop_edges "predecessor" "drop-predecessor"
+    @ [
+        edge "e-partial-result" (pref "partial-function" "value")
+          (pref "result" "value");
+      ]
+  in
+  let body =
+    CG.Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:[ node_id "partial-function"; node_id "drop-predecessor" ]
+    |> validate_graph_with_templates_or_fail [ partial ]
+  in
+  CG.Function_template.create ~dependencies:[ CG.Function_template.id partial ]
+    ~id:(template_id id) ~parameter_type:Core_type.Nat ~result_type:partial_arrow
+    ~captures:[] ~body ()
+
+let higher_order_templates () =
+  let identity = higher_identity_template ~id:"example-higher-identity" in
+  let wrapper = higher_wrapper_template ~id:"example-higher-wrapper" in
+  let partial =
+    higher_partial_template ~id:"example-higher-partial" ~wrapper
+  in
+  let step = higher_step_template ~id:"example-higher-step" ~partial in
+  (identity, wrapper, partial, step)
+
+let entry_higher_function_template ~id ~identity ~step =
+  let count_capture = { CG.key = CG.Port_key.capture "count"; typ = Core_type.Nat } in
+  let nodes =
+    [
+      node "unit" (CG.Parameter Core_type.Unit);
+      node "drop-unit" (CG.Drop Core_type.Unit);
+      node "count" (CG.Capture count_capture);
+      node "base-function" (CG.Function (function_signature identity []));
+      node "step-function" (CG.Function (function_signature step []));
+      node "natrec" (CG.NatRec nat_to_nat);
+      node "result" (CG.Result nat_to_nat);
+    ]
+  in
+  let edges =
+    unit_drop_edges "unit" "drop-unit"
+    @ [
+        edge "e-base-natrec" (pref "base-function" "value")
+          { CG.node_id = node_id "natrec"; port_key = CG.Port_key.base };
+        edge "e-step-natrec" (pref "step-function" "value")
+          { CG.node_id = node_id "natrec"; port_key = CG.Port_key.step };
+        edge "e-count-natrec" (pref "count" "value")
+          { CG.node_id = node_id "natrec"; port_key = CG.Port_key.count };
+        edge "e-natrec-result"
+          { CG.node_id = node_id "natrec"; port_key = CG.Port_key.result }
+          (pref "result" "value");
+      ]
+  in
+  let body =
+    CG.Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:
+        [ node_id "base-function"; node_id "step-function"; node_id "natrec"; node_id "drop-unit" ]
+    |> validate_graph_with_templates_or_fail [ identity; step ]
+  in
+  CG.Function_template.create
+    ~dependencies:[ CG.Function_template.id identity; CG.Function_template.id step ]
+    ~id:(template_id id) ~parameter_type:Core_type.Unit ~result_type:nat_to_nat
+    ~captures:[ count_capture ] ~body ()
+
+let entry_higher_apply_template ~id ~identity ~step =
+  let count_capture = { CG.key = CG.Port_key.capture "count"; typ = Core_type.Nat } in
+  let input_capture = { CG.key = CG.Port_key.capture "input"; typ = Core_type.Nat } in
+  let nodes =
+    [
+      node "unit" (CG.Parameter Core_type.Unit);
+      node "drop-unit" (CG.Drop Core_type.Unit);
+      node "count" (CG.Capture count_capture);
+      node "input" (CG.Capture input_capture);
+      node "base-function" (CG.Function (function_signature identity []));
+      node "step-function" (CG.Function (function_signature step []));
+      node "natrec" (CG.NatRec nat_to_nat);
+      node "apply-generated"
+        (CG.Apply { apply_parameter_type = Core_type.Nat; apply_result_type = Core_type.Nat });
+      node "result" (CG.Result Core_type.Nat);
+    ]
+  in
+  let edges =
+    unit_drop_edges "unit" "drop-unit"
+    @ [
+        edge "e-base-natrec" (pref "base-function" "value")
+          { CG.node_id = node_id "natrec"; port_key = CG.Port_key.base };
+        edge "e-step-natrec" (pref "step-function" "value")
+          { CG.node_id = node_id "natrec"; port_key = CG.Port_key.step };
+        edge "e-count-natrec" (pref "count" "value")
+          { CG.node_id = node_id "natrec"; port_key = CG.Port_key.count };
+        edge "e-natrec-apply"
+          { CG.node_id = node_id "natrec"; port_key = CG.Port_key.result }
+          { CG.node_id = node_id "apply-generated"; port_key = CG.Port_key.function_input };
+        edge "e-input-apply" (pref "input" "value")
+          { CG.node_id = node_id "apply-generated"; port_key = CG.Port_key.argument };
+        edge "e-apply-result"
+          { CG.node_id = node_id "apply-generated"; port_key = CG.Port_key.result }
+          (pref "result" "value");
+      ]
+  in
+  let body =
+    CG.Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:
+        [
+          node_id "base-function";
+          node_id "step-function";
+          node_id "natrec";
+          node_id "apply-generated";
+          node_id "drop-unit";
+        ]
+    |> validate_graph_with_templates_or_fail [ identity; step ]
+  in
+  CG.Function_template.create
+    ~dependencies:[ CG.Function_template.id identity; CG.Function_template.id step ]
+    ~id:(template_id id) ~parameter_type:Core_type.Unit ~result_type:Core_type.Nat
+    ~captures:[ count_capture; input_capture ] ~body ()
+
+let higher_order_package ~entry ~templates ~result_type ~count ?input () =
+  let count_literal = literal_id "count" in
+  let literals =
+    [ { id = count_literal; payload = Runtime_value.Nat (nat count) } ]
+  in
+  let entry_captures =
+    [ { capture_key = CG.Port_key.capture "count"; literal_id = count_literal } ]
+  in
+  let literals, entry_captures =
+    match input with
+    | None -> (literals, entry_captures)
+    | Some input ->
+        let input_literal = literal_id "input" in
+        ( literals @ [ { id = input_literal; payload = Runtime_value.Nat (nat input) } ],
+          entry_captures
+          @ [
+              {
+                capture_key = CG.Port_key.capture "input";
+                literal_id = input_literal;
+              };
+            ] )
+  in
+  Raw.create ~templates:(entry :: templates)
+    ~entry_template_id:(CG.Function_template.id entry) ~result_type ~literals
+    ~entry_captures ()
+  |> validate_or_fail
+
 module Examples = struct
   let add () =
     let succ_inner, succ_outer =
@@ -748,4 +981,22 @@ module Examples = struct
       ~entry_template_id:(CG.Function_template.id entry) ~result_type:Core_type.Nat
       ()
     |> validate_or_fail
+
+  let higher_order_function ?(count = "3") () =
+    let identity, wrapper, partial, step = higher_order_templates () in
+    let entry =
+      entry_higher_function_template ~id:"example-higher-function-entry"
+        ~identity ~step
+    in
+    higher_order_package ~entry ~templates:[ step; partial; wrapper; identity ]
+      ~result_type:nat_to_nat ~count ()
+
+  let higher_order_apply ?(count = "3") ?(input = "2") () =
+    let identity, wrapper, partial, step = higher_order_templates () in
+    let entry =
+      entry_higher_apply_template ~id:"example-higher-apply-entry" ~identity
+        ~step
+    in
+    higher_order_package ~entry ~templates:[ step; partial; wrapper; identity ]
+      ~result_type:Core_type.Nat ~count ~input ()
 end

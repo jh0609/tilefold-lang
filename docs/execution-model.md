@@ -272,6 +272,15 @@ values. The second curried step return creates the next accumulator value, and
 that value ID is reused directly as the next accumulator without an extra
 logical boundary.
 
+The implemented accumulator type `A` includes Arrow types. In the
+higher-order `iterateSucc` package example, `NatRec[Nat -> Nat]` starts from an
+identity closure and each step returns a wrapper closure capturing the previous
+accumulator. Returning `iterateSucc 3` from `entry : Unit -> (Nat -> Nat)`
+therefore returns an actual runtime closure. Applying it to `2` uses ordinary
+depth-first `Apply` instances and produces `5` through three visible `Succ`
+rewrites. The package runner does not invoke closures through a separate host
+shortcut.
+
 ## Scheduler Model
 
 Status: Confirmed, partly implemented.
