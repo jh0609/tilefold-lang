@@ -8,5 +8,6 @@
   test_canonical_trace
   test_program_package_serialization
   test_surface_symbolic
+  test_surface_geometry
   test_linear_v0)
  (libraries tilefold zarith))

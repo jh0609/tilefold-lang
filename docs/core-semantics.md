@@ -64,8 +64,13 @@ data-fan-out `Branch`. The layer validates raw symbolic relations, lowers only
 validated relations into existing Core graphs and ProgramPackages, and then
 reuses the existing Core and package validators. `Branch` is not conditional
 control flow; it lowers to explicit `Copy` nodes. This does not define a
-Surface geometry recognizer, editor project file, or public symbolic relation
-serialization format.
+Surface editor project file or public symbolic relation serialization format.
+
+The reference engine also implements a minimal `Surface_geometry` inference
+layer for explicit coordinate scenes. Geometry inference resolves wire endpoint
+snapping, containment, boundary binding topology, and explicit branch junctions
+into raw symbolic relations. It still requires semantic metadata for Core node
+kinds and port roles; it does not infer primitives from visual appearance.
 
 ## Tiles, Ports, Connections, and Values
 

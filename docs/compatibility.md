@@ -45,6 +45,13 @@ implementations must agree on validation and lowering for `Connect`, `Contain`,
 hit testing, editor layout, and renderer-specific state remain outside
 conformance.
 
+For the current Surface geometry inference v1 boundary, conforming
+implementations must agree on integer coordinate validation, snapping with
+explicit tolerance, containment ownership, explicit branch junction topology,
+generated relation IDs, inferred symbolic relations, and downstream canonical
+trace behavior. UI gestures, renderer pixels, viewport, zoom, and public
+project-file formats remain outside conformance.
+
 For `transparent-v0`, identical canonical scheduling metadata must produce the
 same rewrite order and standard trace on conforming engines. `PrioritySpine`
 metadata is conformance-relevant when present. Pixel or render position is not.

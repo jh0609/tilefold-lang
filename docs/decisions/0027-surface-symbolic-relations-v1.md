@@ -16,6 +16,10 @@ layer between future geometry and Core.
 The v1 relation layer must not make Core read pixel coordinates, infer
 relations from editor layout, or add runtime primitives.
 
+Decision 0028 later adds a separate geometry-scene inference layer that
+produces raw symbolic relations. The symbolic validation and lowering boundary
+defined here remains unchanged.
+
 ## Decision
 
 Add a `Surface_symbolic` layer with raw and validated representations, typed

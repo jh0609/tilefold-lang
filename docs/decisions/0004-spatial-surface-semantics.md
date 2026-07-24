@@ -45,7 +45,9 @@ Symbolic relations that may carry meaning include:
 The exact Surface relation schema is not finalized by this decision. Decision
 0027 later implements a v1 symbolic relation layer for `Connect`, `Contain`,
 `Bind`, and data-fan-out `Branch` without adding geometry recognition or editor
-UI.
+UI. Decision 0028 later implements deterministic relation inference for
+explicit integer-coordinate geometry scenes, still without adding editor UI or
+image recognition.
 
 Rendering information excluded from Core semantics includes:
 

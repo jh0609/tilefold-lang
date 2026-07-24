@@ -12,7 +12,9 @@ Surface geometry
 ```
 
 This layer does not infer relations from coordinates, does not store editor
-layout, and does not add runtime primitives.
+layout, and does not add runtime primitives. The separate
+`Surface_geometry` layer can infer raw symbolic relations from explicit
+geometry metadata before this validation boundary.
 
 ## Raw and Validated Relations
 
@@ -158,7 +160,7 @@ orders are preserved:
 
 The following are not part of v1:
 
-- geometry recognition or hit testing;
+- image recognition, hit testing, or editor UI;
 - Surface JSON/project formats;
 - editor UI and renderer behavior;
 - symbolic relation public serialization;

@@ -373,6 +373,9 @@ Still open:
   reference-engine slice. Decision 0027 implements v1 raw/validated
   `Surface_symbolic` relations for `Connect`, `Contain`, `Bind`, and
   data-fan-out `Branch`, with deterministic lowering to ProgramPackage.
+  Decision 0028 implements a minimal geometry-scene inference layer that
+  produces those raw symbolic relations from explicit integer-coordinate
+  scenes.
 - Alternatives:
   - The implemented v1 fixed schema with `Connect`, `Contain`, `Bind`, and
     data-fan-out `Branch`.
@@ -393,9 +396,10 @@ Still open:
   canonical nonvisual representation.
 - Impact on future compatibility: Stored programs, tests, and visualizers depend
   on the relation schema.
-- Recommendation: Use the implemented v1 schema for current conformance tests.
-  Keep public Surface persistence, geometry inference, relation extensibility,
-  and any future control-flow relation schema open.
+- Recommendation: Use the implemented v1 schema and geometry inference layer
+  for current conformance tests. Keep public Surface persistence, richer
+  geometry inference, relation extensibility, and any future control-flow
+  relation schema open.
 
 ## 10. Is rotation semantic or visual-only?
 
