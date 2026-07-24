@@ -1,4 +1,5 @@
 module CG = Core_graph
+module Instance_id = Runtime_value.Instance_id
 
 type initialization_error =
   | Input_type_mismatch of {
@@ -9,7 +10,7 @@ type initialization_error =
   | Initial_delivery_invariant_violation of string
 
 type ready_candidate = {
-  instance_id : string;
+  instance_id : Instance_id.t;
   node_id : CG.Node_id.t;
   ready_epoch : int;
   priority_spine_rank : int option;
@@ -17,7 +18,7 @@ type ready_candidate = {
 }
 
 type stuck_reason = {
-  instance_id : string;
+  instance_id : Instance_id.t;
   unexecuted_nodes : CG.Node_id.t list;
   result_missing : bool;
 }
@@ -61,20 +62,24 @@ type port_binding = {
   value : Runtime_value.t;
 }
 
+type node_state =
+  | Pending
+  | Waiting_for_return of Instance_id.t
+  | Completed
+
 type instance = {
-  id : string;
+  id : Instance_id.t;
   graph : CG.Validated_graph.t;
   bindings : port_binding list;
-  executed_nodes : CG.Node_id.t list;
-  entered_apply_nodes : CG.Node_id.t list;
+  node_states : (CG.Node_id.t * node_state) list;
   ready_candidates : ready_candidate list;
   result_value : Runtime_value.t option;
 }
 
 type call_frame = {
-  caller_instance_id : string;
+  caller_instance_id : Instance_id.t;
   apply_node_id : CG.Node_id.t;
-  callee_instance_id : string;
+  callee_instance_id : Instance_id.t;
   expected_result_type : Core_type.t;
 }
 
@@ -82,7 +87,7 @@ module Machine = struct
   type t = {
     function_templates : CG.Function_template.t list;
     instances : instance list;
-    active_instance_id : string;
+    active_instance_id : Instance_id.t;
     call_stack : call_frame list;
     next_event_index : int;
     trace_events : Rewrite_event.t list;
@@ -92,7 +97,7 @@ module Machine = struct
   let call_depth machine = List.length machine.call_stack
 
   let instance_by_id machine instance_id =
-    List.find_opt (fun instance -> String.equal instance.id instance_id) machine.instances
+    List.find_opt (fun instance -> Instance_id.equal instance.id instance_id) machine.instances
 
   let active_instance machine = instance_by_id machine machine.active_instance_id
 
@@ -102,11 +107,19 @@ module Machine = struct
     | None -> []
 
   let result_value machine =
-    match instance_by_id machine "root" with
+    match instance_by_id machine Instance_id.root with
     | Some instance -> instance.result_value
     | None -> None
 
   let trace_events machine = machine.trace_events
+
+  let node_state machine ~instance_id node_id =
+    match instance_by_id machine instance_id with
+    | None -> None
+    | Some instance -> (
+        match List.assoc_opt node_id instance.node_states with
+        | Some state -> Some state
+        | None -> Some Pending)
 
   let values machine =
     let instance_values =
@@ -141,12 +154,14 @@ module Machine = struct
     Option.is_some instance.result_value
     && List.for_all
          (fun node_id ->
-           List.exists (fun executed -> CG.Node_id.equal executed node_id) instance.executed_nodes)
+           match List.assoc_opt node_id instance.node_states with
+           | Some Completed -> true
+           | _ -> false)
          (CG.Validated_graph.default_node_order instance.graph)
     && instance.ready_candidates = []
 
   let is_completed machine =
-    match (machine.call_stack, instance_by_id machine "root") with
+    match (machine.call_stack, instance_by_id machine Instance_id.root) with
     | [], Some root -> instance_completed root
     | _ -> false
 end
@@ -174,7 +189,7 @@ type run_result =
       trace : Rewrite_event.t list;
     }
 
-let root_instance_id = "root"
+let root_instance_id = Instance_id.root
 
 let node_by_id graph node_id =
   CG.Validated_graph.nodes graph
@@ -221,37 +236,50 @@ let function_template_by_id templates template_id =
       CG.Function_template_id.equal (CG.Function_template.id template) template_id)
     templates
 
-let is_ready graph bindings executed_nodes entered_apply_nodes node_id =
-  if List.exists (fun executed -> CG.Node_id.equal executed node_id) executed_nodes then
-    false
-  else if List.exists (fun entered -> CG.Node_id.equal entered node_id) entered_apply_nodes
-  then false
-  else
-    match node_by_id graph node_id with
+let node_state instance node_id =
+  match List.assoc_opt node_id instance.node_states with
+  | Some state -> state
+  | None -> Pending
+
+let set_node_state instance node_id state =
+  {
+    instance with
+    node_states =
+      (node_id, state)
+      :: List.filter
+           (fun (existing, _) -> not (CG.Node_id.equal existing node_id))
+           instance.node_states;
+  }
+
+let is_ready instance node_id =
+  match node_state instance node_id with
+  | Completed | Waiting_for_return _ -> false
+  | Pending ->
+    match node_by_id instance.graph node_id with
     | None -> false
     | Some { kind = CG.Succ; _ } -> (
-        match binding_for bindings node_id CG.Port_key.input with
+        match binding_for instance.bindings node_id CG.Port_key.input with
         | Some value -> Core_type.equal (Runtime_value.typ value) Core_type.Nat
         | None -> false)
     | Some { kind = CG.Drop expected; _ } -> (
-        match binding_for bindings node_id CG.Port_key.input with
+        match binding_for instance.bindings node_id CG.Port_key.input with
         | Some value -> Core_type.equal (Runtime_value.typ value) expected
         | None -> false)
     | Some { kind = CG.Copy expected; _ } -> (
-        match binding_for bindings node_id CG.Port_key.input with
+        match binding_for instance.bindings node_id CG.Port_key.input with
         | Some value -> Core_type.equal (Runtime_value.typ value) expected
         | None -> false)
     | Some { kind = CG.Function signature; _ } ->
         List.for_all
           (fun (capture : CG.capture) ->
-            match binding_for bindings node_id capture.CG.key with
+            match binding_for instance.bindings node_id capture.CG.key with
             | Some value -> Core_type.equal (Runtime_value.typ value) capture.typ
             | None -> false)
           signature.captures
     | Some { kind = CG.Apply signature; _ } -> (
         match
-          ( binding_for bindings node_id CG.Port_key.function_input,
-            binding_for bindings node_id CG.Port_key.argument )
+          ( binding_for instance.bindings node_id CG.Port_key.function_input,
+            binding_for instance.bindings node_id CG.Port_key.argument )
         with
         | Some function_value, Some argument_value ->
             Core_type.equal (Runtime_value.typ function_value)
@@ -277,9 +305,7 @@ let ready_candidate instance_id graph epoch node_id =
 
 let initial_ready_candidates instance =
   CG.Validated_graph.default_node_order instance.graph
-  |> List.filter
-       (is_ready instance.graph instance.bindings instance.executed_nodes
-          instance.entered_apply_nodes)
+  |> List.filter (is_ready instance)
   |> List.filter_map (ready_candidate instance.id instance.graph 0)
 
 let ready_contains ready node_id =
@@ -288,15 +314,12 @@ let ready_contains ready node_id =
 let refresh_ready_candidates instance epoch =
   let still_ready =
     instance.ready_candidates
-    |> List.filter (fun candidate ->
-           is_ready instance.graph instance.bindings instance.executed_nodes
-             instance.entered_apply_nodes candidate.node_id)
+    |> List.filter (fun candidate -> is_ready instance candidate.node_id)
   in
   let new_ready =
     CG.Validated_graph.default_node_order instance.graph
     |> List.filter (fun node_id ->
-           is_ready instance.graph instance.bindings instance.executed_nodes
-             instance.entered_apply_nodes node_id
+           is_ready instance node_id
            && not (ready_contains still_ready node_id))
     |> List.filter_map (ready_candidate instance.id instance.graph epoch)
   in
@@ -325,7 +348,7 @@ let update_instance machine updated =
     machine with
     Machine.instances =
       List.map
-        (fun instance -> if String.equal instance.id updated.id then updated else instance)
+        (fun instance -> if Instance_id.equal instance.id updated.id then updated else instance)
         machine.Machine.instances;
   }
 
@@ -353,26 +376,20 @@ let deliver_output graph instance node_id port_key value =
        ^ CG.Port_key.to_string port_key)
   | Some edge -> deliver_to_target graph instance edge.target value
 
-let event_subject_id instance node_id =
-  if String.equal instance.id root_instance_id then node_id else node_id
+let event_subject_id _instance node_id = node_id
 
 let rewrite_output_id instance event_index node_id port_key =
-  if String.equal instance.id root_instance_id then
-    Runtime_value.rewrite_output_id event_index node_id port_key
-  else Runtime_value.scoped_rewrite_output_id event_index instance.id node_id port_key
+  Runtime_value.rewrite_output_id instance.id event_index node_id port_key
 
 let rewrite_output_origin instance event_index node_id port_key =
-  if String.equal instance.id root_instance_id then
-    Runtime_value.Rewrite_output { event_index; node_id; port_key }
-  else Runtime_value.Scoped_rewrite_output { event_index; instance_id = instance.id; node_id; port_key }
+  Runtime_value.Rewrite_output
+    { instance_id = instance.id; event_index; node_id; port_key }
 
 let literal_id instance node_id =
-  if String.equal instance.id root_instance_id then Runtime_value.program_literal_id node_id
-  else Runtime_value.instance_literal_id instance.id node_id
+  Runtime_value.literal_id instance.id node_id
 
 let literal_origin instance node_id =
-  if String.equal instance.id root_instance_id then Runtime_value.Program_literal node_id
-  else Runtime_value.Instance_literal { instance_id = instance.id; node_id }
+  Runtime_value.Literal { instance_id = instance.id; node_id }
 
 let materialize_literal instance = function
   | { CG.kind = CG.Unit_literal; id } ->
@@ -385,6 +402,9 @@ let materialize_literal instance = function
            ~payload:(Runtime_value.Nat nat) ~origin:(literal_origin instance id))
   | _ -> None
 
+let bind_boundary_output instance node_id value =
+  deliver_output instance.graph instance node_id CG.Port_key.value value
+
 let append_event machine event =
   {
     machine with
@@ -392,11 +412,10 @@ let append_event machine event =
     next_event_index = machine.Machine.next_event_index + 1;
   }
 
-let mark_executed instance node_id =
-  { instance with executed_nodes = node_id :: instance.executed_nodes }
+let mark_completed instance node_id = set_node_state instance node_id Completed
 
-let mark_apply_entered instance node_id =
-  { instance with entered_apply_nodes = node_id :: instance.entered_apply_nodes }
+let mark_waiting_for_return instance node_id callee_instance_id =
+  set_node_state instance node_id (Waiting_for_return callee_instance_id)
 
 let remove_ready instance node_id =
   {
@@ -427,8 +446,7 @@ let empty_instance id graph =
     id;
     graph;
     bindings = [];
-    executed_nodes = [];
-    entered_apply_nodes = [];
+    node_states = [];
     ready_candidates = [];
     result_value = None;
   }
@@ -453,30 +471,63 @@ let initialize_instance_literals instance =
          | Error _ as error -> error
          | Ok instance -> (
              match Runtime_value.origin value with
-             | Program_literal node_id | Instance_literal { node_id; _ } ->
+             | Literal { node_id; _ } ->
                  deliver_output instance.graph instance node_id CG.Port_key.value value
-             | Execution_input | Rewrite_output _ | Scoped_rewrite_output _ ->
+             | Execution_input | Rewrite_output _ ->
                  Error "unexpected non-literal value during literal materialization"))
        (Ok instance)
+
+let bind_capture_boundary instance (captured : Runtime_value.captured_value) =
+  let capture_node =
+    CG.Validated_graph.nodes instance.graph
+    |> List.find_opt (function
+         | { CG.kind = CG.Capture capture; _ } ->
+             CG.Port_key.equal capture.key captured.capture_key
+         | _ -> false)
+  in
+  match capture_node with
+  | None ->
+      Error
+        ("missing capture boundary "
+        ^ CG.Port_key.to_string captured.capture_key)
+  | Some node -> bind_boundary_output instance node.id captured.value
+
+let activate_instance ~id ~graph ~parameter_value ~captures =
+  let initial = empty_instance id graph in
+  let parameter = CG.Validated_graph.parameter_node graph in
+  let result = bind_boundary_output initial parameter.id parameter_value in
+  let result =
+    match result with
+    | Error _ as error -> error
+    | Ok instance ->
+        List.fold_left
+          (fun state_result captured ->
+            match state_result with
+            | Error _ as error -> error
+            | Ok instance -> bind_capture_boundary instance captured)
+          (Ok instance) captures
+  in
+  let result =
+    match result with
+    | Error _ as error -> error
+    | Ok instance -> initialize_instance_literals instance
+  in
+  Result.map
+    (fun instance ->
+      { instance with ready_candidates = initial_ready_candidates instance })
+    result
 
 let initialize_with_templates function_templates graph ~input =
   match materialize_input graph input with
   | Error error -> Error error
   | Ok input_value ->
-      let initial = empty_instance root_instance_id graph in
-      let parameter = CG.Validated_graph.parameter_node graph in
       let result =
-        deliver_output graph initial parameter.id CG.Port_key.value input_value
-      in
-      let result =
-        match result with
-        | Error _ as error -> error
-        | Ok instance -> initialize_instance_literals instance
+        activate_instance ~id:root_instance_id ~graph ~parameter_value:input_value
+          ~captures:[]
       in
       result
       |> Result.map_error (fun message -> Initial_delivery_invariant_violation message)
       |> Result.map (fun root ->
-             let root = { root with ready_candidates = initial_ready_candidates root } in
              {
                Machine.function_templates;
                instances = [ root ];
@@ -491,8 +542,9 @@ let initialize graph ~input = initialize_with_templates [] graph ~input
 let unexecuted_nodes instance =
   CG.Validated_graph.default_node_order instance.graph
   |> List.filter (fun node_id ->
-         not
-           (List.exists (fun executed -> CG.Node_id.equal executed node_id) instance.executed_nodes))
+         match node_state instance node_id with
+         | Completed -> false
+         | Pending | Waiting_for_return _ -> true)
 
 let stuck_reason instance =
   {
@@ -517,7 +569,10 @@ let rewrite_succ machine instance candidate =
             make_event machine instance candidate Rewrite_event.Succ
               [ Runtime_value.id input_value ] [ created ] ()
           in
-          let instance = remove_ready instance candidate.node_id |> fun i -> mark_executed i candidate.node_id in
+          let instance =
+            remove_ready instance candidate.node_id
+            |> fun i -> mark_completed i candidate.node_id
+          in
           let machine = append_event (update_instance machine instance) event in
           let instance = Machine.instance_by_id machine instance.id |> Option.get in
           (match deliver_output instance.graph instance candidate.node_id CG.Port_key.result created with
@@ -572,7 +627,10 @@ let rewrite_copy machine instance candidate expected =
               make_event machine instance candidate Rewrite_event.Copy
                 [ Runtime_value.id input_value ] [ left; right ] ()
             in
-            let instance = remove_ready instance candidate.node_id |> fun i -> mark_executed i candidate.node_id in
+            let instance =
+              remove_ready instance candidate.node_id
+              |> fun i -> mark_completed i candidate.node_id
+            in
             let machine = append_event (update_instance machine instance) event in
             let instance = Machine.instance_by_id machine instance.id |> Option.get in
             match deliver_output instance.graph instance candidate.node_id CG.Port_key.left left with
@@ -641,7 +699,10 @@ let rewrite_function machine instance candidate signature =
                  captured_values)
               [ created ] ()
           in
-          let instance = remove_ready instance candidate.node_id |> fun i -> mark_executed i candidate.node_id in
+          let instance =
+            remove_ready instance candidate.node_id
+            |> fun i -> mark_completed i candidate.node_id
+          in
           let machine = append_event (update_instance machine instance) event in
           let instance = Machine.instance_by_id machine instance.id |> Option.get in
           match deliver_output instance.graph instance candidate.node_id CG.Port_key.value created with
@@ -673,7 +734,8 @@ let rewrite_drop machine instance candidate =
                 [ Runtime_value.id input_value ] [] ()
             in
             let instance =
-              remove_ready instance candidate.node_id |> fun i -> mark_executed i candidate.node_id
+              remove_ready instance candidate.node_id
+              |> fun i -> mark_completed i candidate.node_id
             in
             let machine = append_event (update_instance machine instance) event in
             let instance = Machine.instance_by_id machine instance.id |> Option.get in
@@ -690,9 +752,6 @@ let rewrite_drop machine instance candidate =
                 ^ CG.Node_id.to_string candidate.node_id)))
   | None -> Stuck (stuck_reason instance)
 
-let bind_boundary_output instance node_id value =
-  deliver_output instance.graph instance node_id CG.Port_key.value value
-
 let instantiate_callee machine caller candidate closure argument =
   match function_template_by_id machine.Machine.function_templates closure.Runtime_value.template_id with
   | None ->
@@ -702,46 +761,17 @@ let instantiate_callee machine caller candidate closure argument =
   | Some template ->
       let event_index = machine.Machine.next_event_index in
       let callee_id =
-        "call:" ^ caller.id ^ ":" ^ CG.Node_id.to_string candidate.node_id ^ ":"
-        ^ string_of_int event_index
+        Instance_id.call ~parent:caller.id ~apply_node:candidate.node_id
+          ~call_index:event_index
       in
       let body = CG.Function_template.body template in
-      let callee = empty_instance callee_id body in
-      let parameter = CG.Validated_graph.parameter_node body in
       let result =
-        match bind_boundary_output callee parameter.id argument with
-        | Error _ as error -> error
-        | Ok callee -> (
-            let with_captures =
-              List.fold_left
-                (fun state_result (captured : Runtime_value.captured_value) ->
-                  match state_result with
-                  | Error _ as error -> error
-                  | Ok callee -> (
-                      let capture_node =
-                        CG.Validated_graph.nodes body
-                        |> List.find_opt (function
-                             | { CG.kind = CG.Capture capture; _ } ->
-                                 CG.Port_key.equal capture.key captured.capture_key
-                             | _ -> false)
-                      in
-                      match capture_node with
-                      | None ->
-                          Error
-                            ("missing callee capture boundary "
-                            ^ CG.Port_key.to_string captured.capture_key)
-                      | Some node -> bind_boundary_output callee node.id captured.value))
-                (Ok callee) closure.captures
-            in
-            match with_captures with
-            | Error _ as error -> error
-            | Ok callee -> initialize_instance_literals callee)
+        activate_instance ~id:callee_id ~graph:body ~parameter_value:argument
+          ~captures:closure.captures
       in
       result
       |> Result.map_error (fun message -> Runtime_invariant_violation message)
-      |> Result.map (fun callee ->
-             let callee = { callee with ready_candidates = initial_ready_candidates callee } in
-             (template, callee_id, callee))
+      |> Result.map (fun callee -> (template, callee_id, callee))
 
 let rewrite_apply_enter machine caller candidate signature =
   match
@@ -785,8 +815,9 @@ let rewrite_apply_enter machine caller candidate signature =
                     [] ~callee_instance_id:callee_id ()
                 in
                 let caller =
-                  mark_apply_entered (remove_ready caller candidate.node_id)
-                    candidate.node_id
+                  remove_ready caller candidate.node_id
+                  |> fun caller ->
+                  mark_waiting_for_return caller candidate.node_id callee_id
                 in
                 let frame =
                   {
@@ -803,7 +834,7 @@ let rewrite_apply_enter machine caller candidate signature =
                       callee
                       :: List.map
                            (fun instance ->
-                             if String.equal instance.id caller.id then caller else instance)
+                             if Instance_id.equal instance.id caller.id then caller else instance)
                            machine.Machine.instances;
                     active_instance_id = callee_id;
                     call_stack = frame :: machine.Machine.call_stack;
@@ -834,6 +865,17 @@ let rewrite_apply_return machine callee frame =
                expected = frame.expected_result_type;
                actual = Runtime_value.typ result_value;
              })
+      else if
+        not
+          (match node_state caller frame.apply_node_id with
+          | Waiting_for_return waiting ->
+              Instance_id.equal waiting frame.callee_instance_id
+          | Pending | Completed -> false)
+      then
+        Runtime_error
+          (Runtime_invariant_violation
+             ("ApplyReturn frame does not match caller node lifecycle at "
+            ^ CG.Node_id.to_string frame.apply_node_id))
       else
         let candidate =
           {
@@ -859,7 +901,7 @@ let rewrite_apply_return machine callee frame =
             [ Runtime_value.id result_value ] [ created ]
             ~callee_instance_id:callee.id ()
         in
-        let caller = mark_executed caller frame.apply_node_id in
+        let caller = mark_completed caller frame.apply_node_id in
         let machine = append_event (update_instance machine caller) event in
         let caller = Machine.instance_by_id machine caller.id |> Option.get in
         (match deliver_output caller.graph caller frame.apply_node_id CG.Port_key.result created with
@@ -882,9 +924,9 @@ let step machine =
   | None -> Runtime_error (Runtime_invariant_violation "active instance missing")
   | Some active when Machine.instance_completed active -> (
       match machine.Machine.call_stack with
-      | frame :: _ when String.equal frame.callee_instance_id active.id ->
+      | frame :: _ when Instance_id.equal frame.callee_instance_id active.id ->
           rewrite_apply_return machine active frame
-      | [] when String.equal active.id root_instance_id -> (
+      | [] when Instance_id.equal active.id root_instance_id -> (
           match active.result_value with
           | Some value -> Completed value
           | None -> Stuck (stuck_reason active))

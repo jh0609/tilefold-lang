@@ -95,6 +95,14 @@ depth-first caller suspension, function body rewrite trace events, scoped
 literal and rewrite-output logical IDs, the new caller-scope return value on
 `ApplyReturn`, and the one-rewrite-per-step policy.
 
+The current `transparent-v0` runtime slice also treats the root graph as an
+explicit `Root` instance. Conformance for exact traces therefore compares root
+literal origins and root rewrite-output origins using the same scoped origin
+schema as callee instances. A conforming engine must preserve instance-local
+node lifecycle: ordinary nodes complete once, an Apply node waits for its
+specific callee after `ApplyEnter`, and the same Apply node completes only on
+the matching `ApplyReturn`.
+
 For future checkpoint and replay support, conformance must distinguish semantic
 trace from execution-management provenance. Creating a checkpoint, pausing,
 resuming, forking, selecting a join representative, aliasing a branch, or

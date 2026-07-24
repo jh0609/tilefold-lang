@@ -24,6 +24,8 @@ let nat value =
 let node id kind = { id = node_id id; kind }
 let pref node port = { node_id = node_id node; port_key = port_key port }
 let edge id source target = { id = edge_id id; source; target }
+let root_instance = Runtime_value.Instance_id.root
+let instance_id_to_string = Runtime_value.Instance_id.to_string
 
 let validate_ok raw =
   match validate raw with
@@ -644,7 +646,9 @@ let () =
   assert (
     List.exists
       (fun value ->
-        Runtime_value.origin value = Runtime_value.Program_literal (node_id "lit"))
+        Runtime_value.origin value
+        = Runtime_value.Literal
+            { instance_id = root_instance; node_id = node_id "lit" })
       initial_values);
   let value, trace = run_completed machine in
   assert (payload_nat_string value = "4");
@@ -656,12 +660,17 @@ let () =
   let first = List.hd trace in
   assert (
     List.map Runtime_value.Value_id.to_string first.Rewrite_event.consumed
-    = [ "literal:lit" ]);
+    = [ "literal:Root:lit" ]);
   assert (List.length first.Rewrite_event.created = 1);
   assert (
     Runtime_value.origin (List.hd first.Rewrite_event.created)
     = Runtime_value.Rewrite_output
-        { event_index = 0; node_id = node_id "succ"; port_key = Port_key.result })
+        {
+          instance_id = root_instance;
+          event_index = 0;
+          node_id = node_id "succ";
+          port_key = Port_key.result;
+        })
 
 let () =
   let graph = entry_unit_to_nat ~order:[ "drop"; "succ" ] () in
@@ -771,11 +780,21 @@ let () =
       assert (
         Runtime_value.origin left
         = Runtime_value.Rewrite_output
-            { event_index = 0; node_id = node_id "copy"; port_key = Port_key.left });
+            {
+              instance_id = root_instance;
+              event_index = 0;
+              node_id = node_id "copy";
+              port_key = Port_key.left;
+            });
       assert (
         Runtime_value.origin right
         = Runtime_value.Rewrite_output
-            { event_index = 0; node_id = node_id "copy"; port_key = Port_key.right });
+            {
+              instance_id = root_instance;
+              event_index = 0;
+              node_id = node_id "copy";
+              port_key = Port_key.right;
+            });
       assert (
         List.map
           (fun candidate ->
@@ -1073,15 +1092,16 @@ let () =
   assert (Rewrite_event.rule_to_string function_event.Rewrite_event.rule = "Function");
   assert (
     List.map Runtime_value.Value_id.to_string function_event.Rewrite_event.consumed
-    = [ "literal:capture-lit" ]);
+    = [ "literal:Root:capture-lit" ]);
   let captured = List.hd closure.Runtime_value.captures in
   assert (Port_key.to_string captured.capture_key = "capture:n");
   assert (
     Runtime_value.Value_id.to_string (Runtime_value.id captured.value)
-    = "literal:capture-lit");
+    = "literal:Root:capture-lit");
   assert (
     Runtime_value.origin captured.value
-    = Runtime_value.Program_literal (node_id "capture-lit"));
+    = Runtime_value.Literal
+        { instance_id = root_instance; node_id = node_id "capture-lit" });
   assert (
     not
       (Runtime_value.Value_id.equal (Runtime_value.id value)
@@ -1221,7 +1241,7 @@ let () =
     | Some id -> id
     | None -> assert false
   in
-  assert (enter.Rewrite_event.instance_id = "root");
+  assert (Runtime_value.Instance_id.equal enter.Rewrite_event.instance_id root_instance);
   assert (Node_id.to_string enter.Rewrite_event.subject = "apply");
   assert (List.length enter.Rewrite_event.consumed = 2);
   assert (enter.Rewrite_event.created = []);
@@ -1230,10 +1250,13 @@ let () =
   assert (Node_id.to_string succ_event.Rewrite_event.subject = "body-succ");
   let succ_value = List.hd succ_event.Rewrite_event.created in
   assert (
-    String.starts_with ~prefix:("event:3:instance:" ^ callee_id)
+    String.starts_with
+      ~prefix:("event:3:" ^ instance_id_to_string callee_id)
       (Runtime_value.Value_id.to_string (Runtime_value.id succ_value)));
   let return_event = List.nth trace 5 in
-  assert (return_event.Rewrite_event.instance_id = "root");
+  assert (
+    Runtime_value.Instance_id.equal return_event.Rewrite_event.instance_id
+      root_instance);
   assert (return_event.Rewrite_event.callee_instance_id = Some callee_id);
   assert (
     List.map Runtime_value.Value_id.to_string return_event.Rewrite_event.consumed
@@ -1247,15 +1270,26 @@ let () =
   assert (
     Runtime_value.origin returned
     = Runtime_value.Rewrite_output
-        { event_index = 5; node_id = node_id "apply"; port_key = Port_key.result })
+        {
+          instance_id = root_instance;
+          event_index = 5;
+          node_id = node_id "apply";
+          port_key = Port_key.result;
+        })
 
 let () =
   let template = succ_function_template () in
   let graph = apply_graph template () in
   let machine = init_with_templates_ok [ template ] graph Runtime_value.Unit in
+  assert (
+    Runtime_value.Instance_id.equal (Engine.Machine.active_instance_id machine)
+      root_instance);
   match Engine.step machine with
   | Engine.Rewritten { machine; event } -> (
       assert (Rewrite_event.rule_to_string event.Rewrite_event.rule = "Function");
+      assert (
+        Engine.Machine.node_state machine ~instance_id:root_instance (node_id "function")
+        = Some Engine.Completed);
       match Engine.step machine with
       | Engine.Rewritten { machine; event } -> (
           assert (Rewrite_event.rule_to_string event.Rewrite_event.rule = "Drop");
@@ -1263,10 +1297,60 @@ let () =
           | Engine.Rewritten { machine; event } -> (
               assert (Rewrite_event.rule_to_string event.Rewrite_event.rule = "ApplyEnter");
               assert (Engine.Machine.call_depth machine = 1);
-              assert (Engine.Machine.active_instance_id machine <> "root");
+              let callee_id =
+                match event.Rewrite_event.callee_instance_id with
+                | Some id -> id
+                | None -> assert false
+              in
+              assert (
+                not
+                  (Runtime_value.Instance_id.equal
+                     (Engine.Machine.active_instance_id machine)
+                     root_instance));
+              assert (
+                Runtime_value.Instance_id.equal
+                  (Engine.Machine.active_instance_id machine)
+                  callee_id);
+              assert (
+                Engine.Machine.node_state machine ~instance_id:root_instance (node_id "apply")
+                = Some (Engine.Waiting_for_return callee_id));
+              assert (
+                List.exists
+                  (fun value ->
+                    Runtime_value.origin value
+                    = Runtime_value.Literal
+                        {
+                          instance_id = callee_id;
+                          node_id = node_id "body-lit";
+                        })
+                  (Engine.Machine.values machine));
               match Engine.step machine with
-              | Engine.Rewritten { event; _ } ->
-                  assert (Rewrite_event.rule_to_string event.Rewrite_event.rule = "Succ")
+              | Engine.Rewritten { machine; event } -> (
+                  assert (Rewrite_event.rule_to_string event.Rewrite_event.rule = "Succ");
+                  let created = List.hd event.Rewrite_event.created in
+                  assert (
+                    Runtime_value.origin created
+                    = Runtime_value.Rewrite_output
+                        {
+                          instance_id = callee_id;
+                          event_index = event.Rewrite_event.index;
+                          node_id = node_id "body-succ";
+                          port_key = Port_key.result;
+                        });
+                  match Engine.step machine with
+                  | Engine.Rewritten { machine; event } -> (
+                      assert (Rewrite_event.rule_to_string event.Rewrite_event.rule = "Drop");
+                      match Engine.step machine with
+                      | Engine.Rewritten { machine; event } ->
+                          assert (
+                            Rewrite_event.rule_to_string event.Rewrite_event.rule
+                            = "ApplyReturn");
+                          assert (
+                            Engine.Machine.node_state machine ~instance_id:root_instance
+                              (node_id "apply")
+                            = Some Engine.Completed)
+                      | _ -> assert false)
+                  | _ -> assert false)
               | _ -> assert false)
           | _ -> assert false)
       | _ -> assert false)
@@ -1285,14 +1369,17 @@ let () =
   let function_event = List.nth trace 2 in
   assert (
     List.map Runtime_value.Value_id.to_string function_event.Rewrite_event.consumed
-    = [ "event:0:copy:left" ]);
+    = [ "event:0:Root:copy:left" ]);
   let enter = List.nth trace 4 in
   assert (List.length enter.Rewrite_event.consumed = 2);
   let succ_event = List.nth trace 5 in
-  assert (succ_event.Rewrite_event.instance_id <> "root");
+  assert (
+    not
+      (Runtime_value.Instance_id.equal succ_event.Rewrite_event.instance_id
+         root_instance));
   assert (
     List.map Runtime_value.Value_id.to_string succ_event.Rewrite_event.consumed
-    = [ "event:0:copy:left" ])
+    = [ "event:0:Root:copy:left" ])
 
 let () =
   let template = succ_function_template () in
@@ -1424,7 +1511,9 @@ let () =
         (Rewrite_event.rule_to_string event.Rewrite_event.rule, event.Rewrite_event.instance_id))
       trace
   in
-  assert (snd (List.nth depths 5) <> "root");
+  assert (
+    not
+      (Runtime_value.Instance_id.equal (snd (List.nth depths 5)) root_instance));
   assert (snd (List.nth depths 6) <> snd (List.nth depths 5))
 
 let () =
@@ -1441,16 +1530,20 @@ let () =
   assert (
     List.map
       (fun event ->
-        ( event.Rewrite_event.instance_id,
-          Option.value event.Rewrite_event.callee_instance_id ~default:"",
+        ( instance_id_to_string event.Rewrite_event.instance_id,
+          Option.value
+            (Option.map instance_id_to_string event.Rewrite_event.callee_instance_id)
+            ~default:"",
           List.map Runtime_value.Value_id.to_string event.Rewrite_event.consumed,
           List.map Runtime_value.to_string event.Rewrite_event.created ))
       trace_a
     =
     List.map
       (fun event ->
-        ( event.Rewrite_event.instance_id,
-          Option.value event.Rewrite_event.callee_instance_id ~default:"",
+        ( instance_id_to_string event.Rewrite_event.instance_id,
+          Option.value
+            (Option.map instance_id_to_string event.Rewrite_event.callee_instance_id)
+            ~default:"",
           List.map Runtime_value.Value_id.to_string event.Rewrite_event.consumed,
           List.map Runtime_value.to_string event.Rewrite_event.created ))
       trace_b)

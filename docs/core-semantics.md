@@ -126,9 +126,11 @@ the standard trace.
 The runtime slice represents values in machine state as immutable
 `Runtime_value.t` records with abstract logical value IDs, `Unit`, `Nat`, or
 closure payloads, and typed origins. Implemented origins are `Execution_input`,
-`Program_literal(node_id)`, and `Rewrite_output(event_index, node_id,
-port_key)`. This is a provisional runtime representation, not the final
-canonical serialization.
+`Literal { instance_id, node_id }`, and
+`Rewrite_output { instance_id, event_index, node_id, port_key }`. The root
+execution is also scoped by the explicit `Root` runtime instance, so root and
+callee literals and rewrite outputs use the same origin schema. This is a
+provisional runtime representation, not the final canonical serialization.
 
 ## Function Templates, Closures, and Runtime Instances
 
@@ -157,6 +159,14 @@ derived from the caller instance, Apply node, and ApplyEnter event index.
 Different instances have separate logical identity and execution state even if
 they share one immutable template.
 
+The current runtime also treats the root execution as an explicit `Root`
+instance. There is no unscoped root rewrite-output or separate program-literal
+origin path in the reference implementation. `Root` activation and callee
+activation share the same internal path for parameter binding, capture binding,
+literal materialization, ready-candidate initialization, and result-boundary
+tracking. Root entry activation is still not recorded as a synthetic
+`ApplyEnter` event.
+
 Physical template sharing is an implementation detail. It must not make
 separate runtime instances appear merged in graph snapshots or traces.
 
@@ -184,6 +194,21 @@ return value has a fresh causal logical ID and `ApplyReturn` origin.
 
 `WaitingForReturn` does not mean the `Apply` node is still executing. After
 `ApplyEnter`, the active calculation subject is the function instance.
+
+Executable node lifecycle is instance-local:
+
+```text
+Pending
+WaitingForReturn(callee_instance)
+Completed
+```
+
+Ordinary executable nodes transition from `Pending` to `Completed` when their
+rewrite commits. `Apply` transitions from `Pending` to
+`WaitingForReturn(callee_instance)` on `ApplyEnter`, and to `Completed` on the
+matching `ApplyReturn`. A waiting or completed node is not a ready candidate.
+The caller frame and the apply node lifecycle must agree on the callee instance
+before `ApplyReturn` can commit.
 
 A `CallFrame` is runtime state linking the caller scope, apply site, callee
 function instance, and return target for one open call. It is not a Surface
@@ -268,11 +293,12 @@ for a runtime instance when `ApplyEnter` activates that instance.
 No separate `NatLiteral` or `UnitLiteral` rewrite event is introduced. Literal
 values have stable logical IDs and origin provenance, such as:
 
-- `ProgramLiteral(template_element_id)`
-- `InstanceLiteral(instance_id, template_element_id)`
 - `ExecutionInput(input_id)`
+- `Literal(instance_id, template_element_id)`
 
-The exact serialization schema for literal provenance remains open.
+The current reference runtime uses the same `Literal` origin shape for root and
+callee instances. The exact public serialization schema for literal provenance
+remains open.
 
 `Unit` follows the same `Copy` and `Drop` rules as other immutable values.
 `Copy(Unit)` creates two `Unit` values with distinct logical IDs and shared

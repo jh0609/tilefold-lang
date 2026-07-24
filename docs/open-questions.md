@@ -511,29 +511,41 @@ Still open:
 - Recommendation: Keep open until canonical graph and template serialization
   are specified.
 
-## 15. How are execution inputs and literal provenance serialized?
+## 15. How are execution inputs and value provenance serialized?
 
-- Question: What is the canonical schema for execution inputs and literal
-  origins such as `ProgramLiteral`, `InstanceLiteral`, and `ExecutionInput`?
+- Question: What is the canonical serialization schema for execution inputs and
+  runtime origins such as `ExecutionInput`, `Literal(instance_id, node_id)`, and
+  `Rewrite_output(instance_id, event_index, node_id, port_key)`?
 - Alternatives:
-  - A unified value-origin schema.
-  - Separate schemas for inputs, program literals, and instance literals.
+  - Serialize the current unified typed runtime-origin schema directly.
+  - Keep diagnostic strings separate from canonical serialization.
+  - Reintroduce separate serialized views for entry literals and instance
+    literals.
   - A compact trace-only origin encoding.
+- Status:
+  - Resolved for the current reference runtime representation: root and callee
+    literals both use scoped `Literal` origins, and root and callee rewrite
+    outputs both use scoped `Rewrite_output` origins.
+  - Still open for public canonical serialization, hash protocols, and stable
+    trace file formats.
 - Advantages:
-  - Unified schema: easier provenance queries.
-  - Separate schemas: clearer lifecycle distinctions.
+  - Unified schema: easier provenance queries and removes root/callee special
+    cases.
+  - Separate serialized views: may be easier for entry-level UX.
   - Compact encoding: smaller traces.
 - Disadvantages:
-  - Unified schema: may be too abstract.
-  - Separate schemas: more repeated structure.
+  - Unified schema: may expose more runtime structure than a stable interchange
+    format needs.
+  - Separate schemas: can recreate root/callee provenance branches.
   - Compact encoding: harder to inspect manually.
 - Impact on termination: No direct effect.
 - Impact on execution transparency: Literal values need stable logical IDs and
   origin provenance without separate literal rewrite events.
 - Impact on future compatibility: Golden traces and replay depend on this
   schema.
-- Recommendation: Keep open while requiring provenance to distinguish program
-  literals, instance literals, and execution inputs.
+- Recommendation: Keep canonical serialization open while requiring
+  implementations to preserve scoped provenance for execution inputs, literals,
+  and rewrite outputs.
 
 ## 16. Should multiple inputs use product types or currying?
 

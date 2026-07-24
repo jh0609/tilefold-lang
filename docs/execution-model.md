@@ -156,6 +156,12 @@ immutable and is not executed directly. The instance has identity and execution
 state separate from the template. Captures and the argument are delivered to
 instance boundaries.
 
+The root graph is also an explicit runtime instance named conceptually `Root`.
+Called function bodies use typed deterministic `Call` instance IDs derived from
+the parent instance, caller Apply node, and ApplyEnter event index. These typed
+IDs may be rendered for diagnostics, but the rendered form is not a public
+canonical serialization format.
+
 The confirmed lifecycle is:
 
 ```text
@@ -174,6 +180,23 @@ callee instance ID from the caller instance, Apply node, and event index, and
 makes the callee the active instance. Caller and callee ready nodes are not
 interleaved in this slice. The active callee runs depth-first until it either
 completes, gets stuck, or reports a runtime error.
+
+Root and callee activation share the same internal path: bind the parameter,
+bind captures in canonical capture order, materialize instance-local literals,
+initialize instance-local node lifecycle and ready candidates, and track the
+result boundary. Activation itself is not a semantic trace event.
+
+Instance-local executable node lifecycle is:
+
+```text
+Pending
+Waiting_for_return(callee_instance)
+Completed
+```
+
+Ordinary executable nodes move from `Pending` to `Completed` on their rewrite.
+Apply nodes move from `Pending` to `Waiting_for_return` on `ApplyEnter` and to
+`Completed` on the matching `ApplyReturn`.
 
 `ApplyReturn` occurs in a later `Engine.step` after the callee has a result and
 no unresolved executable work. It consumes the callee result, pops the call

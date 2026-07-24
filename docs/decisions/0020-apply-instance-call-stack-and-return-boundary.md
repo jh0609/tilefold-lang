@@ -18,6 +18,11 @@ Decision 0019 added immutable function template references, closure creation,
 and Arrow closure `Copy`/`Drop`. This decision records the first executable
 Apply runtime slice.
 
+Decision 0021 later refines the implementation model by making the root graph
+an explicit runtime instance, unifying literal/rewrite-output origins across
+root and callee instances, and replacing separate executed/entered node sets
+with one instance-local node lifecycle.
+
 ## Decision
 
 An `Apply` node is an executable Core node with derived ports:

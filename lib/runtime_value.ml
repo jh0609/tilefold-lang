@@ -6,21 +6,50 @@ module Value_id = struct
   let to_string value = value
 end
 
+module Instance_id = struct
+  type t =
+    | Root
+    | Call of {
+        parent : t;
+        apply_node : Core_graph.Node_id.t;
+        call_index : int;
+      }
+
+  let root = Root
+  let call ~parent ~apply_node ~call_index = Call { parent; apply_node; call_index }
+
+  let rec equal left right =
+    match (left, right) with
+    | Root, Root -> true
+    | ( Call
+          { parent = left_parent; apply_node = left_apply; call_index = left_index },
+        Call
+          { parent = right_parent; apply_node = right_apply; call_index = right_index }
+      ) ->
+        equal left_parent right_parent
+        && Core_graph.Node_id.equal left_apply right_apply
+        && left_index = right_index
+    | _ -> false
+
+  let rec to_string = function
+    | Root -> "Root"
+    | Call { parent; apply_node; call_index } ->
+        "Call(" ^ to_string parent ^ ","
+        ^ Core_graph.Node_id.to_string apply_node
+        ^ "," ^ string_of_int call_index ^ ")"
+
+  let compare left right = String.compare (to_string left) (to_string right)
+end
+
 type origin =
   | Execution_input
-  | Program_literal of Core_graph.Node_id.t
-  | Instance_literal of {
-      instance_id : string;
+  | Literal of {
+      instance_id : Instance_id.t;
       node_id : Core_graph.Node_id.t;
     }
   | Rewrite_output of {
+      instance_id : Instance_id.t;
       event_index : int;
-      node_id : Core_graph.Node_id.t;
-      port_key : Core_graph.Port_key.t;
-    }
-  | Scoped_rewrite_output of {
-      event_index : int;
-      instance_id : string;
       node_id : Core_graph.Node_id.t;
       port_key : Core_graph.Port_key.t;
     }
@@ -51,19 +80,13 @@ and payload =
 let create ~id ~payload ~origin = { id; payload; origin }
 let execution_input_id = "input"
 
-let program_literal_id node_id =
-  "literal:" ^ Core_graph.Node_id.to_string node_id
-
-let instance_literal_id instance_id node_id =
-  "instance:" ^ instance_id ^ ":literal:" ^ Core_graph.Node_id.to_string node_id
-
-let rewrite_output_id event_index node_id port_key =
-  "event:" ^ string_of_int event_index ^ ":"
+let literal_id instance_id node_id =
+  "literal:" ^ Instance_id.to_string instance_id ^ ":"
   ^ Core_graph.Node_id.to_string node_id
-  ^ ":" ^ Core_graph.Port_key.to_string port_key
 
-let scoped_rewrite_output_id event_index instance_id node_id port_key =
-  "event:" ^ string_of_int event_index ^ ":instance:" ^ instance_id ^ ":"
+let rewrite_output_id instance_id event_index node_id port_key =
+  "event:" ^ string_of_int event_index ^ ":" ^ Instance_id.to_string instance_id
+  ^ ":"
   ^ Core_graph.Node_id.to_string node_id
   ^ ":" ^ Core_graph.Port_key.to_string port_key
 
@@ -119,19 +142,13 @@ let payload_to_string = function
 
 let origin_to_string = function
   | Execution_input -> "Execution_input"
-  | Program_literal node_id ->
-      "Program_literal(" ^ Core_graph.Node_id.to_string node_id ^ ")"
-  | Instance_literal { instance_id; node_id } ->
-      "Instance_literal(instance=" ^ instance_id ^ ", node="
+  | Literal { instance_id; node_id } ->
+      "Literal(instance=" ^ Instance_id.to_string instance_id ^ ", node="
       ^ Core_graph.Node_id.to_string node_id ^ ")"
-  | Rewrite_output { event_index; node_id; port_key } ->
+  | Rewrite_output { instance_id; event_index; node_id; port_key } ->
       "Rewrite_output(event=" ^ string_of_int event_index ^ ", node="
       ^ Core_graph.Node_id.to_string node_id
-      ^ ", port=" ^ Core_graph.Port_key.to_string port_key ^ ")"
-  | Scoped_rewrite_output { event_index; instance_id; node_id; port_key } ->
-      "Scoped_rewrite_output(event=" ^ string_of_int event_index
-      ^ ", instance=" ^ instance_id ^ ", node="
-      ^ Core_graph.Node_id.to_string node_id
+      ^ ", instance=" ^ Instance_id.to_string instance_id
       ^ ", port=" ^ Core_graph.Port_key.to_string port_key ^ ")"
 
 let to_string value =

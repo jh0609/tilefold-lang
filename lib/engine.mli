@@ -7,7 +7,7 @@ type initialization_error =
   | Initial_delivery_invariant_violation of string
 
 type ready_candidate = {
-  instance_id : string;
+  instance_id : Runtime_value.Instance_id.t;
   node_id : Core_graph.Node_id.t;
   ready_epoch : int;
   priority_spine_rank : int option;
@@ -15,10 +15,15 @@ type ready_candidate = {
 }
 
 type stuck_reason = {
-  instance_id : string;
+  instance_id : Runtime_value.Instance_id.t;
   unexecuted_nodes : Core_graph.Node_id.t list;
   result_missing : bool;
 }
+
+type node_state =
+  | Pending
+  | Waiting_for_return of Runtime_value.Instance_id.t
+  | Completed
 
 type runtime_error =
   | Unsupported_copy_payload_type of {
@@ -57,12 +62,14 @@ type runtime_error =
 module Machine : sig
   type t
 
-  val active_instance_id : t -> string
+  val active_instance_id : t -> Runtime_value.Instance_id.t
   val call_depth : t -> int
   val ready_candidates : t -> ready_candidate list
   val result_value : t -> Runtime_value.t option
   val trace_events : t -> Rewrite_event.t list
   val values : t -> Runtime_value.t list
+  val node_state :
+    t -> instance_id:Runtime_value.Instance_id.t -> Core_graph.Node_id.t -> node_state option
   val is_completed : t -> bool
 end
 

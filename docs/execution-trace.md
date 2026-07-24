@@ -123,6 +123,19 @@ records:
 - consumed runtime value IDs,
 - created runtime values.
 
+The runtime instance ID is typed runtime identity, not a string-parsed
+protocol. The root execution is represented by the explicit `Root` instance.
+Literals and rewrite outputs use the same scoped origin schema in root and
+callee instances:
+
+```text
+Literal(instance_id, node_id)
+Rewrite_output(instance_id, event_index, node_id, port_key)
+```
+
+The rendered ID strings used by tests are provisional diagnostics, not final
+canonical trace serialization.
+
 A `Copy` event consumes one runtime value and creates two runtime values. The
 created values are recorded in canonical output order `[left; right]`, using
 distinct logical IDs and `Rewrite_output` origins whose port keys identify the
@@ -218,9 +231,11 @@ Function body rewrites such as `Succ`, `NatRec`, `Copy`, `Drop`, and nested
 record the function result, matching `CallFrame`, apply site, caller-scope
 output value, and return target correspondence needed for replay.
 
-The root `ApplyEnter` and `ApplyReturn` for entry execution follow the same
-requirements. A valid executable package must not leave unresolved entry
-captures.
+Entry execution still starts by activating the root instance rather than by
+emitting a synthetic root `ApplyEnter`. Future `ProgramPackage` entry execution
+may align entry packaging with ordinary closure application, but the current
+standard trace does not add root entry enter/return events. A valid executable
+package must not leave unresolved entry captures.
 
 ## Literal Provenance
 
@@ -230,11 +245,11 @@ initialization or instance activation, not by separate literal rewrite events.
 Literal values must have stable logical IDs and origin provenance. Candidate
 provenance forms are:
 
-- `ProgramLiteral(template_element_id)`
-- `InstanceLiteral(instance_id, template_element_id)`
 - `ExecutionInput(input_id)`
+- `Literal(instance_id, template_element_id)`
 
-The exact serialization schema remains open.
+The current reference runtime uses the same `Literal` origin shape for root and
+callee instances. The exact public serialization schema remains open.
 
 `Unit` values keep logical identity and provenance even though the payload is a
 singleton. `Copy(Unit)` creates distinct logical IDs. `Drop(Unit)` is an

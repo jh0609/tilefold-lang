@@ -6,6 +6,22 @@ module Value_id : sig
   val to_string : t -> string
 end
 
+module Instance_id : sig
+  type t =
+    | Root
+    | Call of {
+        parent : t;
+        apply_node : Core_graph.Node_id.t;
+        call_index : int;
+      }
+
+  val root : t
+  val call : parent:t -> apply_node:Core_graph.Node_id.t -> call_index:int -> t
+  val equal : t -> t -> bool
+  val compare : t -> t -> int
+  val to_string : t -> string
+end
+
 type t
 
 type captured_value = {
@@ -27,30 +43,22 @@ type payload =
 
 type origin =
   | Execution_input
-  | Program_literal of Core_graph.Node_id.t
-  | Instance_literal of {
-      instance_id : string;
+  | Literal of {
+      instance_id : Instance_id.t;
       node_id : Core_graph.Node_id.t;
     }
   | Rewrite_output of {
+      instance_id : Instance_id.t;
       event_index : int;
-      node_id : Core_graph.Node_id.t;
-      port_key : Core_graph.Port_key.t;
-    }
-  | Scoped_rewrite_output of {
-      event_index : int;
-      instance_id : string;
       node_id : Core_graph.Node_id.t;
       port_key : Core_graph.Port_key.t;
     }
 
 val create : id:Value_id.t -> payload:payload -> origin:origin -> t
 val execution_input_id : Value_id.t
-val program_literal_id : Core_graph.Node_id.t -> Value_id.t
-val instance_literal_id : string -> Core_graph.Node_id.t -> Value_id.t
-val rewrite_output_id : int -> Core_graph.Node_id.t -> Core_graph.Port_key.t -> Value_id.t
-val scoped_rewrite_output_id :
-  int -> string -> Core_graph.Node_id.t -> Core_graph.Port_key.t -> Value_id.t
+val literal_id : Instance_id.t -> Core_graph.Node_id.t -> Value_id.t
+val rewrite_output_id :
+  Instance_id.t -> int -> Core_graph.Node_id.t -> Core_graph.Port_key.t -> Value_id.t
 val id : t -> Value_id.t
 val payload : t -> payload
 val origin : t -> origin
