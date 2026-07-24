@@ -141,6 +141,9 @@ trace semantics.
 | `evaluation-order` | `source-order-left-to-right-arguments` |
 | `trace` | `ownership-and-lineage-observable` |
 | `initial-implementation-scope` | `pure-AST-static-checker-and-runtime-slice` |
+| `control-implementation-scope` | `Loop + Continue/Break + Capture/Call + recursion + step-limit` |
+| `step-counting` | `expression-entry-function-entry-loop-iteration` |
+| `step-limit-outcome` | `external-Step_limit_exceeded` |
 
 ## Design Points
 

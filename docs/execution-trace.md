@@ -91,6 +91,13 @@ primitive ownership operations, effect operations, function call enter/return,
 loop step boundaries, and abnormal termination records are observable and count
 toward the runtime step limit. Exact serialization remains open.
 
+The implemented `linear-v0` step-limit slice records `LoopEnter`,
+`LoopContinue`, `LoopBreak`, `LoopExit`, `ClosureCreate`, `ClosureEnter`, and
+`ClosureReturn` in addition to the first ownership trace events. Forced
+`Step_limit_exceeded` is an outcome carrying the trace so far; it does not
+append fake normal-result, function-return, loop-exit, discard, or resource
+cleanup events.
+
 The first executable slice implements a minimal typed `RewriteEvent` subset for
 `Succ`, `Copy`, and `Drop`. It records:
 

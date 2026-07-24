@@ -22,7 +22,7 @@ module Type : sig
     | Struct of string
     | Variant of string
     | Function of t list * t
-    | Closure of t * t
+    | Closure of { arg : t; ret : t; captures : t list }
     | Resource of { name : string; state : string }
 
   val equal : t -> t -> bool
@@ -57,6 +57,11 @@ type expr =
   | Call of string * expr list
   | If of expr * yield_block * yield_block
   | Match of expr * match_arm list
+  | Loop of expr * string * yield_block
+  | Continue of expr
+  | Break of expr
+  | Capture of string list * string * Type.t * Type.t * stmt list
+  | Call_closure of expr * expr
 
 and stmt = Let of pattern * expr | Expr of expr | Return of expr
 
@@ -110,6 +115,10 @@ module Diagnostic : sig
     | Return_required of string
     | Invalid_pattern of string
     | Unsupported of string
+    | Loop_control_outside_loop of string
+    | Loop_control_type_mismatch of { expected : Type.t; actual : Type.t }
+    | Capture_after_move of string
+    | Uncaptured_variable of string
 
   val to_string : t -> string
 end
@@ -126,6 +135,13 @@ module Runtime : sig
     | Tuple of value list
     | Struct of string * (string * value) list
     | Variant of string * string * value option
+    | Closure of {
+        captures : (string * value) list;
+        param : string;
+        param_type : Type.t;
+        return_type : Type.t;
+        body : stmt list;
+      }
 
   and value
 
@@ -148,10 +164,30 @@ module Runtime : sig
     | FunctionEnter of { name : string }
     | FunctionReturn of { name : string; value_id : value_id }
     | Branch of { kind : string; selected : string }
+    | LoopEnter
+    | LoopContinue of { value_id : value_id }
+    | LoopBreak of { value_id : value_id }
+    | LoopExit of { value_id : value_id }
+    | ClosureCreate of { value_id : value_id; captures : value_id list }
+    | ClosureEnter of { value_id : value_id }
+    | ClosureReturn of { value_id : value_id }
     | NormalResult of { value_id : value_id; typ : Type.t }
+
+  type live_value = { value_id : value_id; typ : Type.t; owner : string }
+
+  type step_limit_report = {
+    executed_steps : int;
+    step_limit : int;
+    last_location : string option;
+    live_values : live_value list;
+    unresolved_resources : live_value list;
+    last_world : value_id option;
+    trace : trace_event list;
+  }
 
   type run_result =
     | Completed of { value : value; trace : trace_event list }
+    | Step_limit_exceeded of step_limit_report
     | Static_error of Diagnostic.t list
     | Runtime_error of string
 
@@ -160,5 +196,5 @@ module Runtime : sig
   val payload : value -> payload
   val typ : value -> Type.t
   val trace_event_to_string : trace_event -> string
-  val run : program -> entry:string -> run_result
+  val run : ?step_limit:int -> program -> entry:string -> run_result
 end

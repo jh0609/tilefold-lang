@@ -24,7 +24,7 @@ module Type = struct
     | Struct of string
     | Variant of string
     | Function of t list * t
-    | Closure of t * t
+    | Closure of { arg : t; ret : t; captures : t list }
     | Resource of { name : string; state : string }
 
   let rec equal left right =
@@ -39,8 +39,12 @@ module Type = struct
         List.length left_args = List.length right_args
         && List.for_all2 equal left_args right_args
         && equal left_ret right_ret
-    | Closure (left_arg, left_ret), Closure (right_arg, right_ret) ->
+    | ( Closure { arg = left_arg; ret = left_ret; captures = left_captures },
+        Closure { arg = right_arg; ret = right_ret; captures = right_captures } )
+      ->
         equal left_arg right_arg && equal left_ret right_ret
+        && List.length left_captures = List.length right_captures
+        && List.for_all2 equal left_captures right_captures
     | Resource left, Resource right ->
         left.name = right.name && left.state = right.state
     | _ -> false
@@ -59,7 +63,10 @@ module Type = struct
     | Function (args, ret) ->
         "fn(" ^ String.concat ", " (List.map to_string args) ^ ") -> "
         ^ to_string ret
-    | Closure (arg, ret) -> "Closure<" ^ to_string arg ^ ", " ^ to_string ret ^ ">"
+    | Closure { arg; ret; captures } ->
+        "Closure<" ^ to_string arg ^ ", " ^ to_string ret ^ "; captures=["
+        ^ String.concat ", " (List.map to_string captures)
+        ^ "]>"
     | Resource { name; state } -> name ^ "<" ^ state ^ ">"
 end
 
@@ -96,6 +103,11 @@ type expr =
   | Call of string * expr list
   | If of expr * yield_block * yield_block
   | Match of expr * match_arm list
+  | Loop of expr * string * yield_block
+  | Continue of expr
+  | Break of expr
+  | Capture of string list * string * Type.t * Type.t * stmt list
+  | Call_closure of expr * expr
 
 and stmt = Let of pattern * expr | Expr of expr | Return of expr
 
@@ -149,6 +161,10 @@ module Diagnostic = struct
     | Return_required of string
     | Invalid_pattern of string
     | Unsupported of string
+    | Loop_control_outside_loop of string
+    | Loop_control_type_mismatch of { expected : Type.t; actual : Type.t }
+    | Capture_after_move of string
+    | Uncaptured_variable of string
 
   let to_string = function
     | Duplicate_definition name -> "duplicate definition: " ^ name
@@ -185,6 +201,13 @@ module Diagnostic = struct
     | Return_required name -> "function must return: " ^ name
     | Invalid_pattern message -> "invalid pattern: " ^ message
     | Unsupported message -> "unsupported: " ^ message
+    | Loop_control_outside_loop keyword ->
+        keyword ^ " used outside Loop"
+    | Loop_control_type_mismatch { expected; actual } ->
+        "loop control type mismatch: expected " ^ Type.to_string expected
+        ^ ", got " ^ Type.to_string actual
+    | Capture_after_move name -> "capture after move: " ^ name
+    | Uncaptured_variable name -> "uncaptured variable: " ^ name
 end
 
 module String_map = Map.Make (String)
@@ -291,7 +314,8 @@ let rec has_capability ctx typ capability =
   | Type.Resource _, _ -> false
   | Type.World, _ -> false
   | Type.Function _, (Capability.Duplicable | Capability.Discardable) -> true
-  | Type.Closure _, (Capability.Duplicable | Capability.Discardable) -> false
+  | Type.Closure { captures; _ }, (Capability.Duplicable | Capability.Discardable) ->
+      List.for_all (fun typ -> has_capability ctx typ capability) captures
 
 let require_type expected actual errors =
   if Type.equal expected actual then errors
@@ -373,6 +397,31 @@ let check_var env name errors =
   | Some { typ; state = Available } -> (typ, set_state env name Moved, errors)
   | Some { typ; state = Moved | Consumed } ->
       (typ, env, add_error errors (Diagnostic.Use_after_move name))
+
+let unresolved_env env =
+  String_map.fold
+    (fun name binding acc ->
+      if binding_state_is_resolved binding.state then acc else name :: acc)
+    env []
+  |> List.rev
+
+let add_unresolved_errors env errors =
+  List.fold_left
+    (fun errors name -> add_error errors (Diagnostic.Unresolved_value name))
+    errors (unresolved_env env)
+
+let env_names env =
+  String_map.fold (fun name _ names -> String_set.add name names) env String_set.empty
+
+let add_unresolved_errors_except env ignored errors =
+  let unresolved =
+    List.filter
+      (fun name -> not (String_set.mem name ignored))
+      (unresolved_env env)
+  in
+  List.fold_left
+    (fun errors name -> add_error errors (Diagnostic.Unresolved_value name))
+    errors unresolved
 
 let rec infer_expr ctx env expr errors =
   match expr with
@@ -505,6 +554,76 @@ let rec infer_expr ctx env expr errors =
   | Match (scrutinee, arms) ->
       let scrutinee_type, env, errors = infer_expr ctx env scrutinee errors in
       check_match ctx env scrutinee_type arms errors
+  | Continue expr ->
+      let _typ, env, errors = infer_expr ctx env expr errors in
+      (Type.Unit, env, add_error errors (Diagnostic.Loop_control_outside_loop "Continue"))
+  | Break expr ->
+      let _typ, env, errors = infer_expr ctx env expr errors in
+      (Type.Unit, env, add_error errors (Diagnostic.Loop_control_outside_loop "Break"))
+  | Loop (initial, state_name, body) ->
+      let state_type, env, errors = infer_expr ctx env initial errors in
+      let outer_names = env_names env in
+      let loop_env = bind_name env state_name state_type in
+      let control, _body_env, errors =
+        check_loop_yield_block ctx loop_env ~state_type ~outer_names body errors
+      in
+      let result_type =
+        match control with
+        | `Break typ -> typ
+        | `Mixed (_, break_type) -> break_type
+        | `Continue_only -> Type.Unit
+      in
+      (result_type, env, errors)
+  | Capture (captures, param, param_type, return_type, body) ->
+      let capture_types, env, errors =
+        List.fold_left
+          (fun (types, env, errors) name ->
+            match String_map.find_opt name env with
+            | None ->
+                (types, env, add_error errors (Diagnostic.Unknown_variable name))
+            | Some { typ; state = Available } ->
+                (typ :: types, set_state env name Moved, errors)
+            | Some { typ; state = Moved | Consumed } ->
+                (typ :: types, env, add_error errors (Diagnostic.Capture_after_move name)))
+          ([], env, errors) captures
+      in
+      let closure_env =
+        List.fold_left2
+          (fun closure_env name typ -> bind_name closure_env name typ)
+          String_map.empty captures (List.rev capture_types)
+        |> fun closure_env -> bind_name closure_env param param_type
+      in
+      let body_env, body_errors, returned =
+        check_statements ctx closure_env body []
+      in
+      let errors = body_errors @ errors in
+      let errors =
+        match returned with
+        | None -> add_error errors (Diagnostic.Return_required "<closure>")
+        | Some actual -> require_type return_type actual errors
+      in
+      let errors =
+        List.fold_left
+          (fun errors name -> add_error errors (Diagnostic.Unresolved_value name))
+          errors (unresolved_env body_env)
+      in
+      (Type.Closure { arg = param_type; ret = return_type; captures = List.rev capture_types }, env, errors)
+  | Call_closure (closure_expr, arg_expr) ->
+      let closure_type, env, errors = infer_expr ctx env closure_expr errors in
+      let arg_type, env, errors = infer_expr ctx env arg_expr errors in
+      (match closure_type with
+      | Type.Closure { arg; ret; _ } ->
+          let errors = require_type arg arg_type errors in
+          (ret, env, errors)
+      | actual ->
+          ( Type.Unit,
+            env,
+            add_error errors
+              (Diagnostic.Type_mismatch
+                 {
+                   expected = Type.Closure { arg = arg_type; ret = Type.Unit; captures = [] };
+                   actual;
+                 }) ))
 
 and check_stmt ctx env stmt errors =
   match stmt with
@@ -540,6 +659,148 @@ and check_yield_block ctx env block errors =
   match returned with
   | Some typ -> (typ, env, errors)
   | None -> infer_expr ctx env block.yield errors
+
+and check_loop_yield_block ctx env ~state_type ~outer_names block errors =
+  let env, errors, returned = check_statements ctx env block.stmts errors in
+  match returned with
+  | Some typ -> (`Break typ, env, errors)
+  | None -> check_loop_control_expr ctx env ~state_type ~outer_names block.yield errors
+
+and check_loop_control_expr ctx env ~state_type ~outer_names expr errors =
+  match expr with
+  | Continue expr ->
+      let actual, env, errors = infer_expr ctx env expr errors in
+      let errors =
+        if Type.equal state_type actual then errors
+        else
+          add_error errors
+            (Diagnostic.Loop_control_type_mismatch
+               { expected = state_type; actual })
+      in
+      let errors = add_unresolved_errors_except env outer_names errors in
+      (`Continue_only, env, errors)
+  | Break expr ->
+      let typ, env, errors = infer_expr ctx env expr errors in
+      let errors = add_unresolved_errors_except env outer_names errors in
+      (`Break typ, env, errors)
+  | If (condition, then_block, else_block) ->
+      let cond_type, env, errors = infer_expr ctx env condition errors in
+      let errors = require_type Type.Bool cond_type errors in
+      let then_control, then_env, errors =
+        check_loop_yield_block ctx env ~state_type ~outer_names then_block errors
+      in
+      let else_control, else_env, errors =
+        check_loop_yield_block ctx env ~state_type ~outer_names else_block errors
+      in
+      let errors = loop_control_join_errors then_control else_control errors in
+      let joined_env, errors = join_branch_envs then_env else_env errors in
+      (loop_control_join then_control else_control, joined_env, errors)
+  | Match (scrutinee, arms) -> (
+      let scrutinee_type, env, errors = infer_expr ctx env scrutinee errors in
+      match scrutinee_type with
+      | Type.Variant variant_name -> (
+          match String_map.find_opt variant_name ctx.variants with
+          | None ->
+              ( `Break Type.Unit,
+                env,
+                add_error errors (Diagnostic.Unknown_variant variant_name) )
+          | Some def ->
+              let case_names = List.map (fun case -> case.case_name) def.cases in
+              let seen_cases =
+                List.filter_map
+                  (fun arm ->
+                    match arm.pattern with
+                    | P_variant (name, case, _) when name = variant_name -> Some case
+                    | _ -> None)
+                  arms
+              in
+              let missing =
+                List.filter (fun case -> not (List.mem case seen_cases)) case_names
+              in
+              let errors =
+                if missing = [] then errors
+                else add_error errors (Diagnostic.Non_exhaustive_match missing)
+              in
+              let results =
+                List.map
+                  (fun arm ->
+                    let arm_env, errors =
+                      bind_pattern ctx env arm.pattern scrutinee_type errors
+                    in
+                    check_loop_yield_block ctx arm_env ~state_type ~outer_names arm.body errors)
+                  arms
+              in
+              let control =
+                match results with
+                | [] -> `Break Type.Unit
+                | (control, _, _) :: rest ->
+                    List.fold_left
+                      (fun control (next, _, _) -> loop_control_join control next)
+                      control rest
+              in
+              let errors =
+                match results with
+                | [] -> errors
+                | (first_control, _, _) :: rest ->
+                    List.fold_left
+                      (fun errors (control, _, _) ->
+                        loop_control_join_errors first_control control errors)
+                      errors rest
+              in
+              let errors =
+                List.fold_left
+                  (fun errors (_, _, arm_errors) -> arm_errors @ errors)
+                  errors results
+              in
+              let joined_env, errors =
+                match results with
+                | [] -> (env, errors)
+                | (_, first_env, _) :: rest ->
+                    List.fold_left
+                      (fun (joined, errors) (_, env, _) -> join_branch_envs joined env errors)
+                      (first_env, errors) rest
+              in
+              (control, joined_env, errors))
+      | actual ->
+          ( `Break Type.Unit,
+            env,
+            add_error errors
+              (Diagnostic.Type_mismatch
+                 { expected = Type.Variant "<variant>"; actual }) ))
+  | _ ->
+      let typ, env, errors = infer_expr ctx env expr errors in
+      ( `Break typ,
+        env,
+        add_error errors
+          (Diagnostic.Loop_control_outside_loop "Loop body must yield Continue or Break")
+      )
+
+and loop_control_join left right =
+  match (left, right) with
+  | `Continue_only, `Continue_only -> `Continue_only
+  | `Break typ, `Continue_only | `Continue_only, `Break typ -> `Mixed (typ, typ)
+  | `Break left, `Break right when Type.equal left right -> `Break left
+  | `Mixed (_, break_type), `Continue_only
+  | `Continue_only, `Mixed (_, break_type) ->
+      `Mixed (break_type, break_type)
+  | `Mixed (_, left), `Break right | `Break left, `Mixed (_, right)
+    when Type.equal left right ->
+      `Mixed (left, right)
+  | `Mixed (_, left), `Mixed (_, right) when Type.equal left right ->
+      `Mixed (left, right)
+  | _ -> `Break Type.Unit
+
+and loop_control_join_errors left right errors =
+  let break_type = function
+    | `Break typ -> Some typ
+    | `Mixed (_, typ) -> Some typ
+    | `Continue_only -> None
+  in
+  match (break_type left, break_type right) with
+  | Some left, Some right when not (Type.equal left right) ->
+      add_error errors
+        (Diagnostic.Loop_control_type_mismatch { expected = left; actual = right })
+  | _ -> errors
 
 and check_statements ctx env stmts errors =
   match stmts with
@@ -620,13 +881,6 @@ and check_match ctx env scrutinee_type arms errors =
   | actual ->
       (Type.Unit, env, add_error errors (Diagnostic.Type_mismatch { expected = Type.Variant "<variant>"; actual }))
 
-let unresolved_env env =
-  String_map.fold
-    (fun name binding acc ->
-      if binding_state_is_resolved binding.state then acc else name :: acc)
-    env []
-  |> List.rev
-
 let check_function ctx fn =
   let env =
     List.fold_left
@@ -639,11 +893,7 @@ let check_function ctx fn =
     | None -> add_error errors (Diagnostic.Return_required fn.fn_name)
     | Some actual -> require_type fn.return_type actual errors
   in
-  let errors =
-    List.fold_left
-      (fun errors name -> add_error errors (Diagnostic.Unresolved_value name))
-      errors (unresolved_env env)
-  in
+  let errors = add_unresolved_errors env errors in
   List.rev errors
 
 let check_program (program : program) =
@@ -665,6 +915,13 @@ module Runtime = struct
     | Tuple of value list
     | Struct of string * (string * value) list
     | Variant of string * string * value option
+    | Closure of {
+        captures : (string * value) list;
+        param : string;
+        param_type : Type.t;
+        return_type : Type.t;
+        body : stmt list;
+      }
 
   and value = { id : value_id; typ : Type.t; payload : payload }
 
@@ -687,28 +944,65 @@ module Runtime = struct
     | FunctionEnter of { name : string }
     | FunctionReturn of { name : string; value_id : value_id }
     | Branch of { kind : string; selected : string }
+    | LoopEnter
+    | LoopContinue of { value_id : value_id }
+    | LoopBreak of { value_id : value_id }
+    | LoopExit of { value_id : value_id }
+    | ClosureCreate of { value_id : value_id; captures : value_id list }
+    | ClosureEnter of { value_id : value_id }
+    | ClosureReturn of { value_id : value_id }
     | NormalResult of { value_id : value_id; typ : Type.t }
+
+  type live_value = { value_id : value_id; typ : Type.t; owner : string }
+
+  type step_limit_report = {
+    executed_steps : int;
+    step_limit : int;
+    last_location : string option;
+    live_values : live_value list;
+    unresolved_resources : live_value list;
+    last_world : value_id option;
+    trace : trace_event list;
+  }
 
   type run_result =
     | Completed of { value : value; trace : trace_event list }
+    | Step_limit_exceeded of step_limit_report
     | Static_error of Diagnostic.t list
     | Runtime_error of string
 
   let value_id_to_int id = id
-  let value_id value = value.id
-  let payload value = value.payload
-  let typ value = value.typ
+  let value_id (value : value) = value.id
+  let payload (value : value) = value.payload
+  let typ (value : value) = value.typ
 
   type state = {
     ctx : context;
     next_id : int;
     trace : trace_event list;
+    step_limit : int option;
+    executed_steps : int;
+    last_location : string option;
   }
 
   exception Runtime_failure of string
   exception Returned of value * state
+  exception Continued of value * state
+  exception Broken of value * state
+  exception Step_limit of state
 
   let emit state event = { state with trace = event :: state.trace }
+
+  let tick state location =
+    match state.step_limit with
+    | Some limit when state.executed_steps >= limit ->
+        raise (Step_limit { state with last_location = Some location })
+    | _ ->
+        {
+          state with
+          executed_steps = state.executed_steps + 1;
+          last_location = Some location;
+        }
 
   let fresh state typ payload detail =
     let value = { id = state.next_id; typ; payload } in
@@ -754,6 +1048,15 @@ module Runtime = struct
         | Some value ->
             let cloned, state = duplicate_value state value in
             (Variant (name, case, Some cloned), state))
+    | Closure { captures; param; param_type; return_type; body } ->
+        let captures, state =
+          List.fold_left
+            (fun (captures, state) (name, value) ->
+              let cloned, state = duplicate_value state value in
+              ((name, cloned) :: captures, state))
+            ([], state) captures
+        in
+        (Closure { captures = List.rev captures; param; param_type; return_type; body }, state)
 
   and duplicate_value state value =
     let payload, state = clone_payload state value.payload in
@@ -802,6 +1105,7 @@ module Runtime = struct
         | _ -> raise (Runtime_failure "variant pattern mismatch"))
 
   let rec eval_expr state env expr =
+    let state = tick state "expr" in
     match expr with
     | Literal literal ->
         let typ, payload, detail = literal_payload literal in
@@ -822,7 +1126,7 @@ module Runtime = struct
             ([], state, env) exprs
         in
         let values = List.rev values in
-        let typ = Type.Tuple (List.map (fun value -> value.typ) values) in
+        let typ = Type.Tuple (List.map (fun (value : value) -> value.typ) values) in
         let state =
           List.fold_left
             (fun state value -> consume state value "<tuple>" "tuple construction")
@@ -993,6 +1297,95 @@ module Runtime = struct
             in
             eval_yield_block state env arm.body
         | _ -> raise (Runtime_failure "match scrutinee was not Variant"))
+    | Continue expr ->
+        let value, state, _env = eval_expr state env expr in
+        let state = emit state (LoopContinue { value_id = value.id }) in
+        raise (Continued (value, state))
+    | Break expr ->
+        let value, state, _env = eval_expr state env expr in
+        let state = emit state (LoopBreak { value_id = value.id }) in
+        raise (Broken (value, state))
+    | Loop (initial, state_name, body) ->
+        let initial, state, env = eval_expr state env initial in
+        let rec run_iteration state current =
+          let state = tick state "loop iteration" in
+          let state = emit state LoopEnter in
+          let loop_env = bind env state_name current in
+          try
+            let value, state, _env = eval_yield_block state loop_env body in
+            let state = emit state (LoopBreak { value_id = value.id }) in
+            let state = emit state (LoopExit { value_id = value.id }) in
+            (value, state, env)
+          with
+          | Continued (next_state, state) -> run_iteration state next_state
+          | Broken (result, state) ->
+              let state = emit state (LoopExit { value_id = result.id }) in
+              (result, state, env)
+        in
+        run_iteration state initial
+    | Capture (captures, param, param_type, return_type, body) ->
+        let captured, state, env =
+          List.fold_left
+            (fun (captured, state, env) name ->
+              let value, env = move_from_env env name in
+              let state =
+                emit state
+                  (Move
+                     {
+                       value_id = value.id;
+                       from_owner = name;
+                       to_owner = "<closure>";
+                     })
+              in
+              ((name, value) :: captured, state, env))
+            ([], state, env) captures
+        in
+        let captured = List.rev captured in
+        let typ =
+          Type.Closure
+            {
+              arg = param_type;
+              ret = return_type;
+              captures = List.map (fun (_, (value : value)) -> value.typ) captured;
+            }
+        in
+        let value, state =
+          fresh state typ
+            (Closure { captures = captured; param; param_type; return_type; body })
+            "closure"
+        in
+        let state =
+          emit state
+            (ClosureCreate
+               {
+                 value_id = value.id;
+                 captures = List.map (fun (_, value) -> value.id) captured;
+               })
+        in
+        (value, state, env)
+    | Call_closure (closure_expr, arg_expr) -> (
+        let closure_value, state, env = eval_expr state env closure_expr in
+        let arg_value, state, env = eval_expr state env arg_expr in
+        let state = consume state closure_value "<closure-call>" "Call closure" in
+        let state = consume state arg_value "<closure-call>" "Closure argument" in
+        match closure_value.payload with
+        | Closure { captures; param; body; _ } ->
+            let state = emit state (ClosureEnter { value_id = closure_value.id }) in
+            let closure_env =
+              List.fold_left
+                (fun env (name, value) -> bind env name value)
+                String_map.empty captures
+              |> fun env -> bind env param arg_value
+            in
+            let value, state =
+              try
+                let _state, _env = eval_statements state closure_env body in
+                raise (Runtime_failure "closure did not return")
+              with Returned (value, state) -> (value, state)
+            in
+            let state = emit state (ClosureReturn { value_id = value.id }) in
+            (value, state, env)
+        | _ -> raise (Runtime_failure "Call_closure target was not a closure"))
 
   and eval_stmt state env stmt =
     match stmt with
@@ -1020,6 +1413,7 @@ module Runtime = struct
     match String_map.find_opt name state.ctx.functions with
     | None -> raise (Runtime_failure ("unknown function: " ^ name))
     | Some fn ->
+        let state = tick state ("function " ^ name) in
         let state = emit state (FunctionEnter { name }) in
         let env =
           List.fold_left2
@@ -1072,20 +1466,58 @@ module Runtime = struct
     | FunctionReturn { name; value_id } ->
         "FunctionReturn " ^ name ^ " #" ^ string_of_int value_id
     | Branch { kind; selected } -> "Branch " ^ kind ^ " -> " ^ selected
+    | LoopEnter -> "LoopEnter"
+    | LoopContinue { value_id } -> "LoopContinue #" ^ string_of_int value_id
+    | LoopBreak { value_id } -> "LoopBreak #" ^ string_of_int value_id
+    | LoopExit { value_id } -> "LoopExit #" ^ string_of_int value_id
+    | ClosureCreate { value_id; captures } ->
+        "ClosureCreate #" ^ string_of_int value_id ^ " captures=["
+        ^ String.concat "," (List.map string_of_int captures)
+        ^ "]"
+    | ClosureEnter { value_id } -> "ClosureEnter #" ^ string_of_int value_id
+    | ClosureReturn { value_id } -> "ClosureReturn #" ^ string_of_int value_id
     | NormalResult { value_id; typ } ->
         "NormalResult #" ^ string_of_int value_id ^ " : " ^ Type.to_string typ
 
-  let run program ~entry =
+  let step_limit_report state limit =
+    {
+      executed_steps = state.executed_steps;
+      step_limit = limit;
+      last_location = state.last_location;
+      live_values = [];
+      unresolved_resources = [];
+      last_world = None;
+      trace = List.rev state.trace;
+    }
+
+  let run ?step_limit program ~entry =
+    match step_limit with
+    | Some limit when limit < 0 -> Runtime_error "step_limit must be nonnegative"
+    | _ -> (
     match check_program program with
     | Error errors -> Static_error errors
     | Ok () -> (
         let ctx, _ = build_context program in
-        let state = { ctx; next_id = 0; trace = [] } in
+        let state =
+          {
+            ctx;
+            next_id = 0;
+            trace = [];
+            step_limit;
+            executed_steps = 0;
+            last_location = None;
+          }
+        in
         try
           let value, state = call_function state entry [] in
           let state =
             emit state (NormalResult { value_id = value.id; typ = value.typ })
           in
           Completed { value; trace = List.rev state.trace }
-        with Runtime_failure message -> Runtime_error message)
+        with
+        | Runtime_failure message -> Runtime_error message
+        | Step_limit state -> (
+            match step_limit with
+            | None -> Runtime_error "internal step limit without configured limit"
+            | Some limit -> Step_limit_exceeded (step_limit_report state limit))))
 end

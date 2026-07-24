@@ -13,6 +13,12 @@ records the first OCaml vertical slice. That slice implements a checked pure
 subset and does not yet implement parser support, loops, closures, recursion
 step limits, World effects, or resource operations.
 
+Implementation note: `docs/decisions/0016-linear-v0-loop-closure-recursion-step-limit.md`
+records the second OCaml vertical slice. That slice implements `Loop`,
+`Continue`, `Break`, explicit closure capture/call, named recursion through the
+ordinary function call path, and `Step_limit_exceeded`. It still excludes
+parser/CLI support, World effects, and resource state transition runtime.
+
 ## 1. Goals and Non-Goals
 
 The goal of `linear-v0` is to make every runtime value's creation, movement,
@@ -357,6 +363,10 @@ iteration must be resolved before `Continue` or `Break`.
 Each loop iteration boundary and each operation inside the loop counts toward
 the runtime step limit.
 
+The current reference slice counts one step before each expression evaluation,
+one step before each named function entry, and one step before each loop
+iteration body. A zero step limit stops before entry function execution.
+
 ## 12. Closures
 
 Closures do not implicitly refer to outer variables. A closure lists captured
@@ -388,6 +398,10 @@ Stateful closures return a next closure explicitly:
 ```
 
 Closures are not `Comparable`.
+
+The current reference slice represents closure types as argument type, return
+type, and captured value types. `Duplicable` and `Discardable` for closures are
+derived from all captured value types.
 
 ## 13. World and External Effects
 
@@ -541,6 +555,10 @@ Ordinary program failures should be represented as values such as
 - unresolved resources and states,
 - last World lineage when present,
 - available creation, movement, consumption, and transformation lineage.
+
+The current reference slice exposes the outcome as
+`Step_limit_exceeded(report)`. World and resource fields are present for future
+extension but remain empty until the World/effect slice is implemented.
 
 ## 20. Minimum Example Programs
 
