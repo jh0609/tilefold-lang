@@ -80,8 +80,11 @@ type t = {
 }
 
 let templates package = Raw.templates package.raw
+let entry_template_id package = Raw.entry_template_id package.raw
 let entry_template package = package.entry_template
 let result_type package = Raw.result_type package.raw
+let literals package = Raw.literals package.raw
+let entry_captures package = Raw.entry_captures package.raw
 let launcher_graph package = package.launcher_graph
 
 let find_template templates template_id =

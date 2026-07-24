@@ -70,8 +70,11 @@ type t
 
 val validate : Raw.t -> (t, validation_error list) result
 val templates : t -> Core_graph.Function_template.t list
+val entry_template_id : t -> Core_graph.Function_template_id.t
 val entry_template : t -> Core_graph.Function_template.t
 val result_type : t -> Core_type.t
+val literals : t -> literal list
+val entry_captures : t -> entry_capture list
 val launcher_graph : t -> Core_graph.Validated_graph.t
 
 type execution_error =

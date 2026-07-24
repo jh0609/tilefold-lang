@@ -141,6 +141,14 @@ higher-order Apply, and ProgramPackage results of `Unit`, `Nat`, and Arrow
 types. A conforming engine must reproduce the same canonical view for the same
 validated package and input, not only the same final result.
 
+ProgramPackage canonical serialization is a separate structural conformance
+boundary. For `tilefold-program-package-v1`, conforming engines must encode the
+same validated package to the same bytes independent of host construction order
+for non-semantic collections, decode those bytes back through validation, and
+produce the same final result and canonical semantic trace. This does not imply
+graph isomorphism, semantic equivalence, checkpoint compatibility, or a Surface
+project format.
+
 For future checkpoint and replay support, conformance must distinguish semantic
 trace from execution-management provenance. Creating a checkpoint, pausing,
 resuming, forking, selecting a join representative, aliasing a branch, or

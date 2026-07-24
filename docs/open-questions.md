@@ -184,8 +184,9 @@ Still open:
   lifecycle scheduling, trace rules, and bounded primitive recursion behavior
   are recorded in Decision 0022. Directed value dependency cycles are rejected
   by Decision 0024. A provisional canonical trace conformance view is
-  implemented by Decision 0025. Keep final public serialization, broader
-  productivity policy, and full trace schema details open.
+  implemented by Decision 0025. ProgramPackage structural serialization is
+  implemented by Decision 0026. Keep broader productivity policy, final public
+  trace serialization, and full trace schema details open.
 
 ## 2. How are immutable logical values represented?
 
@@ -496,9 +497,16 @@ Still open:
 
 ## 14. How are ProgramPackage and entry metadata serialized?
 
-- Question: What canonical format represents `ProgramPackage`, entry template
-  IDs, semantics profile or version, symbolic relations, scheduling metadata,
-  and execution metadata?
+- Confirmed for the current slice: `tilefold-program-package-v1` serializes
+  validated `transparent-v0` ProgramPackages as a canonical structural
+  S-expression document. It includes entry template ID, result type, program
+  literals, entry captures, templates, graph nodes, graph edges,
+  `default_node_order`, and `PrioritySpine`.
+- Still open: public file extension, import/export UX, content addressing,
+  hashing, signing, Surface/editor project data, module systems, package
+  registries, and execution metadata.
+- Question: What future public package ecosystem should wrap or replace the
+  current structural package document?
 - Alternatives:
   - One canonical package document.
   - Separate template, relation, scheduling, and entry sections.
@@ -516,8 +524,8 @@ Still open:
   without hidden host state.
 - Impact on future compatibility: Package serialization determines stored
   program compatibility and conformance fixtures.
-- Recommendation: Keep open until canonical graph and template serialization
-  are specified.
+- Recommendation: Use Decision 0026 for current Core conformance. Keep public
+  storage, content addressing, and Surface/editor persistence open.
 
 ## 15. How are execution inputs and value provenance serialized?
 

@@ -819,6 +819,12 @@ ProgramPackage results for `Unit`, `Nat`, and Arrow types. Each fixture compares
 the complete canonical trace from two independent executions, not only the final
 result.
 
+ProgramPackage canonical serialization is tested at the package boundary before
+execution. A validated package encodes to `tilefold-program-package-v1`, decodes
+back through raw graph and package validation, and then must produce the same
+canonical trace as the original package. This fixes structural package identity,
+not semantic equivalence between differently named or isomorphic graphs.
+
 ## Primitive Tile List
 
 The Core v0 primitive candidate list is `Unit`, `Nat(n)`, `Succ`, `Function`,

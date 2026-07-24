@@ -73,6 +73,7 @@ trace semantics.
 | `program-model` | `package-with-entry-function` |
 | `entry-execution` | `ordinary-apply` |
 | `program-package-entry` | `implemented-validated-unit-entry-launcher` |
+| `program-package-serialization` | `implemented-provisional-canonical-sexpression-v1` |
 | `program-literal-origin` | `Program_literal` |
 | `nullary-entry` | `Unit-to-result` |
 | `program-result` | `root-instance-result-boundary` |

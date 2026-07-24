@@ -6,5 +6,6 @@
   test_engine
   test_program_package
   test_canonical_trace
+  test_program_package_serialization
   test_linear_v0)
  (libraries tilefold zarith))
