@@ -71,6 +71,48 @@ static `PrioritySpine` validation and runtime scheduling slice.
 multi-step `ApplyEnter` -> function body rewrites -> `ApplyReturn` lifecycle
 and keeps several function scheduling and boundary policies deferred.
 
+`linear-v0` is now recorded as a separate provisional semantics profile in
+`docs/language-spec.md` and
+`docs/decisions/0014-linear-ownership-language-spec.md`. It does not replace
+`transparent-v0` or Tilefold Core v0. It resolves the high-level ownership,
+World, general recursion, and step-limit direction for that separate profile,
+while keeping any compilation or meaning-preserving translation between
+`linear-v0` and `transparent-v0` open.
+
+## Open Questions for `linear-v0`
+
+- Question: Can `linear-v0` be compiled to `transparent-v0` or another future
+  Core profile without losing ownership, World, recursion, step-limit, and
+  trace meaning?
+- Alternatives:
+  - Keep `linear-v0` as a separate directly interpreted profile.
+  - Define a translation to a future Core profile with explicit linear and
+    effect constructs.
+  - Define a partial translation only for the effect-free terminating subset.
+- Advantages:
+  - Separate profile: avoids weakening existing Core v0 assumptions.
+  - Future Core translation: could reuse graph validation and trace tooling.
+  - Partial translation: gives a conservative path for programs that fit Core
+    totality restrictions.
+- Disadvantages:
+  - Separate profile: needs a separate conformance suite and implementation.
+  - Future Core translation: may require major Core extensions.
+  - Partial translation: creates subset boundaries that users must understand.
+- Termination impact:
+  - General recursion and step limits do not match the current total Core v0
+    direction. Any translation must state whether nontermination is preserved,
+    bounded, or rejected.
+- Execution transparency impact:
+  - Translation must preserve value fate, World lineage, abnormal termination
+    reports, and source-order trace correspondence.
+- Future compatibility impact:
+  - The two profiles must remain independently identifiable until a frozen
+    semantics version or translation conformance suite is defined.
+- Recommendation:
+  - Keep the profiles separate for now. Do not implement an implicit compiler
+    or semantic equivalence claim before trace examples and conformance tests
+    exist.
+
 ## 1. Which details of the Core v0 primitive candidates are normative?
 
 - Question: Which exact port schemas, typing rules, and rewrite rules define

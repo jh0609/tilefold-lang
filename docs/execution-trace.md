@@ -27,6 +27,13 @@ For `transparent-v0`, the standard trace records the exact canonical sequential
 physical rewrite order. Causal predecessor information may be included as
 additional data, but it does not replace the sequential order.
 
+For `linear-v0`, the standard trace records explicit ownership and lineage
+events for value creation, movement, consumption, duplication, transformation,
+discard, resource state transitions, function calls and returns, branch entry,
+loop steps, normal termination, and external `StepLimitExceeded` termination.
+`linear-v0` trace data must not be interpreted as a `transparent-v0` rewrite
+trace unless a future translation profile explicitly defines that relation.
+
 The trace header must identify the semantics profile and canonical scheduling
 relations, including any `PrioritySpine` metadata that can affect rewrite
 order.
@@ -78,6 +85,11 @@ Each event should identify:
 - errors, if the rewrite produces a specified error state.
 
 The exact schema is not fixed yet.
+
+For `linear-v0`, trace event boundaries are source-order semantic boundaries:
+primitive ownership operations, effect operations, function call enter/return,
+loop step boundaries, and abnormal termination records are observable and count
+toward the runtime step limit. Exact serialization remains open.
 
 The first executable slice implements a minimal typed `RewriteEvent` subset for
 `Succ`, `Copy`, and `Drop`. It records:

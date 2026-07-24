@@ -131,6 +131,13 @@ Conformance tests for an experimental profile must state the profile identifier
 as well as any relevant profile settings. Once a profile is frozen into a
 semantics version, standard conformance should refer to that semantics version.
 
+`linear-v0` is a separate experimental semantics profile from `transparent-v0`.
+An engine must state which profile it implements. Matching a `linear-v0` final
+result is not evidence of `transparent-v0` conformance, and matching a
+`transparent-v0` trace is not evidence of `linear-v0` ownership, World, or step
+limit conformance. Any future compiler or translation between the profiles must
+define its own meaning-preservation tests.
+
 ## Canonical Serialization
 
 Canonical serialization is required for deterministic traces and conformance

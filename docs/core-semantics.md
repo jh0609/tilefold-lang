@@ -17,6 +17,13 @@ The current Core v0 direction is recorded as the provisional semantics profile
 future semantics version is assigned. See `docs/design-space.md` and
 `docs/decisions/0002-experimental-semantics-profiles.md`.
 
+`linear-v0` is a separate semantics profile for explicit linear ownership,
+World-threaded effects, general recursion, and runtime step limits. It is
+specified in `docs/language-spec.md` and
+`docs/decisions/0014-linear-ownership-language-spec.md`. It does not replace
+Tilefold Core v0 or `transparent-v0`, and this document does not claim that
+`linear-v0` compiles to Core v0.
+
 The intended layer boundary is:
 
 ```text

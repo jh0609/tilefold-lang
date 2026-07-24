@@ -10,6 +10,11 @@ The current Core v0 direction is the provisional profile `transparent-v0`.
 It records the design choices agreed so far, but it is not a frozen semantics
 version.
 
+`linear-v0` is a separate provisional semantics profile for explicit linear
+ownership, World-threaded effects, general recursion, and runtime step limits.
+It is not a replacement for `transparent-v0`, and compilation between the two
+profiles is deferred.
+
 ## Configuration Categories
 
 ### Semantics Configuration
@@ -108,10 +113,39 @@ trace semantics.
 | `step-completion-policy` | `rewritten-then-completed-on-next-step` |
 | `stuck-reporting` | `unexecuted-nodes-and-result-missing-flag` |
 
+## Profile: `linear-v0`
+
+`linear-v0` is specified in `docs/language-spec.md` and recorded by
+`docs/decisions/0014-linear-ownership-language-spec.md`.
+
+| Setting | Value |
+| --- | --- |
+| `profile-kind` | `independent-semantics-profile` |
+| `relationship-to-transparent-v0` | `not-a-replacement` |
+| `compilation-to-core-v0` | `deferred` |
+| `nat-domain` | `arbitrary-precision-nonnegative-integer` |
+| `ownership` | `linear-explicit-fate` |
+| `assignment` | `move` |
+| `function-argument-passing` | `move` |
+| `return` | `move-to-caller-or-runtime` |
+| `duplication` | `explicit-Duplicate` |
+| `discard` | `explicit-Discard` |
+| `capabilities` | `Duplicable-Discardable-Comparable-Orderable` |
+| `result-capability-derivation` | `all-variant-payloads` |
+| `effects` | `World-threaded` |
+| `world-termination` | `returned-by-entry-contract` |
+| `errors` | `ordinary-Result-values` |
+| `recursion` | `general-recursion-allowed` |
+| `termination` | `not-statically-guaranteed` |
+| `step-limit` | `external-forced-termination` |
+| `evaluation-order` | `source-order-left-to-right-arguments` |
+| `trace` | `ownership-and-lineage-observable` |
+
 ## Design Points
 
 | Design point | Category | Status | `transparent-v0` value | Alternatives | Observable consequences | Termination implications | Conformance implications | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Semantics profile relationship | Semantics | Provisional | `transparent-v0` remains Core v0 profile; `linear-v0` is separate | replace Core v0; compile `linear-v0` to Core v0 now; merge profiles | Changes which documents and tests define meaning | Merging would weaken Core v0 totality assumptions | Conformance must state the profile under test | `linear-v0` is recorded separately by Decision 0014 |
 | Evaluation strategy | Semantics | Provisional | `strict-call-by-value` | call-by-name; call-by-need; graph-normalization strategy | Changes which rewrites occur before application and can change traces or errors | Strict evaluation must be compatible with total Core constructs | Exact trace comparison depends on this choice | Independent ready subgraph scheduling is tracked separately |
 | Deterministic rewrite selection | Semantics | Provisional | `readiness-fifo-with-priority-spine-and-canonical-tiebreak` | pure canonical node order; dependency-derived schedule; explicit policy parameter; experimental parallel batches | Changes trace order and possibly which error appears first | Must preserve the termination argument | Same canonical scheduling metadata must produce the same standard trace order | Key is `ready_epoch`, priority membership and slot, canonical node order, canonical rule order |
 | Binding representation | Semantics | Provisional | `explicit-ports` | de Bruijn indices; named variables; implicit lexical scope | Changes graph shape and trace subjects | Explicit ports make dependencies visible for termination analysis | Canonical serialization must preserve port identity | Core has no variable names |
