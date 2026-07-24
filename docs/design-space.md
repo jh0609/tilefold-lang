@@ -144,6 +144,10 @@ trace semantics.
 | `control-implementation-scope` | `Loop + Continue/Break + Capture/Call + recursion + step-limit` |
 | `step-counting` | `expression-entry-function-entry-loop-iteration` |
 | `step-limit-outcome` | `external-Step_limit_exceeded` |
+| `effect-runtime` | `deterministic-exact-script-provider` |
+| `effect-world` | `runtime-injected-linear-World` |
+| `effect-trace` | `EffectAttempt-WorldTransition-ResourceAcquire-ResourceTransition` |
+| `effect-abort` | `structured-Effect_aborted-outcome` |
 
 ## Design Points
 

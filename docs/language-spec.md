@@ -19,6 +19,13 @@ records the second OCaml vertical slice. That slice implements `Loop`,
 ordinary function call path, and `Step_limit_exceeded`. It still excludes
 parser/CLI support, World effects, and resource state transition runtime.
 
+Implementation note: `docs/decisions/0017-linear-v0-deterministic-effect-script-runtime.md`
+records the first deterministic test-script effect slice. That slice implements
+runtime-injected `World`, effect descriptors, resource descriptors, exact
+scripts, `Effect_call`, `WorldTransition`, resource acquire/transition trace
+events, and effect abort outcomes. Real host providers, parser/CLI support, and
+complete resource identity materialization remain deferred.
+
 ## 1. Goals and Non-Goals
 
 The goal of `linear-v0` is to make every runtime value's creation, movement,

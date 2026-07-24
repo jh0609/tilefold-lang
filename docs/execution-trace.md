@@ -98,6 +98,13 @@ The implemented `linear-v0` step-limit slice records `LoopEnter`,
 append fake normal-result, function-return, loop-exit, discard, or resource
 cleanup events.
 
+The first `linear-v0` effect slice records deterministic test-script effects
+with `EffectAttempt`, `WorldTransition`, `ResourceAcquire`, and
+`ResourceTransition`. A matching effect records `EffectAttempt`, then exactly
+one `WorldTransition`, then resource acquire/transition events for the same
+`effect_call_id`. Mismatch and script exhaustion record `EffectAttempt` only
+and abort without appending normal transition events.
+
 The first executable slice implements a minimal typed `RewriteEvent` subset for
 `Succ`, `Copy`, and `Drop`. It records:
 

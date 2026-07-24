@@ -108,6 +108,7 @@ type expr =
   | Break of expr
   | Capture of string list * string * Type.t * Type.t * stmt list
   | Call_closure of expr * expr
+  | Effect_call of string * expr list
 
 and stmt = Let of pattern * expr | Expr of expr | Return of expr
 
@@ -131,10 +132,65 @@ type function_decl = {
 }
 
 type program = {
+  resources : resource_def list;
   structs : struct_def list;
   variants : variant_def list;
   functions : function_decl list;
 }
+
+and resource_state_policy = {
+  state_name : string;
+  terminal : bool;
+  duplicable : bool;
+  discardable : bool;
+  comparable : bool;
+}
+
+and resource_def = {
+  resource_name : string;
+  states : resource_state_policy list;
+}
+
+type canonical_value =
+  | C_unit
+  | C_nat of string
+  | C_bool of bool
+  | C_text of string
+  | C_bytes of string
+  | C_pair of canonical_value * canonical_value
+  | C_variant of string * canonical_value option
+  | C_resource of { alias : string; kind : string; state : string }
+
+type effect_domain_outcome =
+  | Effect_ok of canonical_value
+  | Effect_error of { tag : string; payload : canonical_value option }
+
+type effect_resource_transition = {
+  alias : string;
+  kind : string;
+  from_state : string option;
+  to_state : string;
+  acquire : bool;
+}
+
+type effect_descriptor = {
+  effect_name : string;
+  effect_args : Type.t list;
+  effect_result : Type.t;
+  effect_error_variant : string;
+  effect_resource_transitions : effect_resource_transition list;
+  effect_errors : string list;
+}
+
+type effect_script_entry = {
+  expect_operation : string;
+  expect_arguments : canonical_value list;
+  response : effect_domain_outcome;
+  resource_transitions : effect_resource_transition list;
+  replay_observation : canonical_value option;
+}
+
+type effect_script = effect_script_entry list
 
 module Diagnostic = struct
   type t =
@@ -165,6 +221,9 @@ module Diagnostic = struct
     | Loop_control_type_mismatch of { expected : Type.t; actual : Type.t }
     | Capture_after_move of string
     | Uncaptured_variable of string
+    | Invalid_entrypoint of string
+    | Unknown_effect of string
+    | Invalid_effect_descriptor of string
 
   let to_string = function
     | Duplicate_definition name -> "duplicate definition: " ^ name
@@ -208,6 +267,9 @@ module Diagnostic = struct
         ^ ", got " ^ Type.to_string actual
     | Capture_after_move name -> "capture after move: " ^ name
     | Uncaptured_variable name -> "uncaptured variable: " ^ name
+    | Invalid_entrypoint message -> "invalid entrypoint: " ^ message
+    | Unknown_effect name -> "unknown effect: " ^ name
+    | Invalid_effect_descriptor message -> "invalid effect descriptor: " ^ message
 end
 
 module String_map = Map.Make (String)
@@ -223,9 +285,11 @@ type binding = { typ : Type.t; state : binding_state }
 type env = binding String_map.t
 
 type context = {
+  resources : resource_def String_map.t;
   structs : struct_def String_map.t;
   variants : variant_def String_map.t;
   functions : function_decl String_map.t;
+  effects : effect_descriptor String_map.t;
 }
 
 let literal_type = function
@@ -256,13 +320,18 @@ let find_duplicate names =
   in
   loop String_set.empty names
 
-let build_context (program : program) =
+let build_context ?(effects = []) (program : program) =
   let errors = ref [] in
   let add_unique kind name value map =
     if String_map.mem name map then (
       errors := Diagnostic.Duplicate_definition (kind ^ " " ^ name) :: !errors;
       map)
     else String_map.add name value map
+  in
+  let resources =
+    List.fold_left
+      (fun map def -> add_unique "resource" def.resource_name def map)
+      String_map.empty program.resources
   in
   let structs =
     List.fold_left
@@ -279,7 +348,12 @@ let build_context (program : program) =
       (fun map def -> add_unique "function" def.fn_name def map)
       String_map.empty program.functions
   in
-  ({ structs; variants; functions }, List.rev !errors)
+  let effects =
+    List.fold_left
+      (fun map def -> add_unique "effect" def.effect_name def map)
+      String_map.empty effects
+  in
+  ({ resources; structs; variants; functions; effects }, List.rev !errors)
 
 let rec has_capability ctx typ capability =
   match (typ, capability) with
@@ -311,7 +385,18 @@ let rec has_capability ctx typ capability =
               | None -> true
               | Some typ -> has_capability ctx typ capability)
             def.cases)
-  | Type.Resource _, _ -> false
+  | Type.Resource { name; state }, _ -> (
+      match String_map.find_opt name ctx.resources with
+      | None -> false
+      | Some def -> (
+          match List.find_opt (fun policy -> policy.state_name = state) def.states with
+          | None -> false
+          | Some policy -> (
+              match capability with
+              | Capability.Duplicable -> policy.duplicable
+              | Capability.Discardable -> policy.discardable
+              | Capability.Comparable -> policy.comparable
+              | Capability.Orderable -> false)))
   | Type.World, _ -> false
   | Type.Function _, (Capability.Duplicable | Capability.Discardable) -> true
   | Type.Closure { captures; _ }, (Capability.Duplicable | Capability.Discardable) ->
@@ -624,6 +709,43 @@ let rec infer_expr ctx env expr errors =
                    expected = Type.Closure { arg = arg_type; ret = Type.Unit; captures = [] };
                    actual;
                  }) ))
+  | Effect_call (name, args) -> (
+      match String_map.find_opt name ctx.effects with
+      | None ->
+          let _, env, errors =
+            List.fold_left
+              (fun (types, env, errors) expr ->
+                let typ, env, errors = infer_expr ctx env expr errors in
+                (typ :: types, env, errors))
+              ([], env, errors) args
+          in
+          (Type.Unit, env, add_error errors (Diagnostic.Unknown_effect name))
+      | Some descriptor ->
+          let expected_all = Type.World :: descriptor.effect_args in
+          let errors =
+            if List.length args = List.length expected_all then errors
+            else
+              add_error errors
+                (Diagnostic.Arity_mismatch
+                   {
+                     name;
+                     expected = List.length expected_all;
+                     actual = List.length args;
+                   })
+          in
+          let expected_args =
+            if List.length args = List.length expected_all then
+              expected_all
+            else List.map (fun _ -> Type.Unit) args
+          in
+          let env, errors =
+            List.fold_left2
+              (fun (env, errors) arg expected ->
+                let actual, env, errors = infer_expr ctx env arg errors in
+                (env, require_type expected actual errors))
+              (env, errors) args expected_args
+          in
+          (Type.Tuple [ Type.World; descriptor.effect_result ], env, errors))
 
 and check_stmt ctx env stmt errors =
   match stmt with
@@ -896,8 +1018,59 @@ let check_function ctx fn =
   let errors = add_unresolved_errors env errors in
   List.rev errors
 
-let check_program (program : program) =
-  let ctx, errors = build_context program in
+let type_contains_world_or_resource typ =
+  let rec loop = function
+    | Type.World | Type.Resource _ -> true
+    | Type.Tuple types -> List.exists loop types
+    | Type.Result (ok, err) -> loop ok || loop err
+    | Type.Function (args, ret) -> List.exists loop args || loop ret
+    | Type.Closure { arg; ret; captures } ->
+        loop arg || loop ret || List.exists loop captures
+    | Type.Unit | Type.Bool | Type.Nat | Type.Struct _ | Type.Variant _ -> false
+  in
+  loop typ
+
+let validate_effect_descriptor descriptor errors =
+  let errors =
+    if descriptor.effect_name = "" then
+      add_error errors (Diagnostic.Invalid_effect_descriptor "empty effect name")
+    else errors
+  in
+  List.fold_left
+    (fun errors typ ->
+      match typ with
+      | Type.World | Type.Function _ | Type.Closure _ ->
+          add_error errors
+            (Diagnostic.Invalid_effect_descriptor
+               ("invalid argument type for " ^ descriptor.effect_name))
+      | _ -> errors)
+    errors descriptor.effect_args
+
+let validate_standard_entry ctx errors =
+  match String_map.find_opt "main" ctx.functions with
+  | None -> errors
+  | Some main -> (
+      match (main.params, main.return_type) with
+      | [ (_, Type.World) ], Type.Tuple [ Type.World; result_type ]
+        when not (type_contains_world_or_resource result_type) ->
+          errors
+      | [ (_, Type.World) ], Type.Tuple [ Type.World; result_type ] ->
+          add_error errors
+            (Diagnostic.Invalid_entrypoint
+               ("result contains World or external resource: " ^ Type.to_string result_type))
+      | _ ->
+          add_error errors
+            (Diagnostic.Invalid_entrypoint
+               "standard linear-v0 entrypoint must be main : World -> (World, A)"))
+
+let check_program ?(effects = []) (program : program) =
+  let ctx, errors = build_context ~effects program in
+  let errors =
+    List.fold_left
+      (fun errors descriptor -> validate_effect_descriptor descriptor errors)
+      errors effects
+  in
+  let errors = if effects = [] then errors else validate_standard_entry ctx errors in
   let errors =
     List.fold_left
       (fun errors fn -> check_function ctx fn @ errors)
@@ -922,6 +1095,8 @@ module Runtime = struct
         return_type : Type.t;
         body : stmt list;
       }
+    | World of int
+    | Resource of { alias : string option; kind : string; state : string }
 
   and value = { id : value_id; typ : Type.t; payload : payload }
 
@@ -951,6 +1126,36 @@ module Runtime = struct
     | ClosureCreate of { value_id : value_id; captures : value_id list }
     | ClosureEnter of { value_id : value_id }
     | ClosureReturn of { value_id : value_id }
+    | EffectAttempt of {
+        effect_call_id : int;
+        operation : string;
+        arguments : canonical_value list;
+      }
+    | WorldTransition of {
+        effect_call_id : int;
+        input_world_id : value_id;
+        output_world_id : value_id;
+        operation : string;
+        resource_ids : value_id list;
+        outcome : string;
+        global_order : int;
+        replay_observation : canonical_value option;
+      }
+    | ResourceAcquire of {
+        effect_call_id : int;
+        value_id : value_id;
+        alias : string;
+        kind : string;
+        state : string;
+      }
+    | ResourceTransition of {
+        effect_call_id : int;
+        value_id : value_id;
+        alias : string option;
+        kind : string;
+        from_state : string;
+        to_state : string;
+      }
     | NormalResult of { value_id : value_id; typ : Type.t }
 
   type live_value = { value_id : value_id; typ : Type.t; owner : string }
@@ -965,9 +1170,35 @@ module Runtime = struct
     trace : trace_event list;
   }
 
+  type effect_abort_cause =
+    | Effect_mismatch of {
+        operation : string;
+        argument_index : int option;
+        expected : canonical_value option;
+        actual : canonical_value option;
+      }
+    | Effect_script_exhausted of string
+    | Unused_effect_script of int
+    | Resource_alias_consumed of string
+    | Provider_contract_violation of string
+    | Invalid_resource_state of string
+    | Invalid_normal_termination of string
+
+  type effect_abort_report = {
+    primary_cause : effect_abort_cause;
+    executed_steps : int;
+    trace : trace_event list;
+    current_world : value_id option;
+    live_resources : live_value list;
+    consumed_script_entries : int;
+    remaining_script_entries : int;
+    diagnostics : string list;
+  }
+
   type run_result =
     | Completed of { value : value; trace : trace_event list }
     | Step_limit_exceeded of step_limit_report
+    | Effect_aborted of effect_abort_report
     | Static_error of Diagnostic.t list
     | Runtime_error of string
 
@@ -983,6 +1214,11 @@ module Runtime = struct
     step_limit : int option;
     executed_steps : int;
     last_location : string option;
+    script : effect_script;
+    consumed_script_entries : int;
+    next_effect_call_id : int;
+    current_world : value_id option;
+    resource_aliases : value String_map.t;
   }
 
   exception Runtime_failure of string
@@ -990,6 +1226,7 @@ module Runtime = struct
   exception Continued of value * state
   exception Broken of value * state
   exception Step_limit of state
+  exception Effect_abort of effect_abort_cause * state * string list
 
   let emit state event = { state with trace = event :: state.trace }
 
@@ -1057,6 +1294,8 @@ module Runtime = struct
             ([], state) captures
         in
         (Closure { captures = List.rev captures; param; param_type; return_type; body }, state)
+    | World _ -> raise (Runtime_failure "World cannot be duplicated")
+    | Resource _ -> raise (Runtime_failure "Resource cannot be duplicated")
 
   and duplicate_value state value =
     let payload, state = clone_payload state value.payload in
@@ -1074,6 +1313,161 @@ module Runtime = struct
     | Some value -> (value, String_map.remove name env)
 
   let bind env name value = String_map.add name value env
+
+  let rec canonical_equal left right =
+    match (left, right) with
+    | C_unit, C_unit -> true
+    | C_nat left, C_nat right -> left = right
+    | C_bool left, C_bool right -> left = right
+    | C_text left, C_text right -> left = right
+    | C_bytes left, C_bytes right -> left = right
+    | C_pair (ll, lr), C_pair (rl, rr) ->
+        canonical_equal ll rl && canonical_equal lr rr
+    | C_variant (lt, lp), C_variant (rt, rp) -> (
+        lt = rt
+        &&
+        match (lp, rp) with
+        | None, None -> true
+        | Some left, Some right -> canonical_equal left right
+        | _ -> false)
+    | ( C_resource { alias = la; kind = lk; state = ls },
+        C_resource { alias = ra; kind = rk; state = rs } ) ->
+        la = ra && lk = rk && ls = rs
+    | _ -> false
+
+  let rec canonical_of_value value =
+    match value.payload with
+    | Unit -> Ok C_unit
+    | Bool value -> Ok (C_bool value)
+    | Nat nat -> Ok (C_nat (Nat.to_string nat))
+    | Tuple [ left; right ] -> (
+        match (canonical_of_value left, canonical_of_value right) with
+        | Ok left, Ok right -> Ok (C_pair (left, right))
+        | Error message, _ | _, Error message -> Error message)
+    | Variant (_variant_name, case, payload) -> (
+        match payload with
+        | None -> Ok (C_variant (case, None))
+        | Some value -> (
+            match canonical_of_value value with
+            | Ok payload -> Ok (C_variant (case, Some payload))
+            | Error message -> Error message))
+    | Resource { alias = Some alias; kind; state } ->
+        Ok (C_resource { alias; kind; state })
+    | Resource { alias = None; kind; state } ->
+        Error ("resource has no script alias: " ^ kind ^ "<" ^ state ^ ">")
+    | Struct _ | Tuple _ | Closure _ | World _ ->
+        Error "value is not supported as a canonical effect argument"
+
+  let effect_abort state cause diagnostics =
+    raise (Effect_abort (cause, state, diagnostics))
+
+  let pop_script state operation arguments =
+    match state.script with
+    | [] ->
+        let state =
+          emit state
+            (EffectAttempt
+               {
+                 effect_call_id = state.next_effect_call_id;
+                 operation;
+                 arguments;
+               })
+        in
+        effect_abort state (Effect_script_exhausted operation) []
+    | entry :: rest ->
+        let state =
+          emit state
+            (EffectAttempt
+               {
+                 effect_call_id = state.next_effect_call_id;
+                 operation;
+                 arguments;
+               })
+        in
+        if entry.expect_operation <> operation then
+          effect_abort state
+            (Effect_mismatch
+               {
+                 operation;
+                 argument_index = None;
+                 expected = None;
+                 actual = None;
+               })
+            [ "expected operation " ^ entry.expect_operation ]
+        else
+          let rec compare_args index expected actual =
+            match (expected, actual) with
+            | [], [] -> None
+            | expected :: _, actual :: _ when not (canonical_equal expected actual) ->
+                Some (index, expected, actual)
+            | _ :: expected, _ :: actual -> compare_args (index + 1) expected actual
+            | expected :: _, [] -> Some (index, expected, C_unit)
+            | [], actual :: _ -> Some (index, C_unit, actual)
+          in
+          match compare_args 0 entry.expect_arguments arguments with
+          | Some (index, expected, actual) ->
+              effect_abort state
+                (Effect_mismatch
+                   {
+                     operation;
+                     argument_index = Some index;
+                     expected = Some expected;
+                     actual = Some actual;
+                   })
+                []
+          | None ->
+              ( entry,
+                {
+                  state with
+                  script = rest;
+                  consumed_script_entries = state.consumed_script_entries + 1;
+                } )
+
+  let rec payload_of_canonical state typ canonical =
+    match (typ, canonical) with
+    | Type.Unit, C_unit -> Ok (Unit, state)
+    | Type.Bool, C_bool value -> Ok (Bool value, state)
+    | Type.Nat, C_nat decimal -> (
+        match Nat.of_string decimal with
+        | Ok nat -> Ok (Nat nat, state)
+        | Error _ -> Error ("invalid canonical Nat: " ^ decimal))
+    | Type.Tuple [ left_type; right_type ], C_pair (left, right) -> (
+        match payload_of_canonical state left_type left with
+        | Error message -> Error message
+        | Ok (left_payload, state) ->
+            let left_value, state = fresh state left_type left_payload "effect tuple left" in
+            (match payload_of_canonical state right_type right with
+            | Error message -> Error message
+            | Ok (right_payload, state) ->
+                let right_value, state =
+                  fresh state right_type right_payload "effect tuple right"
+                in
+                Ok (Tuple [ left_value; right_value ], state)))
+    | Type.Variant variant_name, C_variant (case, payload) -> (
+        match String_map.find_opt variant_name state.ctx.variants with
+        | None -> Error ("unknown variant in effect result: " ^ variant_name)
+        | Some def -> (
+            match List.find_opt (fun c -> c.case_name = case) def.cases with
+            | None -> Error ("unknown variant case in effect result: " ^ case)
+            | Some { payload = None; _ } -> (
+                match payload with
+                | None -> Ok (Variant (variant_name, case, None), state)
+                | Some _ -> Error "effect result case has no payload")
+            | Some { payload = Some payload_type; _ } -> (
+                match payload with
+                | None -> Error "effect result case payload missing"
+                | Some payload -> (
+                    match payload_of_canonical state payload_type payload with
+                    | Error message -> Error message
+                    | Ok (payload, state) ->
+                        let value, state =
+                          fresh state payload_type payload "effect variant payload"
+                        in
+                        Ok (Variant (variant_name, case, Some value), state)))))
+    | Type.Resource { name; state = expected_state }, C_resource { alias; kind; state = actual_state }
+      when name = kind && expected_state = actual_state ->
+        Ok (Resource { alias = Some alias; kind; state = actual_state }, state)
+    | _ -> Error "canonical value does not match expected effect result type"
 
   let rec bind_pattern env pattern value =
     match pattern with
@@ -1218,6 +1612,12 @@ module Runtime = struct
     | Discard expr ->
         let value, state, env = eval_expr state env expr in
         let state = consume state value "<discard>" "Discard" in
+        let state =
+          match value.payload with
+          | Resource { alias = Some alias; _ } ->
+              { state with resource_aliases = String_map.remove alias state.resource_aliases }
+          | _ -> state
+        in
         let state = emit state (Discard { value_id = value.id; typ = value.typ }) in
         let unit, state = fresh state Type.Unit Unit "Discard result" in
         (unit, state, env)
@@ -1386,6 +1786,227 @@ module Runtime = struct
             let state = emit state (ClosureReturn { value_id = value.id }) in
             (value, state, env)
         | _ -> raise (Runtime_failure "Call_closure target was not a closure"))
+    | Effect_call (name, args) -> (
+        let values, state, env =
+          List.fold_left
+            (fun (values, state, env) expr ->
+              let value, state, env = eval_expr state env expr in
+              (value :: values, state, env))
+            ([], state, env) args
+        in
+        let values = List.rev values in
+        match (String_map.find_opt name state.ctx.effects, values) with
+        | None, _ -> raise (Runtime_failure ("unknown effect: " ^ name))
+        | Some descriptor, world_value :: effect_args -> (
+            match world_value.payload with
+            | World _ ->
+                let canonical_args =
+                  List.map
+                    (fun value ->
+                      match canonical_of_value value with
+                      | Ok canonical -> canonical
+                      | Error message -> raise (Runtime_failure message))
+                    effect_args
+                in
+                let entry, state = pop_script state name canonical_args in
+                let state =
+                  List.fold_left
+                    (fun state value -> consume state value "<effect>" ("Effect " ^ name))
+                    state values
+                in
+                let world_out, state =
+                  fresh state Type.World (World (state.next_effect_call_id + 1))
+                    ("World after " ^ name)
+                in
+                let outcome_string =
+                  match entry.response with
+                  | Effect_ok _ -> "Ok"
+                  | Effect_error { tag; _ } -> "Err(" ^ tag ^ ")"
+                in
+                let state =
+                  emit state
+                    (WorldTransition
+                       {
+                         effect_call_id = state.next_effect_call_id;
+                         input_world_id = world_value.id;
+                         output_world_id = world_out.id;
+                         operation = name;
+                         resource_ids = [];
+                         outcome = outcome_string;
+                         global_order = state.next_effect_call_id;
+                         replay_observation = entry.replay_observation;
+                       })
+                in
+                let state =
+                  { state with current_world = Some world_out.id }
+                in
+                let state, resources =
+                  List.fold_left
+                    (fun (state, resources) transition ->
+                      if transition.acquire then (
+                        if String_map.mem transition.alias state.resource_aliases then
+                          effect_abort state
+                            (Provider_contract_violation
+                               ("duplicate resource alias: " ^ transition.alias))
+                            [];
+                        let resource, state =
+                          fresh state
+                            (Type.Resource
+                               { name = transition.kind; state = transition.to_state })
+                            (Resource
+                               {
+                                 alias = Some transition.alias;
+                                 kind = transition.kind;
+                                 state = transition.to_state;
+                               })
+                            ("resource " ^ transition.alias)
+                        in
+                        let state =
+                          emit state
+                            (ResourceAcquire
+                               {
+                                 effect_call_id = state.next_effect_call_id;
+                                 value_id = resource.id;
+                                 alias = transition.alias;
+                                 kind = transition.kind;
+                                 state = transition.to_state;
+                               })
+                        in
+                        ( { state with resource_aliases =
+                                       String_map.add transition.alias resource
+                                         state.resource_aliases },
+                          resource :: resources ))
+                      else
+                        match String_map.find_opt transition.alias state.resource_aliases with
+                        | None ->
+                            effect_abort state
+                              (Resource_alias_consumed transition.alias)
+                              []
+                        | Some resource -> (
+                            match resource.payload with
+                            | Resource { kind; state = from_state; _ }
+                              when kind = transition.kind
+                                   && Option.value transition.from_state
+                                        ~default:from_state
+                                      = from_state ->
+                                let resource' =
+                                  {
+                                    resource with
+                                    typ =
+                                      Type.Resource
+                                        {
+                                          name = transition.kind;
+                                          state = transition.to_state;
+                                        };
+                                    payload =
+                                      Resource
+                                        {
+                                          alias = Some transition.alias;
+                                          kind = transition.kind;
+                                          state = transition.to_state;
+                                        };
+                                  }
+                                in
+                                let state =
+                                  emit state
+                                    (ResourceTransition
+                                       {
+                                         effect_call_id = state.next_effect_call_id;
+                                         value_id = resource.id;
+                                         alias = Some transition.alias;
+                                         kind = transition.kind;
+                                         from_state;
+                                         to_state = transition.to_state;
+                                       })
+                                in
+                                ( { state with resource_aliases =
+                                               String_map.add transition.alias
+                                                 resource'
+                                                 state.resource_aliases },
+                                  resource' :: resources )
+                            | Resource _ ->
+                                effect_abort state
+                                  (Effect_mismatch
+                                     {
+                                       operation = name;
+                                       argument_index = None;
+                                       expected = Some
+                                           (C_resource
+                                              {
+                                                alias = transition.alias;
+                                                kind = transition.kind;
+                                                state =
+                                                  Option.value
+                                                    transition.from_state
+                                                    ~default:transition.to_state;
+                                              });
+                                       actual = None;
+                                     })
+                                  []
+                            | _ ->
+                                effect_abort state
+                                  (Provider_contract_violation
+                                     "resource alias did not point to resource")
+                                  []))
+                    (state, []) entry.resource_transitions
+                in
+                let result_payload, state =
+                  match entry.response with
+                  | Effect_ok canonical -> (
+                      match payload_of_canonical state descriptor.effect_result canonical with
+                      | Ok (payload, state) -> (payload, state)
+                      | Error message ->
+                          effect_abort state
+                            (Provider_contract_violation message)
+                            [])
+                  | Effect_error { tag; payload } ->
+                      (if not (List.mem tag descriptor.effect_errors) then
+                         effect_abort state
+                           (Provider_contract_violation
+                              ("undeclared effect error: " ^ tag))
+                           []);
+                      let payload_value, state =
+                        match payload with
+                        | None -> (None, state)
+                        | Some canonical -> (
+                            match payload_of_canonical state Type.Unit canonical with
+                            | Ok (payload, state) ->
+                                let value, state =
+                                  fresh state Type.Unit payload "effect error payload"
+                                in
+                                (Some value, state)
+                            | Error message ->
+                                effect_abort state
+                                  (Provider_contract_violation message)
+                                  [])
+                      in
+                      let result_payload : payload =
+                        Variant
+                          (descriptor.effect_error_variant, tag, payload_value)
+                      in
+                      let pair : payload * state = (result_payload, state) in
+                      pair
+                in
+                let result_value, state =
+                  fresh state descriptor.effect_result result_payload
+                    ("effect result " ^ name)
+                in
+                let pair_value, state =
+                  fresh state
+                    (Type.Tuple [ Type.World; descriptor.effect_result ])
+                    (Tuple [ world_out; result_value ])
+                    ("effect pair " ^ name)
+                in
+                let state =
+                  {
+                    state with
+                    next_effect_call_id = state.next_effect_call_id + 1;
+                  }
+                in
+                ignore resources;
+                (pair_value, state, env)
+            | _ -> raise (Runtime_failure "effect first argument was not World"))
+        | Some _, [] -> raise (Runtime_failure "effect missing World argument"))
 
   and eval_stmt state env stmt =
     match stmt with
@@ -1476,6 +2097,29 @@ module Runtime = struct
         ^ "]"
     | ClosureEnter { value_id } -> "ClosureEnter #" ^ string_of_int value_id
     | ClosureReturn { value_id } -> "ClosureReturn #" ^ string_of_int value_id
+    | EffectAttempt { effect_call_id; operation; _ } ->
+        "EffectAttempt #" ^ string_of_int effect_call_id ^ " " ^ operation
+    | WorldTransition
+        {
+          effect_call_id;
+          input_world_id;
+          output_world_id;
+          operation;
+          outcome;
+          _;
+        } ->
+        "WorldTransition #" ^ string_of_int effect_call_id ^ " "
+        ^ operation ^ " world #" ^ string_of_int input_world_id ^ " -> #"
+        ^ string_of_int output_world_id ^ " " ^ outcome
+    | ResourceAcquire { effect_call_id; value_id; alias; kind; state } ->
+        "ResourceAcquire #" ^ string_of_int effect_call_id ^ " #"
+        ^ string_of_int value_id ^ " " ^ alias ^ " " ^ kind ^ "<" ^ state
+        ^ ">"
+    | ResourceTransition
+        { effect_call_id; value_id; kind; from_state; to_state; _ } ->
+        "ResourceTransition #" ^ string_of_int effect_call_id ^ " #"
+        ^ string_of_int value_id ^ " " ^ kind ^ "<" ^ from_state ^ "> -> <"
+        ^ to_state ^ ">"
     | NormalResult { value_id; typ } ->
         "NormalResult #" ^ string_of_int value_id ^ " : " ^ Type.to_string typ
 
@@ -1490,14 +2134,29 @@ module Runtime = struct
       trace = List.rev state.trace;
     }
 
-  let run ?step_limit program ~entry =
+  let effect_abort_report state cause diagnostics =
+    {
+      primary_cause = cause;
+      executed_steps = state.executed_steps;
+      trace = List.rev state.trace;
+      current_world = state.current_world;
+      live_resources =
+        String_map.bindings state.resource_aliases
+        |> List.map (fun (owner, (value : value)) ->
+               { value_id = value.id; typ = value.typ; owner });
+      consumed_script_entries = state.consumed_script_entries;
+      remaining_script_entries = List.length state.script;
+      diagnostics;
+    }
+
+  let run ?step_limit ?(effects = []) ?(script = []) program ~entry =
     match step_limit with
     | Some limit when limit < 0 -> Runtime_error "step_limit must be nonnegative"
     | _ -> (
-    match check_program program with
+    match check_program ~effects program with
     | Error errors -> Static_error errors
     | Ok () -> (
-        let ctx, _ = build_context program in
+        let ctx, _ = build_context ~effects program in
         let state =
           {
             ctx;
@@ -1506,10 +2165,31 @@ module Runtime = struct
             step_limit;
             executed_steps = 0;
             last_location = None;
+            script;
+            consumed_script_entries = 0;
+            next_effect_call_id = 0;
+            current_world = None;
+            resource_aliases = String_map.empty;
           }
         in
         try
-          let value, state = call_function state entry [] in
+          let args, state =
+            if effects = [] then ([], state)
+            else
+              let world, state = fresh state Type.World (World 0) "initial World" in
+              ([ world ], { state with current_world = Some world.id })
+          in
+          let value, state = call_function state entry args in
+          if effects <> [] && not (String_map.is_empty state.resource_aliases) then
+            raise
+              (Effect_abort
+                 ( Invalid_normal_termination "live resources at normal return",
+                   state,
+                   [] ));
+          if effects <> [] && state.script <> [] then
+            raise
+              (Effect_abort
+                 (Unused_effect_script (List.length state.script), state, []));
           let state =
             emit state (NormalResult { value_id = value.id; typ = value.typ })
           in
@@ -1519,5 +2199,7 @@ module Runtime = struct
         | Step_limit state -> (
             match step_limit with
             | None -> Runtime_error "internal step limit without configured limit"
-            | Some limit -> Step_limit_exceeded (step_limit_report state limit))))
+            | Some limit -> Step_limit_exceeded (step_limit_report state limit))
+        | Effect_abort (cause, state, diagnostics) ->
+            Effect_aborted (effect_abort_report state cause diagnostics)))
 end

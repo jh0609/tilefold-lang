@@ -21,6 +21,7 @@ let expect_run_completed program =
   match L.Runtime.run program ~entry:"main" with
   | L.Runtime.Completed { value; trace } -> (value, trace)
   | L.Runtime.Step_limit_exceeded _ -> failwith "unexpected step limit"
+  | L.Runtime.Effect_aborted _ -> failwith "unexpected effect abort"
   | L.Runtime.Static_error errors ->
       failwith
         (String.concat "; " (List.map L.Diagnostic.to_string errors))
@@ -30,6 +31,17 @@ let expect_step_limit ?(limit = 0) program =
   match L.Runtime.run ~step_limit:limit program ~entry:"main" with
   | L.Runtime.Step_limit_exceeded report -> report
   | L.Runtime.Completed _ -> assert false
+  | L.Runtime.Effect_aborted _ -> failwith "unexpected effect abort"
+  | L.Runtime.Static_error errors ->
+      failwith
+        (String.concat "; " (List.map L.Diagnostic.to_string errors))
+  | L.Runtime.Runtime_error message -> failwith message
+
+let expect_effect_abort ?effects ?script program =
+  match L.Runtime.run ?effects ?script program ~entry:"main" with
+  | L.Runtime.Effect_aborted report -> report
+  | L.Runtime.Completed _ -> assert false
+  | L.Runtime.Step_limit_exceeded _ -> assert false
   | L.Runtime.Static_error errors ->
       failwith
         (String.concat "; " (List.map L.Diagnostic.to_string errors))
@@ -45,8 +57,8 @@ let unit_fn name return_type body =
     body;
   }
 
-let program ?(structs = []) ?(variants = []) functions =
-  { L.structs; variants; functions }
+let program ?(resources = []) ?(structs = []) ?(variants = []) functions =
+  { L.resources; structs; variants; functions }
 
 let assert_has_event pred trace = assert (List.exists pred trace)
 
@@ -64,6 +76,130 @@ let point_struct =
   {
     L.struct_name = "Point";
     fields = [ ("x", L.Type.Nat); ("y", L.Type.Nat) ];
+  }
+
+let world_main return_expr =
+  {
+    L.fn_name = "main";
+    type_params = [];
+    capability_bounds = [];
+    params = [ ("world", L.Type.World) ];
+    return_type = L.Type.Tuple [ L.Type.World; L.Type.Nat ];
+    body = [ Return return_expr ];
+  }
+
+let ping_result_variant =
+  {
+    L.variant_name = "PingResult";
+    cases =
+      [
+        { case_name = "Ok"; payload = Some L.Type.Nat };
+        { case_name = "Denied"; payload = None };
+      ];
+  }
+
+let ping_effect =
+  {
+    L.effect_name = "Ping";
+    effect_args = [ L.Type.Nat ];
+    effect_result = L.Type.Variant "PingResult";
+    effect_error_variant = "PingResult";
+    effect_resource_transitions = [];
+    effect_errors = [ "Denied" ];
+  }
+
+let file_resource =
+  {
+    L.resource_name = "File";
+    states =
+      [
+        {
+          state_name = "Open";
+          terminal = false;
+          duplicable = false;
+          discardable = false;
+          comparable = false;
+        };
+        {
+          state_name = "Closed";
+          terminal = true;
+          duplicable = false;
+          discardable = true;
+          comparable = false;
+        };
+        {
+          state_name = "Poisoned";
+          terminal = false;
+          duplicable = false;
+          discardable = false;
+          comparable = false;
+        };
+      ];
+  }
+
+let () = ignore file_resource
+
+let open_result_variant =
+  {
+    L.variant_name = "OpenResult";
+    cases =
+      [
+        {
+          case_name = "Ok";
+          payload = Some (L.Type.Resource { name = "File"; state = "Open" });
+        };
+        { case_name = "Denied"; payload = Some L.Type.Unit };
+      ];
+  }
+
+let close_result_variant =
+  {
+    L.variant_name = "CloseResult";
+    cases =
+      [
+        {
+          case_name = "Ok";
+          payload = Some (L.Type.Resource { name = "File"; state = "Closed" });
+        };
+      ];
+  }
+
+let open_effect =
+  {
+    L.effect_name = "OpenFile";
+    effect_args = [ L.Type.Nat ];
+    effect_result = L.Type.Variant "OpenResult";
+    effect_error_variant = "OpenResult";
+    effect_resource_transitions =
+      [
+        {
+          alias = "file1";
+          kind = "File";
+          from_state = None;
+          to_state = "Open";
+          acquire = true;
+        };
+      ];
+    effect_errors = [ "Denied" ];
+  }
+
+let close_effect =
+  {
+    L.effect_name = "CloseFile";
+    effect_args = [ L.Type.Resource { name = "File"; state = "Open" } ];
+    effect_result = L.Type.Variant "CloseResult";
+    effect_error_variant = "CloseResult";
+    effect_resource_transitions =
+      [
+        {
+          alias = "file1";
+          kind = "File";
+          from_state = Some "Open";
+          to_state = "Closed";
+          acquire = false;
+        };
+      ];
+    effect_errors = [];
   }
 
 let test_move_and_return () =
@@ -775,6 +911,281 @@ let test_recursion_and_step_limit () =
            | _ -> false)
          loop_report.trace))
 
+let test_world_and_effect_script () =
+  let ok_arm =
+    {
+      L.pattern = P_variant ("PingResult", "Ok", Some (P_var "n"));
+      body = { stmts = []; yield = Var "n" };
+    }
+  in
+  let denied_arm =
+    {
+      L.pattern = P_variant ("PingResult", "Denied", None);
+      body = { stmts = []; yield = Literal (Nat (nat "0")) };
+    }
+  in
+  let main =
+    {
+      L.fn_name = "main";
+      type_params = [];
+      capability_bounds = [];
+      params = [ ("world", L.Type.World) ];
+      return_type = L.Type.Tuple [ L.Type.World; L.Type.Nat ];
+      body =
+        [
+          Let
+            ( P_tuple [ P_var "world2"; P_var "result" ],
+              Effect_call ("Ping", [ Var "world"; Literal (Nat (nat "7")) ]) );
+          Let (P_var "n", Match (Var "result", [ ok_arm; denied_arm ]));
+          Return (Tuple [ Var "world2"; Var "n" ]);
+        ];
+    }
+  in
+  let script =
+    [
+      {
+        L.expect_operation = "Ping";
+        expect_arguments = [ C_nat "7" ];
+        response = Effect_ok (C_variant ("Ok", Some (C_nat "8")));
+        resource_transitions = [];
+        replay_observation = Some (C_text "ping-ok");
+      };
+    ]
+  in
+  (match
+     L.Runtime.run ~effects:[ ping_effect ] ~script
+       (program ~variants:[ ping_result_variant ] [ main ])
+       ~entry:"main"
+   with
+  | L.Runtime.Completed { value; trace } ->
+      assert (L.Type.equal (L.Runtime.typ value) (L.Type.Tuple [ L.Type.World; L.Type.Nat ]));
+      assert_has_event
+        (function
+          | L.Runtime.WorldTransition { operation = "Ping"; _ } -> true
+          | _ -> false)
+        trace;
+      assert_has_event
+        (function
+          | L.Runtime.EffectAttempt { operation = "Ping"; _ } -> true
+          | _ -> false)
+        trace
+  | L.Runtime.Static_error errors ->
+      failwith
+        (String.concat "; " (List.map L.Diagnostic.to_string errors))
+  | L.Runtime.Step_limit_exceeded _ | L.Runtime.Effect_aborted _
+  | L.Runtime.Runtime_error _ ->
+      assert false);
+  let mismatch_script =
+    [
+      {
+        L.expect_operation = "Ping";
+        expect_arguments = [ C_nat "99" ];
+        response = Effect_ok (C_variant ("Ok", Some (C_nat "8")));
+        resource_transitions = [];
+        replay_observation = None;
+      };
+    ]
+  in
+  let report =
+    expect_effect_abort ~effects:[ ping_effect ] ~script:mismatch_script
+      (program ~variants:[ ping_result_variant ] [ main ])
+  in
+  (match report.primary_cause with
+  | L.Runtime.Effect_mismatch { argument_index = Some 0; _ } -> ()
+  | _ -> assert false);
+  assert (report.consumed_script_entries = 0);
+  assert (
+    not
+      (List.exists
+         (function
+           | L.Runtime.WorldTransition _ -> true
+           | _ -> false)
+         report.trace));
+  let exhausted =
+    expect_effect_abort ~effects:[ ping_effect ] ~script:[]
+      (program ~variants:[ ping_result_variant ] [ main ])
+  in
+  (match exhausted.primary_cause with
+  | L.Runtime.Effect_script_exhausted "Ping" -> ()
+  | _ -> assert false);
+  let unused =
+    expect_effect_abort ~effects:[ ping_effect ]
+      ~script:
+        [
+          {
+            L.expect_operation = "Ping";
+            expect_arguments = [ C_nat "1" ];
+            response = Effect_ok (C_variant ("Ok", Some (C_nat "2")));
+            resource_transitions = [];
+            replay_observation = None;
+          };
+        ]
+      (program
+         ~variants:[ ping_result_variant ]
+         [
+           world_main
+             (Tuple [ Var "world"; Literal (Nat (nat "0")) ]);
+         ])
+  in
+  (match unused.primary_cause with
+  | L.Runtime.Unused_effect_script 1 -> ()
+  | _ -> assert false)
+
+let test_world_static_rejections () =
+  let bad_no_world =
+    unit_fn "main" L.Type.Nat [ Return (Literal (Nat (nat "1"))) ]
+  in
+  (match L.check_program ~effects:[ ping_effect ] (program [ bad_no_world ]) with
+  | Ok () -> assert false
+  | Error errors ->
+      assert
+        (List.exists
+           (function
+             | L.Diagnostic.Invalid_entrypoint _ -> true
+             | _ -> false)
+           errors))
+
+let test_resource_effect_lifetime () =
+  let open_ok_arm =
+    {
+      L.pattern = P_variant ("OpenResult", "Ok", Some (P_var "file"));
+      body =
+        {
+          stmts =
+            [
+              Let
+                ( P_tuple [ P_var "world3"; P_var "closed_result" ],
+                  Effect_call ("CloseFile", [ Var "world2"; Var "file" ]) );
+              Let
+                ( P_var "n",
+                  Match
+                    ( Var "closed_result",
+                      [
+                        {
+                          pattern =
+                            P_variant ("CloseResult", "Ok", Some (P_var "closed"));
+                          body =
+                            {
+                              stmts = [ Expr (Discard (Var "closed")) ];
+                              yield = Literal (Nat (nat "1"));
+                            };
+                        };
+                      ] ) );
+            ];
+          yield = Tuple [ Var "world3"; Var "n" ];
+        };
+    }
+  in
+  let open_denied_arm =
+    {
+      L.pattern = P_variant ("OpenResult", "Denied", Some (P_var "e"));
+      body =
+        {
+          stmts = [ Expr (Discard (Var "e")) ];
+          yield = Tuple [ Var "world2"; Literal (Nat (nat "0")) ];
+        };
+    }
+  in
+  let main =
+    {
+      L.fn_name = "main";
+      type_params = [];
+      capability_bounds = [];
+      params = [ ("world", L.Type.World) ];
+      return_type = L.Type.Tuple [ L.Type.World; L.Type.Nat ];
+      body =
+        [
+          Let
+            ( P_tuple [ P_var "world2"; P_var "opened" ],
+              Effect_call ("OpenFile", [ Var "world"; Literal (Nat (nat "1")) ]) );
+          Return (Match (Var "opened", [ open_ok_arm; open_denied_arm ]));
+        ];
+    }
+  in
+  let script =
+    [
+      {
+        L.expect_operation = "OpenFile";
+        expect_arguments = [ C_nat "1" ];
+        response =
+          Effect_ok
+            (C_variant
+               ( "Ok",
+                 Some (C_resource { alias = "file1"; kind = "File"; state = "Open" })
+               ));
+        resource_transitions =
+          [
+            {
+              alias = "file1";
+              kind = "File";
+              from_state = None;
+              to_state = "Open";
+              acquire = true;
+            };
+          ];
+        replay_observation = None;
+      };
+      {
+        L.expect_operation = "CloseFile";
+        expect_arguments =
+          [ C_resource { alias = "file1"; kind = "File"; state = "Open" } ];
+        response =
+          Effect_ok
+            (C_variant
+               ( "Ok",
+                 Some
+                   (C_resource
+                      { alias = "file1"; kind = "File"; state = "Closed" }) ));
+        resource_transitions =
+          [
+            {
+              alias = "file1";
+              kind = "File";
+              from_state = Some "Open";
+              to_state = "Closed";
+              acquire = false;
+            };
+          ];
+        replay_observation = None;
+      };
+    ]
+  in
+  match
+    L.Runtime.run
+      ~effects:[ open_effect; close_effect ]
+      ~script
+      (program ~resources:[ file_resource ]
+         ~variants:[ open_result_variant; close_result_variant ]
+         [ main ])
+      ~entry:"main"
+  with
+  | L.Runtime.Completed { trace; _ } ->
+      assert_has_event
+        (function
+          | L.Runtime.ResourceAcquire { alias = "file1"; kind = "File"; state = "Open"; _ } ->
+              true
+          | _ -> false)
+        trace;
+      assert_has_event
+        (function
+          | L.Runtime.ResourceTransition
+              { alias = Some "file1"; kind = "File"; from_state = "Open"; to_state = "Closed"; _ } ->
+              true
+          | _ -> false)
+        trace;
+      assert_has_event
+        (function
+          | L.Runtime.Discard { typ = L.Type.Resource { name = "File"; state = "Closed" }; _ } ->
+              true
+          | _ -> false)
+        trace
+  | L.Runtime.Static_error errors ->
+      failwith
+        (String.concat "; " (List.map L.Diagnostic.to_string errors))
+  | L.Runtime.Effect_aborted report ->
+      failwith (String.concat "; " report.diagnostics)
+  | L.Runtime.Step_limit_exceeded _ | L.Runtime.Runtime_error _ -> assert false
+
 let () =
   test_move_and_return ();
   test_duplicate_and_discard ();
@@ -788,4 +1199,7 @@ let () =
   test_closure_capture_call ();
   test_closure_duplicate ();
   test_closure_rejections ();
-  test_recursion_and_step_limit ()
+  test_recursion_and_step_limit ();
+  test_world_and_effect_script ();
+  test_world_static_rejections ();
+  test_resource_effect_lifetime ()
