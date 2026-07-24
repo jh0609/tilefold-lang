@@ -23,6 +23,19 @@ type runtime_error =
       node_id : Core_graph.Node_id.t;
       typ : Core_type.t;
     }
+  | Function_template_not_found of {
+      node_id : Core_graph.Node_id.t;
+      template_id : Core_graph.Function_template_id.t;
+    }
+  | Function_capture_delivery_invariant_violation of {
+      node_id : Core_graph.Node_id.t;
+      message : string;
+    }
+  | Invalid_arrow_runtime_payload of {
+      node_id : Core_graph.Node_id.t;
+      expected : Core_type.t;
+      actual : Core_type.t;
+    }
   | Runtime_invariant_violation of string
 
 module Machine : sig
@@ -59,6 +72,12 @@ type run_result =
     }
 
 val initialize :
+  Core_graph.Validated_graph.t ->
+  input:Runtime_value.payload ->
+  (Machine.t, initialization_error) result
+
+val initialize_with_templates :
+  Core_graph.Function_template.t list ->
   Core_graph.Validated_graph.t ->
   input:Runtime_value.payload ->
   (Machine.t, initialization_error) result

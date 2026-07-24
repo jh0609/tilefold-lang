@@ -111,8 +111,8 @@ one `WorldTransition`, then resource acquire/transition events for the same
 `effect_call_id`. Mismatch and script exhaustion record `EffectAttempt` only
 and abort without appending normal transition events.
 
-The first executable slice implements a minimal typed `RewriteEvent` subset for
-`Succ`, `Copy`, and `Drop`. It records:
+The current executable slices implement a minimal typed `RewriteEvent` subset
+for `Succ`, `Copy`, `Drop`, and `Function`. It records:
 
 - sequential event index starting at `0`,
 - rule,
@@ -127,6 +127,11 @@ distinct logical IDs and `Rewrite_output` origins whose port keys identify the
 corresponding `left` or `right` output. This order is independent of edge list
 order, downstream node IDs, scheduler selection order, and container traversal
 order.
+
+A `Function` event consumes capture value IDs in canonical template capture
+order and creates exactly one closure runtime value. A capture-free Function
+event records `consumed = []`. Registry lookup and closure payload allocation
+are not separate semantic trace events.
 
 Literal materialization, execution input materialization, delivery along edges,
 ready-candidate maintenance, and other mechanical state construction are not

@@ -2,6 +2,7 @@ type rule =
   | Succ
   | Drop
   | Copy
+  | Function
 
 type t = {
   index : int;

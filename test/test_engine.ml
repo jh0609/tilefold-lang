@@ -47,7 +47,7 @@ let run_completed machine =
 let payload_nat_string value =
   match Runtime_value.payload value with
   | Runtime_value.Nat nat -> Nat.to_string nat
-  | Runtime_value.Unit -> assert false
+  | Runtime_value.Unit | Runtime_value.Closure _ -> assert false
 
 let entry_unit_to_nat ?(order = [ "succ"; "drop" ]) ?(literal = "3") () =
   let nodes =
@@ -259,6 +259,191 @@ let copy_arrow_graph () =
   Raw_graph.of_lists ~nodes ~edges
     ~default_node_order:[ node_id "copy"; node_id "drop" ]
   |> validate_ok
+
+let template_id value =
+  match Function_template_id.of_string value with
+  | Ok id -> id
+  | Error message -> failwith message
+
+let capture name typ = { key = Port_key.capture name; typ }
+
+let validate_with_templates_ok templates raw =
+  match validate_with_templates templates raw with
+  | Ok graph -> graph
+  | Error errors ->
+      failwith
+        ("validation failed: "
+        ^ String.concat "; " (List.map validation_error_to_string errors))
+
+let init_with_templates_ok templates graph input =
+  match Engine.initialize_with_templates templates graph ~input with
+  | Ok machine -> machine
+  | Error error -> failwith (Engine.initialization_error_to_string error)
+
+let function_template ?(id = "f") ?(captures = []) () =
+  let nodes =
+    [
+      node "body-param" (Parameter Core_type.Unit);
+      node "body-drop" (Drop Core_type.Unit);
+      node "body-lit" (Nat_literal (nat "7"));
+      node "body-result" (Result Core_type.Nat);
+    ]
+  in
+  let edges =
+    [
+      edge "body-e-param-drop" (pref "body-param" "value") (pref "body-drop" "input");
+      edge "body-e-lit-result" (pref "body-lit" "value") (pref "body-result" "value");
+    ]
+  in
+  let body =
+    Raw_graph.of_lists ~nodes ~edges ~default_node_order:[ node_id "body-drop" ]
+    |> validate_ok
+  in
+  Function_template.create ~id:(template_id id) ~parameter_type:Core_type.Unit
+    ~result_type:Core_type.Nat ~captures ~body ()
+
+let function_signature template captures =
+  {
+    template_id = Function_template.id template;
+    parameter_type = Function_template.parameter_type template;
+    result_type = Function_template.result_type template;
+    captures;
+  }
+
+let function_no_capture_graph ?(function_id = "function") ?(result_arrow = true)
+    ?(order = [ function_id; "drop" ]) () =
+  let template = function_template () in
+  let arrow = Core_type.Arrow (Core_type.Unit, Core_type.Nat) in
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop" (Drop Core_type.Unit);
+      node function_id (Function (function_signature template []));
+      node "result" (Result (if result_arrow then arrow else Core_type.Unit));
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop" "input");
+      edge "e-function-result" (pref function_id "value") (pref "result" "value");
+    ]
+  in
+  ( template,
+    Raw_graph.of_lists ~nodes ~edges ~default_node_order:(List.map node_id order)
+    |> validate_with_templates_ok [ template ] )
+
+let function_capture_graph ?(reversed_edges = false) () =
+  let captures = [ capture "n" Core_type.Nat ] in
+  let template = function_template ~captures () in
+  let arrow = Core_type.Arrow (Core_type.Unit, Core_type.Nat) in
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop" (Drop Core_type.Unit);
+      node "capture-lit" (Nat_literal (nat "5"));
+      node "function" (Function (function_signature template captures));
+      node "result" (Result arrow);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop" "input");
+      edge "e-capture" (pref "capture-lit" "value")
+        { node_id = node_id "function"; port_key = Port_key.capture "n" };
+      edge "e-function-result" (pref "function" "value") (pref "result" "value");
+    ]
+  in
+  let edges = if reversed_edges then List.rev edges else edges in
+  ( template,
+    Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:[ node_id "function"; node_id "drop" ]
+    |> validate_with_templates_ok [ template ] )
+
+let delayed_capture_graph () =
+  let captures = [ capture "n" Core_type.Nat ] in
+  let template = function_template ~captures () in
+  let arrow = Core_type.Arrow (Core_type.Unit, Core_type.Nat) in
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop-unit" (Drop Core_type.Unit);
+      node "lit" (Nat_literal (nat "5"));
+      node "copy" (Copy Core_type.Nat);
+      node "drop-nat" (Drop Core_type.Nat);
+      node "function" (Function (function_signature template captures));
+      node "result" (Result arrow);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop-unit" "input");
+      edge "e-lit-copy" (pref "lit" "value") (pref "copy" "input");
+      edge "e-copy-left-function" (pref "copy" "left")
+        { node_id = node_id "function"; port_key = Port_key.capture "n" };
+      edge "e-copy-right-drop" (pref "copy" "right") (pref "drop-nat" "input");
+      edge "e-function-result" (pref "function" "value") (pref "result" "value");
+    ]
+  in
+  ( template,
+    Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:
+        [ node_id "copy"; node_id "function"; node_id "drop-unit"; node_id "drop-nat" ]
+    |> validate_with_templates_ok [ template ] )
+
+let closure_copy_drop_graph ?(copy_order = [ "function"; "copy"; "drop-left"; "drop-right"; "drop-unit" ])
+    () =
+  let template = function_template () in
+  let arrow = Core_type.Arrow (Core_type.Unit, Core_type.Nat) in
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop-unit" (Drop Core_type.Unit);
+      node "unit-result" Unit_literal;
+      node "function" (Function (function_signature template []));
+      node "copy" (Copy arrow);
+      node "drop-left" (Drop arrow);
+      node "drop-right" (Drop arrow);
+      node "result" (Result Core_type.Unit);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop-unit" "input");
+      edge "e-unit-result" (pref "unit-result" "value") (pref "result" "value");
+      edge "e-function-copy" (pref "function" "value") (pref "copy" "input");
+      edge "e-copy-left-drop" (pref "copy" "left") (pref "drop-left" "input");
+      edge "e-copy-right-drop" (pref "copy" "right") (pref "drop-right" "input");
+    ]
+  in
+  ( template,
+    Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:(List.map node_id copy_order)
+    |> validate_with_templates_ok [ template ] )
+
+let closure_drop_graph () =
+  let template = function_template () in
+  let arrow = Core_type.Arrow (Core_type.Unit, Core_type.Nat) in
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop-unit" (Drop Core_type.Unit);
+      node "unit-result" Unit_literal;
+      node "function" (Function (function_signature template []));
+      node "drop-closure" (Drop arrow);
+      node "result" (Result Core_type.Unit);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop-unit" "input");
+      edge "e-unit-result" (pref "unit-result" "value") (pref "result" "value");
+      edge "e-function-drop" (pref "function" "value") (pref "drop-closure" "input");
+    ]
+  in
+  ( template,
+    Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:[ node_id "function"; node_id "drop-closure"; node_id "drop-unit" ]
+    |> validate_with_templates_ok [ template ] )
 
 let stuck_copy_self_cycle () =
   let nodes =
@@ -483,7 +668,8 @@ let () =
       (fun value ->
         match Runtime_value.payload value with
         | Runtime_value.Unit -> "Unit"
-        | Runtime_value.Nat _ -> "Nat")
+        | Runtime_value.Nat _ -> "Nat"
+        | Runtime_value.Closure _ -> "Closure")
       copy_event.Rewrite_event.created
     = [ "Unit"; "Unit" ])
 
@@ -492,14 +678,7 @@ let () =
   | Error (Engine.Unsupported_runtime_input_type (Core_type.Arrow (Core_type.Unit, Core_type.Nat))) ->
       ()
   | _ -> assert false);
-  assert (
-    Engine.runtime_error_to_string
-      (Engine.Unsupported_copy_payload_type
-         {
-           node_id = node_id "copy";
-           typ = Core_type.Arrow (Core_type.Unit, Core_type.Nat);
-         })
-    = "unsupported Copy payload type at copy: Unit -> Nat")
+  assert (true)
 
 let () =
   let reversed_edges =
@@ -707,3 +886,176 @@ let () =
           assert (Node_id.to_string event1.Rewrite_event.subject = "succ")
       | _ -> assert false)
   | _ -> assert false
+
+let closure_of_value value =
+  match Runtime_value.payload value with
+  | Runtime_value.Closure closure -> closure
+  | Runtime_value.Unit | Runtime_value.Nat _ -> assert false
+
+let () =
+  let template, graph = function_no_capture_graph () in
+  let machine = init_with_templates_ok [ template ] graph Runtime_value.Unit in
+  assert (
+    List.map (fun c -> Node_id.to_string c.Engine.node_id)
+      (Engine.Machine.ready_candidates machine)
+    = [ "function"; "drop" ]);
+  match Engine.step machine with
+  | Engine.Rewritten { event; _ } ->
+      assert (Rewrite_event.rule_to_string event.Rewrite_event.rule = "Function");
+      assert (Node_id.to_string event.Rewrite_event.subject = "function");
+      assert (event.Rewrite_event.ready_epoch = 0);
+      assert (event.Rewrite_event.consumed = []);
+      assert (List.length event.Rewrite_event.created = 1);
+      let closure_value = List.hd event.Rewrite_event.created in
+      let closure = closure_of_value closure_value in
+      assert (
+        Function_template_id.equal closure.Runtime_value.template_id
+          (Function_template.id template));
+      assert (
+        Core_type.equal (Runtime_value.typ closure_value)
+          (Core_type.Arrow (Core_type.Unit, Core_type.Nat)));
+      assert (closure.captures = [])
+  | _ -> assert false
+
+let () =
+  let template, graph = function_capture_graph () in
+  let value, trace =
+    run_completed (init_with_templates_ok [ template ] graph Runtime_value.Unit)
+  in
+  let closure = closure_of_value value in
+  assert (List.length closure.Runtime_value.captures = 1);
+  let function_event = List.hd trace in
+  assert (Rewrite_event.rule_to_string function_event.Rewrite_event.rule = "Function");
+  assert (
+    List.map Runtime_value.Value_id.to_string function_event.Rewrite_event.consumed
+    = [ "literal:capture-lit" ]);
+  let captured = List.hd closure.Runtime_value.captures in
+  assert (Port_key.to_string captured.capture_key = "capture:n");
+  assert (
+    Runtime_value.Value_id.to_string (Runtime_value.id captured.value)
+    = "literal:capture-lit");
+  assert (
+    Runtime_value.origin captured.value
+    = Runtime_value.Program_literal (node_id "capture-lit"));
+  assert (
+    not
+      (Runtime_value.Value_id.equal (Runtime_value.id value)
+         (Runtime_value.id captured.value)))
+
+let () =
+  let template, graph_a = function_capture_graph () in
+  let _, graph_b = function_capture_graph ~reversed_edges:true () in
+  let value_a, trace_a =
+    run_completed (init_with_templates_ok [ template ] graph_a Runtime_value.Unit)
+  in
+  let value_b, trace_b =
+    run_completed (init_with_templates_ok [ template ] graph_b Runtime_value.Unit)
+  in
+  assert (Runtime_value.equal value_a value_b);
+  assert (
+    List.map
+      (fun event -> List.map Runtime_value.Value_id.to_string event.Rewrite_event.consumed)
+      trace_a
+    =
+    List.map
+      (fun event -> List.map Runtime_value.Value_id.to_string event.Rewrite_event.consumed)
+      trace_b)
+
+let () =
+  let template, graph = delayed_capture_graph () in
+  let machine = init_with_templates_ok [ template ] graph Runtime_value.Unit in
+  assert (
+    List.map (fun c -> Node_id.to_string c.Engine.node_id)
+      (Engine.Machine.ready_candidates machine)
+    = [ "copy"; "drop-unit" ]);
+  match Engine.step machine with
+  | Engine.Rewritten { machine; event } ->
+      assert (Rewrite_event.rule_to_string event.Rewrite_event.rule = "Copy");
+      assert (
+        List.exists
+          (fun c ->
+            Node_id.to_string c.Engine.node_id = "function"
+            && c.Engine.ready_epoch = 1)
+          (Engine.Machine.ready_candidates machine))
+  | _ -> assert false
+
+let () =
+  let template, graph = closure_drop_graph () in
+  let value, trace =
+    run_completed (init_with_templates_ok [ template ] graph Runtime_value.Unit)
+  in
+  assert (Runtime_value.payload value = Runtime_value.Unit);
+  assert_rules [ "Function"; "Drop"; "Drop" ] trace;
+  let drop_event = List.nth trace 1 in
+  assert (Rewrite_event.rule_to_string drop_event.Rewrite_event.rule = "Drop");
+  assert (drop_event.Rewrite_event.created = [])
+
+let () =
+  let template, graph = closure_copy_drop_graph () in
+  let value, trace =
+    run_completed (init_with_templates_ok [ template ] graph Runtime_value.Unit)
+  in
+  assert (Runtime_value.payload value = Runtime_value.Unit);
+  assert_rules [ "Function"; "Drop"; "Copy"; "Drop"; "Drop" ] trace;
+  let function_event = List.nth trace 0 in
+  let copy_event = List.nth trace 2 in
+  assert (List.length function_event.Rewrite_event.created = 1);
+  assert (List.length copy_event.Rewrite_event.consumed = 1);
+  assert (List.length copy_event.Rewrite_event.created = 2);
+  let input_id = List.hd copy_event.Rewrite_event.consumed in
+  let left = List.nth copy_event.Rewrite_event.created 0 in
+  let right = List.nth copy_event.Rewrite_event.created 1 in
+  assert (
+    not
+      (Runtime_value.Value_id.equal (Runtime_value.id left)
+         (Runtime_value.id right)));
+  assert (not (Runtime_value.Value_id.equal (Runtime_value.id left) input_id));
+  assert (not (Runtime_value.Value_id.equal (Runtime_value.id right) input_id));
+  let left_closure = closure_of_value left in
+  let right_closure = closure_of_value right in
+  assert (Runtime_value.closure_equal left_closure right_closure);
+  assert (
+    Function_template_id.equal left_closure.template_id right_closure.template_id);
+  assert (
+    List.map
+      (fun value ->
+        match Runtime_value.origin value with
+        | Runtime_value.Rewrite_output { port_key; _ } -> Port_key.to_string port_key
+        | _ -> assert false)
+      copy_event.Rewrite_event.created
+    = [ "left"; "right" ])
+
+let () =
+  let template, graph = closure_copy_drop_graph () in
+  let _, trace_a =
+    run_completed (init_with_templates_ok [ template ] graph Runtime_value.Unit)
+  in
+  let _, trace_b =
+    run_completed (init_with_templates_ok [ template ] graph Runtime_value.Unit)
+  in
+  assert (List.map Rewrite_event.to_string trace_a = List.map Rewrite_event.to_string trace_b);
+  assert (
+    List.map
+      (fun event -> List.map Runtime_value.to_string event.Rewrite_event.created)
+      trace_a
+    =
+    List.map
+      (fun event -> List.map Runtime_value.to_string event.Rewrite_event.created)
+      trace_b)
+
+let () =
+  let template, graph_a = function_no_capture_graph ~function_id:"function-a" () in
+  let _, graph_b = function_no_capture_graph ~function_id:"function-b" () in
+  let value_a, _ =
+    run_completed (init_with_templates_ok [ template ] graph_a Runtime_value.Unit)
+  in
+  let value_b, _ =
+    run_completed (init_with_templates_ok [ template ] graph_b Runtime_value.Unit)
+  in
+  assert (
+    not
+      (Runtime_value.Value_id.equal (Runtime_value.id value_a)
+         (Runtime_value.id value_b)));
+  assert (
+    Runtime_value.payload_equal (Runtime_value.payload value_a)
+      (Runtime_value.payload value_b))

@@ -676,3 +676,320 @@ let () =
           Node_id.to_string node_id = "copy" && Port_key.to_string port_key = "left"
       | _ -> false)
     errors
+
+let template_id value =
+  match Function_template_id.of_string value with
+  | Ok id -> id
+  | Error message -> failwith message
+
+let capture name typ = { key = Port_key.capture name; typ }
+
+let template_body ?(result_type = Core_type.Nat)
+    ?(default_node_order = [ node_id "body-drop" ])
+    () =
+  let nodes =
+    [
+      node "body-param" (Parameter Core_type.Unit);
+      node "body-drop" (Drop Core_type.Unit);
+      node "body-lit" (Nat_literal (nat "7"));
+      node "body-result" (Result result_type);
+    ]
+  in
+  let edges =
+    [
+      edge "body-e-param-drop" (pref "body-param" "value") (pref "body-drop" "input");
+      edge "body-e-lit-result" (pref "body-lit" "value") (pref "body-result" "value");
+    ]
+  in
+  validate
+    (Raw_graph.of_lists ~nodes ~edges ~default_node_order)
+  |> function
+  | Ok graph -> graph
+  | Error errors ->
+      failwith
+        ("template body validation failed: "
+        ^ String.concat "; " (List.map validation_error_to_string errors))
+
+let fn_template ?(id = "f") ?(captures = []) ?(parameter_type = Core_type.Unit)
+    ?(result_type = Core_type.Nat) ?dependencies ?body () =
+  let body =
+    match body with
+    | Some body -> body
+    | None -> template_body ~result_type ()
+  in
+  let dependencies = Option.value dependencies ~default:[] in
+  Function_template.create ~dependencies:(List.map template_id dependencies)
+    ~id:(template_id id) ~parameter_type ~result_type ~captures ~body ()
+
+let function_graph ?(function_captures : capture list option) ?(template = fn_template ())
+    ?(default_node_order = [ node_id "function"; node_id "drop" ])
+    ?priority_spine ?(function_result_type = Core_type.Nat) () =
+  let function_captures = Option.value function_captures ~default:[] in
+  let signature =
+    {
+      template_id = Function_template.id template;
+      parameter_type = Core_type.Unit;
+      result_type = function_result_type;
+      captures = function_captures;
+    }
+  in
+  let arrow = Core_type.Arrow (Core_type.Unit, function_result_type) in
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop" (Drop Core_type.Unit);
+      node "function" (Function signature);
+      node "result" (Result arrow);
+    ]
+    @ List.mapi
+        (fun index (capture : capture) ->
+          match capture.typ with
+          | Core_type.Unit -> node ("capture-lit-" ^ string_of_int index) Unit_literal
+          | Core_type.Nat ->
+              node ("capture-lit-" ^ string_of_int index) (Nat_literal (nat "1"))
+          | Core_type.Arrow _ ->
+              node ("capture-lit-" ^ string_of_int index) Unit_literal)
+        function_captures
+  in
+  let capture_edges =
+    function_captures
+    |> List.mapi (fun index (capture : capture) ->
+           edge
+             ("e-capture-" ^ string_of_int index)
+             (pref ("capture-lit-" ^ string_of_int index) "value")
+             { node_id = node_id "function"; port_key = capture.key })
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop" "input");
+      edge "e-function-result" (pref "function" "value") (pref "result" "value");
+    ]
+    @ capture_edges
+  in
+  Raw_graph.of_lists_with_priority_spine ~nodes ~edges ~default_node_order
+    ~priority_spine
+
+let validate_with_template_errors templates graph =
+  match validate_with_templates templates graph with
+  | Ok _ -> assert false
+  | Error errors -> errors
+
+let () =
+  let template = fn_template () in
+  match validate_with_templates [ template ] (function_graph ~template ()) with
+  | Ok graph ->
+      assert (
+        List.map Node_id.to_string (Validated_graph.default_node_order graph)
+        = [ "function"; "drop" ])
+  | Error errors ->
+      failwith
+        ("expected Function graph to validate, got: "
+        ^ String.concat "; " (List.map validation_error_to_string errors))
+
+let () =
+  let template = fn_template ~captures:[ capture "n" Core_type.Nat ] () in
+  let graph =
+    function_graph ~template ~function_captures:[ capture "n" Core_type.Nat ] ()
+  in
+  match validate_with_templates [ template ] graph with
+  | Ok _ -> ()
+  | Error errors ->
+      failwith
+        ("expected captured Function graph to validate, got: "
+        ^ String.concat "; " (List.map validation_error_to_string errors))
+
+let () =
+  let template_a = fn_template ~id:"dup" () in
+  let template_b = fn_template ~id:"dup" () in
+  let errors =
+    validate_with_template_errors [ template_a; template_b ]
+      (function_graph ~template:template_a ())
+  in
+  has_error
+    (function
+      | Duplicate_function_template_id id -> Function_template_id.to_string id = "dup"
+      | _ -> false)
+    errors
+
+let () =
+  let template = fn_template ~id:"f" () in
+  let missing_template = fn_template ~id:"missing" () in
+  let errors =
+    validate_with_template_errors [ template ] (function_graph ~template:missing_template ())
+  in
+  has_error
+    (function
+      | Missing_function_template { template_id; _ } ->
+          Function_template_id.to_string template_id = "missing"
+      | _ -> false)
+    errors
+
+let () =
+  let template = fn_template ~result_type:Core_type.Nat () in
+  let errors =
+    validate_with_template_errors [ template ]
+      (function_graph ~template ~function_result_type:Core_type.Unit ())
+  in
+  has_error (function Function_signature_mismatch _ -> true | _ -> false) errors
+
+let () =
+  let template =
+    fn_template
+      ~captures:[ capture "n" Core_type.Nat; capture "n" Core_type.Nat ]
+      ()
+  in
+  let errors =
+    validate_with_template_errors [ template ]
+      (function_graph ~template ~function_captures:[ capture "n" Core_type.Nat ] ())
+  in
+  has_error (function Duplicate_capture_key _ -> true | _ -> false) errors
+
+let () =
+  let template =
+    fn_template
+      ~captures:[ capture "n" Core_type.Nat; capture "m" Core_type.Nat ]
+      ()
+  in
+  let errors =
+    validate_with_template_errors [ template ]
+      (function_graph ~template ~function_captures:[ capture "n" Core_type.Nat ] ())
+  in
+  has_error
+    (function
+      | Missing_capture { capture_key; _ } ->
+          Port_key.to_string capture_key = "capture:m"
+      | _ -> false)
+    errors
+
+let () =
+  let template = fn_template ~captures:[ capture "n" Core_type.Nat ] () in
+  let errors =
+    validate_with_template_errors [ template ]
+      (function_graph ~template
+         ~function_captures:[ capture "n" Core_type.Nat; capture "extra" Core_type.Nat ]
+         ())
+  in
+  has_error
+    (function
+      | Unexpected_capture { capture_key; _ } ->
+          Port_key.to_string capture_key = "capture:extra"
+      | _ -> false)
+    errors
+
+let () =
+  let template = fn_template ~captures:[ capture "n" Core_type.Nat ] () in
+  let errors =
+    validate_with_template_errors [ template ]
+      (function_graph ~template ~function_captures:[ capture "n" Core_type.Unit ] ())
+  in
+  has_error (function Function_capture_type_mismatch _ -> true | _ -> false) errors
+
+let () =
+  let template =
+    fn_template
+      ~captures:[ capture "a" Core_type.Nat; capture "b" Core_type.Nat ]
+      ()
+  in
+  let errors =
+    validate_with_template_errors [ template ]
+      (function_graph ~template
+         ~function_captures:[ capture "b" Core_type.Nat; capture "a" Core_type.Nat ]
+         ())
+  in
+  has_error (function Function_capture_order_mismatch _ -> true | _ -> false) errors
+
+let () =
+  let template = fn_template () in
+  let errors =
+    validate_with_template_errors [ template ]
+      (function_graph ~template ~default_node_order:[ node_id "drop" ] ())
+  in
+  has_error
+    (function
+      | Executable_node_missing_from_default_order id ->
+          Node_id.to_string id = "function"
+      | _ -> false)
+    errors
+
+let () =
+  let template = fn_template () in
+  let errors =
+    validate_with_template_errors [ template ]
+      (function_graph ~template
+         ~default_node_order:[ node_id "function"; node_id "function"; node_id "drop" ]
+         ())
+  in
+  has_error
+    (function
+      | Duplicate_default_order_member id -> Node_id.to_string id = "function"
+      | _ -> false)
+    errors
+
+let () =
+  let template = fn_template () in
+  let errors =
+    validate_with_template_errors [ template ]
+      (function_graph ~template ~priority_spine:[ node_id "missing" ] ())
+  in
+  has_error (function Priority_spine_node_missing _ -> true | _ -> false) errors
+
+let () =
+  let template = fn_template ~id:"cyclic" ~dependencies:[ "cyclic" ] () in
+  let errors =
+    validate_with_template_errors [ template ] (function_graph ~template ())
+  in
+  has_error (function Function_template_cycle _ -> true | _ -> false) errors
+
+let () =
+  let template = fn_template () in
+  match
+    validate_with_templates [ template ]
+      (function_graph ~template ~priority_spine:[ node_id "function" ] ())
+  with
+  | Ok graph ->
+      assert (
+        Option.map (List.map Node_id.to_string)
+          (Validated_graph.priority_spine graph)
+        = Some [ "function" ])
+  | Error errors ->
+      failwith
+        ("expected Function PrioritySpine to validate, got: "
+        ^ String.concat "; " (List.map validation_error_to_string errors))
+
+let () =
+  let body_nodes =
+    [
+      node "unit-body-param" (Parameter Core_type.Unit);
+      node "unit-body-result" (Result Core_type.Unit);
+    ]
+  in
+  let body_edges =
+    [
+      edge "unit-body-edge" (pref "unit-body-param" "value")
+        (pref "unit-body-result" "value");
+    ]
+  in
+  let bad_body =
+    match
+      validate
+        (Raw_graph.of_lists ~nodes:body_nodes ~edges:body_edges
+           ~default_node_order:[])
+    with
+    | Ok graph -> graph
+    | Error errors ->
+        failwith
+          ("expected unit body to validate, got: "
+          ^ String.concat "; " (List.map validation_error_to_string errors))
+  in
+  let template = fn_template ~body:bad_body ~result_type:Core_type.Nat () in
+  let errors =
+    validate_with_template_errors [ template ] (function_graph ~template ())
+  in
+  has_error
+    (function
+      | Function_template_body_signature_mismatch
+          { expected = Core_type.Arrow (Core_type.Unit, Core_type.Nat); actual = Core_type.Arrow (Core_type.Unit, Core_type.Unit); _ }
+        ->
+          true
+      | _ -> false)
+    errors

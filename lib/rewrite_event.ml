@@ -2,6 +2,7 @@ type rule =
   | Succ
   | Drop
   | Copy
+  | Function
 
 type t = {
   index : int;
@@ -16,6 +17,7 @@ let rule_to_string = function
   | Succ -> "Succ"
   | Drop -> "Drop"
   | Copy -> "Copy"
+  | Function -> "Function"
 
 let to_string event =
   "event " ^ string_of_int event.index ^ " " ^ rule_to_string event.rule

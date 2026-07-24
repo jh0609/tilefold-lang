@@ -58,11 +58,12 @@ Canonical default node order is now provisional: each template carries
 used as fallback scheduling metadata. This is recorded in
 `docs/decisions/0009-canonical-default-node-order.md`.
 
-The first runtime vertical slice is now implemented for validated graphs with
-`Unit`, `Nat`, `Succ`, `Copy`, `Drop`, `Parameter`, and `Result`. It
+The runtime vertical slices are now implemented for validated graphs with
+`Unit`, `Nat`, `Succ`, `Copy`, `Drop`, `Function`, `Parameter`, and `Result`. They
 materializes input and literals, executes `Succ`, `Copy`, and `Drop`, records
-minimal rewrite events, and reports `Completed`, `Stuck`, or typed runtime
-errors. This started in
+minimal rewrite events, creates closure values through `Function`, supports
+Arrow closure `Copy`/`Drop`, and reports `Completed`, `Stuck`, or typed
+runtime errors. This started in
 `docs/decisions/0010-first-runtime-interpreter-vertical-slice.md` and was
 extended by `docs/decisions/0011-copy-rewrite-and-linear-duplication.md`.
 `docs/decisions/0012-priority-spine-static-scheduling.md` implements the first
@@ -70,6 +71,8 @@ static `PrioritySpine` validation and runtime scheduling slice.
 `docs/decisions/0013-apply-enter-return-call-lifecycle.md` confirms the
 multi-step `ApplyEnter` -> function body rewrites -> `ApplyReturn` lifecycle
 and keeps several function scheduling and boundary policies deferred.
+`docs/decisions/0019-function-closure-creation-and-arrow-copy.md` implements
+Function template references, closure creation, and Arrow closure Copy/Drop.
 
 `linear-v0` is now recorded as a separate provisional semantics profile in
 `docs/language-spec.md` and
@@ -167,10 +170,10 @@ Still open:
   consumed, created, changed, and provenance behavior.
 - Impact on future compatibility: Once golden traces exist, port schemas and
   rule identities are expensive to change.
-- Recommendation: The first implemented rewrite subset is `Succ`, `Copy`, and
-  `Drop`, with `Copy` currently limited to `Unit` and `Nat` runtime payloads.
-  Keep `Copy (Arrow _)`, `Function`, `Apply`, and `NatRec` open until closure
-  validation, trace behavior, and termination arguments are specified.
+- Recommendation: The implemented rewrite subset is now `Succ`, `Copy`,
+  `Drop`, and `Function`. `Copy (Arrow _)` is supported for closure payloads.
+  Keep `Apply`, function instance execution, and `NatRec` open until their
+  graph patch, scheduling, trace, and termination details are specified.
 
 ## 2. How are immutable logical values represented?
 

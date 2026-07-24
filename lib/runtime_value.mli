@@ -6,9 +6,24 @@ module Value_id : sig
   val to_string : t -> string
 end
 
+type t
+
+type captured_value = {
+  capture_key : Core_graph.Port_key.t;
+  value : t;
+}
+
+type closure = {
+  template_id : Core_graph.Function_template_id.t;
+  parameter_type : Core_type.t;
+  result_type : Core_type.t;
+  captures : captured_value list;
+}
+
 type payload =
   | Unit
   | Nat of Nat.t
+  | Closure of closure
 
 type origin =
   | Execution_input
@@ -18,8 +33,6 @@ type origin =
       node_id : Core_graph.Node_id.t;
       port_key : Core_graph.Port_key.t;
     }
-
-type t
 
 val create : id:Value_id.t -> payload:payload -> origin:origin -> t
 val execution_input_id : Value_id.t
@@ -31,6 +44,7 @@ val origin : t -> origin
 val payload_type : payload -> Core_type.t
 val typ : t -> Core_type.t
 val payload_equal : payload -> payload -> bool
+val closure_equal : closure -> closure -> bool
 val equal : t -> t -> bool
 val to_string : t -> string
 val origin_to_string : origin -> string

@@ -25,6 +25,19 @@ type runtime_error =
       node_id : CG.Node_id.t;
       typ : Core_type.t;
     }
+  | Function_template_not_found of {
+      node_id : CG.Node_id.t;
+      template_id : CG.Function_template_id.t;
+    }
+  | Function_capture_delivery_invariant_violation of {
+      node_id : CG.Node_id.t;
+      message : string;
+    }
+  | Invalid_arrow_runtime_payload of {
+      node_id : CG.Node_id.t;
+      expected : Core_type.t;
+      actual : Core_type.t;
+    }
   | Runtime_invariant_violation of string
 
 type port_binding = {
@@ -35,6 +48,7 @@ type port_binding = {
 module Machine = struct
   type t = {
     graph : CG.Validated_graph.t;
+    function_templates : CG.Function_template.t list;
     bindings : port_binding list;
     executed_nodes : CG.Node_id.t list;
     ready_candidates : ready_candidate list;
@@ -147,6 +161,12 @@ let priority_spine_rank graph node_id =
 
 let executable_node_ids graph = CG.Validated_graph.default_node_order graph
 
+let function_template_by_id templates template_id =
+  List.find_opt
+    (fun template ->
+      CG.Function_template_id.equal (CG.Function_template.id template) template_id)
+    templates
+
 let is_ready graph bindings executed_nodes node_id =
   if List.exists (fun executed -> CG.Node_id.equal executed node_id) executed_nodes then
     false
@@ -165,6 +185,13 @@ let is_ready graph bindings executed_nodes node_id =
         match binding_for bindings node_id CG.Port_key.input with
         | Some value -> Core_type.equal (Runtime_value.typ value) expected
         | None -> false)
+    | Some { kind = CG.Function signature; _ } ->
+        List.for_all
+          (fun (capture : CG.capture) ->
+            match binding_for bindings node_id capture.CG.key with
+            | Some value -> Core_type.equal (Runtime_value.typ value) capture.typ
+            | None -> false)
+          signature.captures
     | Some _ -> false
 
 let ready_candidate graph epoch node_id =
@@ -244,9 +271,10 @@ let deliver_output graph state node_id port_key value =
        ^ CG.Port_key.to_string port_key)
   | Some edge -> deliver_to_target graph state edge.target value
 
-let empty_machine graph =
+let empty_machine function_templates graph =
   {
     Machine.graph;
+    function_templates;
     bindings = [];
     executed_nodes = [];
     ready_candidates = [];
@@ -281,11 +309,11 @@ let materialize_literal = function
            ~origin:(Runtime_value.Program_literal id))
   | _ -> None
 
-let initialize graph ~input =
+let initialize_with_templates function_templates graph ~input =
   match materialize_input graph input with
   | Error error -> Error error
   | Ok input_value ->
-      let initial = empty_machine graph in
+      let initial = empty_machine function_templates graph in
       let parameter = CG.Validated_graph.parameter_node graph in
       let result =
         deliver_output graph initial parameter.id CG.Port_key.value input_value
@@ -321,6 +349,8 @@ let initialize graph ~input =
                Machine.ready_candidates =
                  initial_ready_candidates graph state.Machine.bindings;
              })
+
+let initialize graph ~input = initialize_with_templates [] graph ~input
 
 let unexecuted_nodes machine =
   Machine.executable_nodes machine
@@ -400,15 +430,26 @@ let rewrite_succ machine candidate =
                 }
               in
               Rewritten { machine; event })
-      | Runtime_value.Unit -> Stuck (stuck_reason machine))
+      | Runtime_value.Unit | Runtime_value.Closure _ -> Stuck (stuck_reason machine))
   | None -> Stuck (stuck_reason machine)
 
 let copy_payload candidate expected input_value =
   match (expected, Runtime_value.payload input_value) with
   | Core_type.Unit, Runtime_value.Unit -> Ok Runtime_value.Unit
   | Core_type.Nat, Runtime_value.Nat nat -> Ok (Runtime_value.Nat nat)
+  | Core_type.Arrow _, Runtime_value.Closure closure
+    when Core_type.equal
+           (Core_type.Arrow (closure.parameter_type, closure.result_type))
+           expected ->
+      Ok (Runtime_value.Closure closure)
   | Core_type.Arrow _, _ ->
-      Error (Unsupported_copy_payload_type { node_id = candidate.node_id; typ = expected })
+      Error
+        (Invalid_arrow_runtime_payload
+           {
+             node_id = candidate.node_id;
+             expected;
+             actual = Runtime_value.typ input_value;
+           })
   | _ ->
       Error
         (Runtime_invariant_violation
@@ -481,9 +522,117 @@ let rewrite_copy machine candidate expected =
                     in
                     Rewritten { machine; event }))
 
+let rewrite_function machine candidate signature =
+  match function_template_by_id machine.Machine.function_templates signature.CG.template_id with
+  | None ->
+      Runtime_error
+        (Function_template_not_found
+           { node_id = candidate.node_id; template_id = signature.template_id })
+  | Some template ->
+      let captures = CG.Function_template.captures template in
+      let collect_capture (capture : CG.capture) =
+        match binding_for machine.Machine.bindings candidate.node_id capture.CG.key with
+        | Some value when Core_type.equal (Runtime_value.typ value) capture.typ ->
+            Ok { Runtime_value.capture_key = capture.key; value }
+        | Some value ->
+            Error
+              ("capture " ^ CG.Port_key.to_string capture.key
+             ^ " type mismatch: expected " ^ Core_type.to_string capture.typ
+             ^ ", actual " ^ Core_type.to_string (Runtime_value.typ value))
+        | None ->
+            Error ("capture " ^ CG.Port_key.to_string capture.key ^ " is missing")
+      in
+      let rec collect (captures : CG.capture list) =
+        match captures with
+        | [] -> Ok []
+        | capture :: rest -> (
+            match collect_capture capture with
+            | Error _ as error -> error
+            | Ok captured -> (
+                match collect rest with
+                | Error _ as error -> error
+                | Ok captured_rest -> Ok (captured :: captured_rest)))
+      in
+      (match collect captures with
+      | Error message ->
+          Runtime_error
+            (Function_capture_delivery_invariant_violation
+               { node_id = candidate.node_id; message })
+      | Ok captured_values ->
+          let event_index = machine.Machine.next_event_index in
+          let closure =
+            {
+              Runtime_value.template_id = CG.Function_template.id template;
+              parameter_type = CG.Function_template.parameter_type template;
+              result_type = CG.Function_template.result_type template;
+              captures = captured_values;
+            }
+          in
+          let created =
+            Runtime_value.create
+              ~id:
+                (Runtime_value.rewrite_output_id event_index candidate.node_id
+                   CG.Port_key.value)
+              ~payload:(Runtime_value.Closure closure)
+              ~origin:
+                (Runtime_value.Rewrite_output
+                   {
+                     event_index;
+                     node_id = candidate.node_id;
+                     port_key = CG.Port_key.value;
+                   })
+          in
+          let event =
+            {
+              Rewrite_event.index = event_index;
+              rule = Rewrite_event.Function;
+              subject = candidate.node_id;
+              ready_epoch = candidate.ready_epoch;
+              consumed =
+                List.map
+                  (fun captured -> Runtime_value.id captured.Runtime_value.value)
+                  captured_values;
+              created = [ created ];
+            }
+          in
+          let machine = remove_ready machine candidate.node_id in
+          let machine = mark_executed machine candidate.node_id in
+          let machine = append_event machine event in
+          match
+            deliver_output machine.Machine.graph machine candidate.node_id CG.Port_key.value
+              created
+          with
+          | Error message -> Runtime_error (Runtime_invariant_violation message)
+          | Ok machine ->
+              let machine =
+                {
+                  machine with
+                  Machine.ready_candidates =
+                    refresh_ready_candidates machine.Machine.graph
+                      machine.Machine.bindings machine.Machine.executed_nodes
+                      machine.Machine.ready_candidates machine.Machine.next_event_index;
+                }
+              in
+              Rewritten { machine; event })
+
 let rewrite_drop machine candidate =
   match binding_for machine.Machine.bindings candidate.node_id CG.Port_key.input with
-  | Some input_value ->
+  | Some input_value -> (
+      let expected =
+        match node_by_id machine.Machine.graph candidate.node_id with
+        | Some { kind = CG.Drop expected; _ } -> expected
+        | _ -> Runtime_value.typ input_value
+      in
+      if not (Core_type.equal (Runtime_value.typ input_value) expected) then
+        Runtime_error
+          (Runtime_invariant_violation
+             ("Drop input payload does not match declared type at "
+            ^ CG.Node_id.to_string candidate.node_id))
+      else
+        match (expected, Runtime_value.payload input_value) with
+        | Core_type.Arrow _, Runtime_value.Closure _
+        | Core_type.Unit, Runtime_value.Unit
+        | Core_type.Nat, Runtime_value.Nat _ ->
       let event_index = machine.Machine.next_event_index in
       let event =
         {
@@ -508,6 +657,19 @@ let rewrite_drop machine candidate =
         }
       in
       Rewritten { machine; event }
+        | Core_type.Arrow _, _ ->
+            Runtime_error
+              (Invalid_arrow_runtime_payload
+                 {
+                   node_id = candidate.node_id;
+                   expected;
+                   actual = Runtime_value.typ input_value;
+                 })
+        | _ ->
+            Runtime_error
+              (Runtime_invariant_violation
+                 ("Drop input payload does not match declared type at "
+                ^ CG.Node_id.to_string candidate.node_id)))
   | None -> Stuck (stuck_reason machine)
 
 let step machine =
@@ -521,6 +683,8 @@ let step machine =
           | Some { kind = CG.Succ; _ } -> rewrite_succ machine candidate
           | Some { kind = CG.Drop _; _ } -> rewrite_drop machine candidate
           | Some { kind = CG.Copy expected; _ } -> rewrite_copy machine candidate expected
+          | Some { kind = CG.Function signature; _ } ->
+              rewrite_function machine candidate signature
           | _ -> Stuck (stuck_reason machine)))
 
 let run machine =
@@ -548,4 +712,14 @@ let runtime_error_to_string = function
   | Unsupported_copy_payload_type { node_id; typ } ->
       "unsupported Copy payload type at " ^ CG.Node_id.to_string node_id ^ ": "
       ^ Core_type.to_string typ
+  | Function_template_not_found { node_id; template_id } ->
+      "function template not found at " ^ CG.Node_id.to_string node_id ^ ": "
+      ^ CG.Function_template_id.to_string template_id
+  | Function_capture_delivery_invariant_violation { node_id; message } ->
+      "Function capture delivery invariant violation at "
+      ^ CG.Node_id.to_string node_id ^ ": " ^ message
+  | Invalid_arrow_runtime_payload { node_id; expected; actual } ->
+      "invalid Arrow runtime payload at " ^ CG.Node_id.to_string node_id
+      ^ ": expected " ^ Core_type.to_string expected ^ ", actual "
+      ^ Core_type.to_string actual
   | Runtime_invariant_violation message -> "runtime invariant violation: " ^ message

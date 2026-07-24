@@ -50,10 +50,11 @@ Drop
 The current OCaml runtime implements validation and execution for a subset:
 
 - implemented: `Unit` and `Nat` literals, `Succ`, `Copy`, `Drop`,
-  `Parameter`, `Result`, `default_node_order`, and static single-scope
+  `Parameter`, `Result`, `Function` closure creation, Arrow closure
+  `Copy`/`Drop`, `default_node_order`, and static single-scope
   `PrioritySpine`;
-- confirmed but not implemented: `Function` closure creation, `ApplyEnter`,
-  function body rewrites, `ApplyReturn`, and `NatRec`.
+- confirmed but not implemented: `ApplyEnter`, function body rewrites,
+  `ApplyReturn`, function graph instances, and `NatRec`.
 
 The `transparent-v0` settings remain:
 
@@ -104,7 +105,8 @@ not silently remove the earlier `A -> B` model.
 
 ### Function Template
 
-Status: Confirmed, not implemented in the Core runtime.
+Status: Current implementation for template references and metadata needed by
+closure creation.
 
 A function template is an immutable canonical graph. It contains:
 
@@ -121,7 +123,7 @@ serialization and hash protocol are deferred.
 
 ### Closure
 
-Status: Confirmed, not implemented in the Core runtime.
+Status: Current implementation for closure creation and Arrow `Copy`/`Drop`.
 
 A closure is:
 

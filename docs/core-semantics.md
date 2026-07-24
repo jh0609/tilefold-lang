@@ -123,9 +123,9 @@ payloads, or a combination remains a schema design question. Whichever
 representation is chosen, value identity and provenance must be observable in
 the standard trace.
 
-The first runtime slice represents values in machine state as immutable
-`Runtime_value.t` records with abstract logical value IDs, `Unit` or `Nat`
-payloads, and typed origins. Implemented origins are `Execution_input`,
+The runtime slice represents values in machine state as immutable
+`Runtime_value.t` records with abstract logical value IDs, `Unit`, `Nat`, or
+closure payloads, and typed origins. Implemented origins are `Execution_input`,
 `Program_literal(node_id)`, and `Rewrite_output(event_index, node_id,
 port_key)`. This is a provisional runtime representation, not the final
 canonical serialization.
@@ -141,6 +141,11 @@ A closure is an immutable logical function value. It consists of a template ID
 and explicit capture value connections. Captures are not hidden host-language
 environment entries; they are exposed through the function boundary ports and
 edges.
+
+The current runtime implements closure creation as the `Function` rewrite.
+`Function` consumes ordered capture values and creates one closure value. The
+closure records template identity, parameter type, result type, and captured
+runtime values in canonical capture order.
 
 Copying a closure creates distinct logical closure values. Those values may
 share the same immutable template and physical payload, but only when that
@@ -408,6 +413,8 @@ The first implemented validation subset fixes these node-derived schemas:
 - `Copy A`: `input` input of type `A`, `left` output of type `A`, `right`
   output of type `A`.
 - `Drop A`: `input` input of type `A`.
+- `Function`: capture input ports derived from the referenced template's
+  ordered capture declarations, plus `value` output of type `A -> B`.
 
 For this subset, a valid template body has exactly one `Parameter` boundary and
 one `Result` boundary. The template type is derived as `A -> B`. Every input
@@ -415,19 +422,22 @@ port must have exactly one incoming edge and every output port must have
 exactly one outgoing edge, so implicit fan-out, unused outputs, duplicated
 input connections, and unconnected boundary inputs are validation errors.
 
-The current executable node kinds are `Succ`, `Copy _`, and `Drop _`.
+The current executable node kinds are `Succ`, `Copy _`, `Drop _`, and
+`Function _`.
 `Unit_literal`, `Nat_literal _`, `Parameter _`, and `Result _` are
 non-executable. The validator requires `default_node_order` to include every
 executable node exactly once and to exclude non-executable nodes.
 
-This validator does not implement graph cycle rules, reachability, `Function`,
+This validator does not implement full graph cycle rules, reachability,
 `Apply`, `NatRec`, multi-scope scheduling, or full trace schemas. The first
-runtime slice implements `Succ`, `Copy` for `Unit` and `Nat`, `Drop` rewrites,
-and static single-scope `PrioritySpine` scheduling. See
+runtime slices implement `Succ`, `Copy` for `Unit`, `Nat`, and closure Arrow
+values, `Drop`, `Function` closure creation, and static single-scope
+`PrioritySpine` scheduling. See
 `docs/decisions/0008-explicit-port-graph-and-validation-boundary.md`,
 `docs/decisions/0009-canonical-default-node-order.md`, and
 `docs/decisions/0010-first-runtime-interpreter-vertical-slice.md`, followed by
-`docs/decisions/0011-copy-rewrite-and-linear-duplication.md`.
+`docs/decisions/0011-copy-rewrite-and-linear-duplication.md` and
+`docs/decisions/0019-function-closure-creation-and-arrow-copy.md`.
 
 Long-term execution-management topics such as pause, checkpoint, fork, join,
 and equivalence comparison are outside Core rewrite semantics and are recorded
@@ -449,11 +459,17 @@ function instance activation.
 - later computation using one output must not affect the other output,
 - physical payload sharing is allowed only when it is unobservable.
 
-The current interpreter supports `Copy Unit` and `Copy Nat`. `Copy (Arrow _)`
-is intentionally unsupported until closure duplication is specified.
+The current interpreter supports `Copy Unit`, `Copy Nat`, and `Copy (Arrow _)`
+when the Arrow runtime payload is a closure. Arrow Copy duplicates only the
+outer logical closure value: the two outputs have distinct logical value IDs
+and preserve the same immutable closure payload meaning and captured value
+identities. It does not recursively copy captures or emit hidden capture-level
+Copy events.
 
 `Drop` makes the discard of an otherwise unused value explicit in Core. It is
-the desugaring target for surface-level unused inputs.
+the desugaring target for surface-level unused inputs. `Drop (Arrow _)`
+consumes a closure value and creates no output without emitting hidden Drop
+events for captured values.
 
 In the first executable slice, `Succ` consumes a `Nat` runtime value and creates
 a new `Nat(Nat.succ n)` value with `Rewrite_output` origin. `Copy A` consumes
@@ -505,7 +521,9 @@ The `transparent-v0` profile records these current choices:
 - `canonical-node-order = explicit-ordered-executable-node-list`
 - `runtime-value = immutable-logical-value-with-typed-origin`
 - `runtime-logical-id = deterministic-provisional-id`
-- `implemented-rewrite-subset = Succ + Copy + Drop`
+- `implemented-rewrite-subset = Succ + Copy + Drop + Function`
+- `function-closure-creation = implemented-template-reference-and-ordered-captures`
+- `arrow-copy-drop = closure-payload-supported`
 - `copy-semantics = consume-one-create-two-distinct-linear-values`
 - `copy-output-order = explicit-canonical-port-order(left, right)`
 - `copy-ready-epoch = producing-event-index-plus-one`
@@ -518,8 +536,9 @@ The `transparent-v0` profile records these current choices:
 - `step-completion-policy = rewritten-then-completed-on-next-step`
 - `stuck-reporting = unexecuted-nodes-and-result-missing-flag`
 
-These values classify the current design direction. They do not implement or
-freeze primitive port schemas or rewrite rules.
+These values classify the current design direction and implemented slices. They
+do not freeze final canonical serialization, template hashing, `Apply`,
+`NatRec`, or full trace schemas.
 
 ## Atomic Rewriting
 

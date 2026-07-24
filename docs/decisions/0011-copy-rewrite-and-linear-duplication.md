@@ -86,11 +86,11 @@ The required observable properties are:
 - the input value is not mutated,
 - the two outputs are not the same runtime value alias.
 
-The OCaml reference implementation currently supports `Copy Unit` and
-`Copy Nat`. `Copy (Arrow _)` remains unsupported until closure values and
-function application are implemented. The engine must report typed unsupported
-runtime behavior rather than using host-language assertion failure or
-fabricating closure aliasing semantics.
+The OCaml reference implementation initially supported `Copy Unit` and
+`Copy Nat`. Decision 0019 extends `Copy (Arrow _)` for closure runtime payloads.
+Arrow Copy creates two distinct outer closure logical values while preserving
+the immutable closure payload and captured value identities. It does not
+recursively copy captures or emit hidden capture-level Copy events.
 
 ## Provenance and IDs
 
@@ -160,9 +160,7 @@ value order, logical ID distinction, and ready-epoch assignment.
 
 ## Still Open
 
-- `Copy (Arrow _)` and closure duplication semantics,
 - full provenance schema,
 - final logical value ID schema,
 - canonical trace and graph serialization,
-- `PrioritySpine` validation and runtime behavior,
-- `Function`, `Apply`, and `NatRec` rewrites.
+- `Apply` and `NatRec` rewrites.
