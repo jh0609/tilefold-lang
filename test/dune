@@ -9,5 +9,7 @@
   test_program_package_serialization
   test_surface_symbolic
   test_surface_geometry
+ test_project_document
   test_linear_v0)
- (libraries tilefold zarith))
+ (deps ../examples/nat-succ.tilefold.json)
+ (libraries tilefold zarith yojson))

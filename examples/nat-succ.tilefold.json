@@ -1,0 +1,105 @@
+{
+  "format": "tilefold-project",
+  "version": 1,
+  "geometry": {
+    "snapTolerance": 0,
+    "elements": [
+      {
+        "id": "drop_unit",
+        "kind": "drop",
+        "bounds": { "x": 20, "y": 20, "width": 20, "height": 20 },
+        "properties": { "type": "unit" },
+        "portAnchors": [{ "port": "input", "x": 20, "y": 30 }]
+      },
+      {
+        "id": "node_nat_2",
+        "kind": "nat_literal",
+        "bounds": { "x": 60, "y": 60, "width": 20, "height": 20 },
+        "properties": { "value": "2" },
+        "portAnchors": [{ "port": "value", "x": 80, "y": 70 }]
+      },
+      {
+        "id": "node_succ",
+        "kind": "succ",
+        "bounds": { "x": 120, "y": 50, "width": 40, "height": 40 },
+        "properties": {},
+        "portAnchors": [
+          { "port": "input", "x": 120, "y": 70 },
+          { "port": "result", "x": 160, "y": 70 }
+        ]
+      }
+    ],
+    "containers": [
+      {
+        "id": "entry",
+        "kind": {
+          "kind": "entry",
+          "templateId": "entry_template",
+          "resultType": "nat",
+          "dependencies": []
+        },
+        "bounds": { "x": 0, "y": 0, "width": 240, "height": 120 },
+        "boundaryPorts": [
+          {
+            "id": "entry_parameter",
+            "role": "parameter",
+            "type": "unit",
+            "anchor": { "x": 0, "y": 30 }
+          },
+          {
+            "id": "entry_result",
+            "role": "result",
+            "type": "nat",
+            "anchor": { "x": 240, "y": 70 }
+          }
+        ]
+      }
+    ],
+    "wires": [
+      {
+        "id": "wire_parameter",
+        "points": [{ "x": 0, "y": 30 }, { "x": 20, "y": 30 }],
+        "sourceHint": {
+          "kind": "boundary_port",
+          "containerId": "entry",
+          "boundaryId": "entry_parameter"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "drop_unit",
+          "port": "input"
+        }
+      },
+      {
+        "id": "wire_nat_succ",
+        "points": [{ "x": 80, "y": 70 }, { "x": 120, "y": 70 }],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "node_nat_2",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "node_succ",
+          "port": "input"
+        }
+      },
+      {
+        "id": "wire_result",
+        "points": [{ "x": 160, "y": 70 }, { "x": 240, "y": 70 }],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "node_succ",
+          "port": "result"
+        },
+        "targetHint": {
+          "kind": "boundary_port",
+          "containerId": "entry",
+          "boundaryId": "entry_result"
+        }
+      }
+    ],
+    "junctions": []
+  },
+  "view": { "cameraX": 0, "cameraY": 0, "zoom": 1 }
+}

@@ -6,6 +6,7 @@ module Linear_v0 = Linear_v0
 module Nat = Nat
 module Program_package = Program_package
 module Program_package_serialization = Program_package_serialization
+module Project_document = Project_document
 module Rewrite_event = Rewrite_event
 module Runtime_value = Runtime_value
 module Surface_geometry = Surface_geometry

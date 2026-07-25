@@ -12,6 +12,7 @@ depends: [
   "dune" {>= "3.11"}
   "ocaml" {>= "5.1"}
   "zarith"
+  "yojson"
   "odoc" {with-doc}
 ]
 build: [

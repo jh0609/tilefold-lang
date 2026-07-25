@@ -20,4 +20,5 @@
   "OCaml reference engine for the Tilefold visual programming language.")
  (depends
   (ocaml (>= 5.1))
-  zarith))
+  zarith
+  yojson))
