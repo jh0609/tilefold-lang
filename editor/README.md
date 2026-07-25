@@ -101,6 +101,12 @@ absolute port anchors by the same delta. Wire endpoints whose explicit
 during the drag preview and in the committed document. Geometry proximity is
 never used to infer attachment.
 
+Compact nodes keep the center of their body usable as a drag surface. Their
+transparent 22-unit port hit target is biased eight units outward from the node
+center while the visible anchor, semantic port anchor, connection preview, and
+exported geometry remain unchanged. Clicking the visible five-unit port still
+starts a connection, but grabbing the center of a 20×20 literal no longer does.
+
 Canvas navigation is UI-only. Wheel zoom stays anchored under the pointer and
 is clamped to 25–400% of the saved Project view; middle-button dragging pans
 without changing selection. The current percentage is shown in the canvas and

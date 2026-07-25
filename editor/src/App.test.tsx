@@ -91,6 +91,26 @@ describe("Tilefold editor UI", () => {
     );
   });
 
+  it("biases compact port hit targets outward while retaining the visual anchor", () => {
+    render(<App />);
+    const outputHit = screen.getByTestId(
+      "port-element:node_nat_2:value",
+    );
+    const outputAnchor = outputHit.parentElement?.querySelector(".port-anchor");
+    expect(outputHit).toHaveAttribute("cx", "88");
+    expect(outputHit).toHaveAttribute("cy", "70");
+    expect(outputHit).toHaveAttribute("r", "11");
+    expect(outputAnchor).toHaveAttribute("cx", "80");
+    expect(outputAnchor).toHaveAttribute("cy", "70");
+
+    const inputHit = screen.getByTestId("port-element:drop_unit:input");
+    const inputAnchor = inputHit.parentElement?.querySelector(".port-anchor");
+    expect(inputHit).toHaveAttribute("cx", "12");
+    expect(inputHit).toHaveAttribute("cy", "30");
+    expect(inputAnchor).toHaveAttribute("cx", "20");
+    expect(inputAnchor).toHaveAttribute("cy", "30");
+  });
+
   it("adds the smallest available Nat ID and selects it", async () => {
     const user = userEvent.setup();
     render(<App />);

@@ -29,6 +29,26 @@ const KIND_LABELS: Record<ProjectElement["kind"], string> = {
   nat_rec: "NatRec",
 };
 
+const COMPACT_PORT_HIT_OFFSET = 8;
+
+function portHitCenter(
+  element: ProjectElement,
+  anchor: ProjectElement["portAnchors"][number],
+  compact: boolean,
+) {
+  if (!compact) return anchor;
+  const centerX = element.bounds.x + element.bounds.width / 2;
+  const centerY = element.bounds.y + element.bounds.height / 2;
+  const deltaX = anchor.x - centerX;
+  const deltaY = anchor.y - centerY;
+  const distance = Math.hypot(deltaX, deltaY);
+  if (distance === 0) return anchor;
+  return {
+    x: anchor.x + (deltaX / distance) * COMPACT_PORT_HIT_OFFSET,
+    y: anchor.y + (deltaY / distance) * COMPACT_PORT_HIT_OFFSET,
+  };
+}
+
 export function ElementNode({
   element,
   selected,
@@ -100,6 +120,7 @@ export function ElementNode({
         const port = ports.find((candidate) => candidate.name === anchor.port);
         const output = port?.direction === "output";
         const connectable = Boolean(port);
+        const hitCenter = portHitCenter(element, anchor, compact);
         return (
           <g
             key={anchor.port}
@@ -108,8 +129,8 @@ export function ElementNode({
             {port && (
               <circle
                 className="port-hit-area"
-                cx={anchor.x}
-                cy={anchor.y}
+                cx={hitCenter.x}
+                cy={hitCenter.y}
                 r={11}
                 data-testid={`port-${port.key}`}
                 role="button"
