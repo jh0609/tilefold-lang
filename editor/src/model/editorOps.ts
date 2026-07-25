@@ -16,6 +16,90 @@ import {
   type WireEndpoint,
 } from "./portConnections";
 
+type AddableElementKind = "nat_literal" | "succ";
+
+const NEW_ELEMENT_SIZE: Record<
+  AddableElementKind,
+  { width: number; height: number }
+> = {
+  nat_literal: { width: 96, height: 56 },
+  succ: { width: 88, height: 56 },
+};
+const ELEMENT_PLACEMENT_CLEARANCE = 12;
+const ELEMENT_PLACEMENT_STEP = { x: 120, y: 80 };
+const ELEMENT_PLACEMENT_RINGS = 24;
+
+function newElementBounds(kind: AddableElementKind, center: Point): Bounds {
+  const { width, height } = NEW_ELEMENT_SIZE[kind];
+  return {
+    x: Math.round(center.x - width / 2),
+    y: Math.round(center.y - height / 2),
+    width,
+    height,
+  };
+}
+
+function boundsOverlapWithClearance(left: Bounds, right: Bounds): boolean {
+  return (
+    left.x < right.x + right.width + ELEMENT_PLACEMENT_CLEARANCE &&
+    left.x + left.width + ELEMENT_PLACEMENT_CLEARANCE > right.x &&
+    left.y < right.y + right.height + ELEMENT_PLACEMENT_CLEARANCE &&
+    left.y + left.height + ELEMENT_PLACEMENT_CLEARANCE > right.y
+  );
+}
+
+export function findOpenElementCenter(
+  document: ProjectDocument,
+  kind: AddableElementKind,
+  preferredCenter: Point,
+): Point {
+  const preferred = {
+    x: Math.round(preferredCenter.x),
+    y: Math.round(preferredCenter.y),
+  };
+  const available = (center: Point) => {
+    const candidate = newElementBounds(kind, center);
+    return document.geometry.elements.every(
+      (element) => !boundsOverlapWithClearance(candidate, element.bounds),
+    );
+  };
+  if (available(preferred)) return preferred;
+
+  const directions = [
+    { x: 1, y: 0 },
+    { x: 1, y: 1 },
+    { x: 0, y: 1 },
+    { x: -1, y: 1 },
+    { x: -1, y: 0 },
+    { x: -1, y: -1 },
+    { x: 0, y: -1 },
+    { x: 1, y: -1 },
+  ] as const;
+  for (let ring = 1; ring <= ELEMENT_PLACEMENT_RINGS; ring += 1) {
+    for (const direction of directions) {
+      const candidate = {
+        x: preferred.x + direction.x * ring * ELEMENT_PLACEMENT_STEP.x,
+        y: preferred.y + direction.y * ring * ELEMENT_PLACEMENT_STEP.y,
+      };
+      if (available(candidate)) return candidate;
+    }
+  }
+
+  const { width } = NEW_ELEMENT_SIZE[kind];
+  const rightmost = Math.max(
+    preferred.x,
+    ...document.geometry.elements.map(
+      (element) => element.bounds.x + element.bounds.width,
+    ),
+  );
+  return {
+    x: Math.round(
+      rightmost + ELEMENT_PLACEMENT_CLEARANCE + width / 2,
+    ),
+    y: preferred.y,
+  };
+}
+
 export function nextStableId(
   document: ProjectDocument,
   prefix: string,
@@ -45,27 +129,25 @@ export function collectStableIds(document: ProjectDocument): Set<string> {
 
 export function addElement(
   document: ProjectDocument,
-  kind: "nat_literal" | "succ",
+  kind: AddableElementKind,
   center: Point,
 ): { document: ProjectDocument; element: ProjectElement } {
   const isNat = kind === "nat_literal";
-  const width = isNat ? 96 : 88;
-  const height = 56;
-  const x = Math.round(center.x - width / 2);
-  const y = Math.round(center.y - height / 2);
+  const bounds = newElementBounds(kind, center);
+  const { x, y, width, height } = bounds;
   const id = nextStableId(document, isNat ? "node_nat_" : "node_succ_");
   const element: ProjectElement = isNat
     ? {
         id,
         kind,
-        bounds: { x, y, width, height },
+        bounds,
         properties: { value: "0" },
         portAnchors: [{ port: "value", x: x + width, y: y + height / 2 }],
       }
     : {
         id,
         kind,
-        bounds: { x, y, width, height },
+        bounds,
         properties: {},
         portAnchors: [
           { port: "input", x, y: y + height / 2 },

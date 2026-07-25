@@ -120,6 +120,32 @@ describe("Tilefold editor UI", () => {
     ).toBeInTheDocument();
   });
 
+  it("places consecutive additions in deterministic open slots and redoes exactly", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "+ Nat" }));
+    await user.click(screen.getByRole("button", { name: "+ Succ" }));
+    const natRect = screen
+      .getByTestId("element-node_nat_1")
+      .querySelector(":scope > rect");
+    const succRect = screen
+      .getByTestId("element-node_succ_1")
+      .querySelector(":scope > rect");
+    expect(natRect).toHaveAttribute("x", "152");
+    expect(natRect).toHaveAttribute("y", "102");
+    expect(succRect).toHaveAttribute("x", "276");
+    expect(succRect).toHaveAttribute("y", "102");
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(screen.queryByTestId("element-node_succ_1")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Redo" }));
+    expect(
+      screen
+        .getByTestId("element-node_succ_1")
+        .querySelector(":scope > rect"),
+    ).toHaveAttribute("x", "276");
+  });
+
   it("undoes and redoes an added element from the toolbar", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -410,7 +436,7 @@ describe("Tilefold editor UI", () => {
     expect(screen.getByTestId("wire-preview")).toBeInTheDocument();
     fireEvent.pointerMove(screen.getByTestId("project-canvas"), {
       pointerId: 21,
-      clientX: 156,
+      clientX: 276,
       clientY: 130,
     });
     expect(target.parentElement).toHaveClass("connection-target");
@@ -508,7 +534,7 @@ describe("Tilefold editor UI", () => {
     );
     fireEvent.pointerMove(screen.getByTestId("project-canvas"), {
       pointerId: 42,
-      clientX: 156,
+      clientX: 276,
       clientY: 130,
     });
     fireEvent.pointerUp(screen.getByTestId("project-canvas"), {
@@ -516,7 +542,7 @@ describe("Tilefold editor UI", () => {
     });
     expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
       "points",
-      "248,130 156,130",
+      "248,130 276,130",
     );
   });
 

@@ -21,6 +21,7 @@ import {
   undoLabel,
 } from "./model/editorHistory";
 import { exportProjectJson, parseProjectJson } from "./model/importProject";
+import { findOpenElementCenter } from "./model/editorOps";
 import type { Point, ProjectDocument, Selection } from "./model/project";
 import type {
   ConnectablePort,
@@ -160,7 +161,7 @@ export function App() {
     const command = {
       type: "add_element",
       kind,
-      center: viewportCenter,
+      center: findOpenElementCenter(document, kind, viewportCenter),
     } as const;
     const nextDocument = runCommand(command);
     if (!nextDocument) return;

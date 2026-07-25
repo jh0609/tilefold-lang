@@ -4,6 +4,7 @@ import {
   addElement,
   addWire,
   deleteSelection,
+  findOpenElementCenter,
   moveElement,
   nextStableId,
 } from "./editorOps";
@@ -51,6 +52,26 @@ describe("editor operations", () => {
     expect(result.element.id).toBe("node_nat_1");
     expect(result.element.properties).toEqual({ value: "0" });
     expect(result.element.bounds.x).toBe(452);
+  });
+
+  it("chooses deterministic nearby centers without overlapping new elements", () => {
+    const project = parseProjectJson(exampleJson);
+    const preferred = { x: 200, y: 130 };
+    const natCenter = findOpenElementCenter(
+      project,
+      "nat_literal",
+      preferred,
+    );
+    expect(natCenter).toEqual(preferred);
+    const withNat = addElement(project, "nat_literal", natCenter).document;
+
+    const succCenter = findOpenElementCenter(withNat, "succ", preferred);
+    expect(succCenter).toEqual({ x: 320, y: 130 });
+    const withSucc = addElement(withNat, "succ", succCenter).document;
+
+    expect(
+      findOpenElementCenter(withSucc, "nat_literal", preferred),
+    ).toEqual({ x: 320, y: 210 });
   });
 
   it("moves integer bounds, absolute port anchors, and hinted wire endpoints", () => {

@@ -89,8 +89,13 @@ view. It adds no UI fields. It need not match the OCaml canonical byte layout.
 ## Editing policies
 
 New IDs use the smallest unused positive integer for a stable prefix such as
-`node_nat_1`; array length is never used. Nat and Succ are inserted at the
-current viewport center with their fixed v1 port schema. Result means a
+`node_nat_1`; array length is never used. Nat and Succ prefer the current
+viewport center with their fixed v1 port schema. If that bounds would overlap
+an existing element or leave less than 12 project units of clearance, the
+editor checks a deterministic 120×80 grid around the center, starting to the
+right and proceeding clockwise. The chosen center is stored in the typed add
+command, so Undo/Redo reuses exactly the same geometry. Wires, junctions, and
+container boundaries are not treated as placement obstacles. Result means a
 container Result boundary, since v1 has no `result` element kind; adding it is
 blocked when the first container already has one.
 
