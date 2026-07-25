@@ -7,6 +7,8 @@ import {
   undoEditorCommand,
 } from "./editorHistory";
 import { parseProjectJson } from "./importProject";
+import { addElement } from "./editorOps";
+import { collectConnectablePorts } from "./portConnections";
 
 describe("editor command history", () => {
   it("undoes and redoes an added element without changing its stable ID", () => {
@@ -75,5 +77,42 @@ describe("editor command history", () => {
     expect(result.error).toContain("wire_nat_succ");
     expect(result.history.present).toBe(initial);
     expect(result.history.past).toEqual([]);
+  });
+
+  it("undoes and redoes one Add wire command with exact ID, geometry, and order", () => {
+    let initial = parseProjectJson(exampleJson);
+    initial = addElement(initial, "nat_literal", { x: 500, y: 200 }).document;
+    initial = addElement(initial, "succ", { x: 700, y: 200 }).document;
+    const ports = collectConnectablePorts(initial);
+    const source = ports.find(
+      (port) => port.key === "element:node_nat_1:value",
+    )!;
+    const target = ports.find(
+      (port) => port.key === "element:node_succ_1:input",
+    )!;
+    const executed = executeEditorCommand(createEditorHistory(initial), {
+      type: "add_wire",
+      source,
+      target,
+    });
+    expect(executed.error).toBeUndefined();
+    expect(executed.history.past).toHaveLength(1);
+    const added = executed.history.present.geometry.wires.at(-1)!;
+
+    const undone = undoEditorCommand(executed.history);
+    expect(undone.present.geometry.wires).toEqual(initial.geometry.wires);
+    const redone = redoEditorCommand(undone);
+    expect(redone.present.geometry.wires.at(-1)).toEqual(added);
+    expect(redone.present.geometry.wires.slice(0, -1)).toEqual(
+      initial.geometry.wires,
+    );
+
+    const failed = executeEditorCommand(redone, {
+      type: "add_wire",
+      source,
+      target,
+    });
+    expect(failed.error).toBe("This connection already exists.");
+    expect(failed.history).toBe(redone);
   });
 });

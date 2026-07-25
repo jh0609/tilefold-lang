@@ -4,8 +4,14 @@ import type {
   Point,
   ProjectDocument,
   ProjectElement,
+  ProjectWire,
   Selection,
 } from "./project";
+import {
+  coreTypeEqual,
+  endpointHintEqual,
+  type ConnectablePort,
+} from "./portConnections";
 
 export function nextStableId(
   document: ProjectDocument,
@@ -110,6 +116,80 @@ export function addResultBoundary(
               }
             : candidate,
         ),
+      },
+    },
+  };
+}
+
+export function addWire(
+  document: ProjectDocument,
+  source: ConnectablePort,
+  target: ConnectablePort,
+): { document: ProjectDocument; wire: ProjectWire } | { error: string } {
+  if (source.direction !== "output") {
+    return { error: "Connections must start at an output port." };
+  }
+  if (target.direction !== "input") {
+    return { error: "Connect to an input port." };
+  }
+  if (source.key === target.key) {
+    return { error: "A port cannot be connected to itself." };
+  }
+  if (!coreTypeEqual(source.type, target.type)) {
+    return { error: "The port types are not compatible." };
+  }
+  if (
+    source.anchor.x === target.anchor.x &&
+    source.anchor.y === target.anchor.y
+  ) {
+    return { error: "The two wire anchors must be different." };
+  }
+  const available = collectStableIds(document);
+  if (!available.has(source.ownerId) || !available.has(target.ownerId)) {
+    return { error: "This port is not available in Project JSON v1." };
+  }
+  if (
+    document.geometry.wires.some(
+      (wire) =>
+        endpointHintEqual(wire.sourceHint, source.hint) &&
+        endpointHintEqual(wire.targetHint, target.hint),
+    )
+  ) {
+    return { error: "This connection already exists." };
+  }
+  if (
+    document.geometry.wires.some((wire) =>
+      endpointHintEqual(wire.targetHint, target.hint),
+    )
+  ) {
+    return { error: "This input port already has an incoming wire." };
+  }
+  if (
+    document.geometry.wires.some((wire) =>
+      endpointHintEqual(wire.sourceHint, source.hint),
+    )
+  ) {
+    return {
+      error:
+        "This output already has a wire; use an explicit junction for branching.",
+    };
+  }
+  const wire: ProjectWire = {
+    id: nextStableId(document, "wire_"),
+    points: [
+      { x: Math.round(source.anchor.x), y: Math.round(source.anchor.y) },
+      { x: Math.round(target.anchor.x), y: Math.round(target.anchor.y) },
+    ],
+    sourceHint: source.hint,
+    targetHint: target.hint,
+  };
+  return {
+    wire,
+    document: {
+      ...document,
+      geometry: {
+        ...document.geometry,
+        wires: [...document.geometry.wires, wire],
       },
     },
   };

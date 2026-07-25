@@ -1,11 +1,14 @@
 import {
   addElement,
   addResultBoundary,
+  addWire,
   deleteSelection,
   moveElement,
   resizeOrMoveElement,
   updateNatValue,
 } from "./editorOps";
+import { exportProjectJson, parseProjectJson } from "./importProject";
+import type { ConnectablePort } from "./portConnections";
 import type {
   Bounds,
   Point,
@@ -20,6 +23,7 @@ export type EditorCommand =
       center: Point;
     }
   | { type: "add_result_boundary" }
+  | { type: "add_wire"; source: ConnectablePort; target: ConnectablePort }
   | {
       type: "delete_selection";
       selection: Selection;
@@ -61,6 +65,23 @@ export function applyEditorCommand(
         ? { document, error: result.error }
         : { document: result.document };
     }
+    case "add_wire": {
+      const result = addWire(document, command.source, command.target);
+      if ("error" in result) return { document, error: result.error };
+      try {
+        return {
+          document: parseProjectJson(exportProjectJson(result.document)),
+        };
+      } catch (error) {
+        return {
+          document,
+          error:
+            error instanceof Error
+              ? `New wire failed the editor structure check: ${error.message}`
+              : "New wire failed the editor structure check.",
+        };
+      }
+    }
     case "delete_selection":
       return deleteSelection(document, command.selection);
     case "move_element":
@@ -82,6 +103,8 @@ export function editorCommandLabel(command: EditorCommand): string {
       return command.kind === "nat_literal" ? "Add Nat" : "Add Succ";
     case "add_result_boundary":
       return "Add Result";
+    case "add_wire":
+      return "Add wire";
     case "delete_selection":
       return `Delete ${command.selection.id}`;
     case "move_element":

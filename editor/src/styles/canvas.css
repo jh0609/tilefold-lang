@@ -76,6 +76,44 @@
   vector-effect: non-scaling-stroke;
 }
 
+.wire-preview {
+  stroke: var(--selection);
+  stroke-width: 2;
+  stroke-dasharray: 7 5;
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+.port-hit-area {
+  fill: transparent;
+  stroke: transparent;
+  pointer-events: all;
+}
+
+.port.output.connectable .port-hit-area,
+.boundary-hit.output {
+  cursor: crosshair;
+}
+
+.port.input.connectable .port-hit-area,
+.boundary-hit.input {
+  cursor: default;
+}
+
+.port.connection-target .port-anchor,
+.boundary-hit.connection-target {
+  stroke: var(--selection);
+  stroke-width: 4;
+}
+
+.boundary-interaction-layer {
+  pointer-events: none;
+}
+
+.boundary-interaction-layer .port-hit-area {
+  pointer-events: all;
+}
+
 .wire:hover,
 .wire.selected {
   stroke: var(--select);

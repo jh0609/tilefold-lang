@@ -1,10 +1,16 @@
 import {
+  useEffect,
+  useMemo,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { clientToProject } from "../model/coordinates";
 import { moveElement } from "../model/editorOps";
+import {
+  collectConnectablePorts,
+  type ConnectablePort,
+} from "../model/portConnections";
 import type {
   Point,
   ProjectContainer,
@@ -28,6 +34,15 @@ interface CanvasProps {
   viewBox: string;
   onSelect: (selection: Selection | null) => void;
   onMoveElement: (id: string, next: Point) => void;
+  onAddWire: (source: ConnectablePort, target: ConnectablePort) => void;
+  onConnectionMessage: (message: string | null) => void;
+}
+
+interface ConnectionDrag {
+  pointerId: number;
+  source: ConnectablePort;
+  current: Point;
+  target: ConnectablePort | null;
 }
 
 function ContainerShape({
@@ -82,9 +97,25 @@ export function Canvas({
   viewBox,
   onSelect,
   onMoveElement,
+  onAddWire,
+  onConnectionMessage,
 }: CanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
+  const suppressSelectionRef = useRef(false);
   const [drag, setDrag] = useState<DragState | null>(null);
+  const [connection, setConnection] = useState<ConnectionDrag | null>(null);
+  const ports = useMemo(() => collectConnectablePorts(document), [document]);
+
+  useEffect(() => {
+    function cancelOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape" && connection) {
+        setConnection(null);
+        onConnectionMessage("Wire connection cancelled.");
+      }
+    }
+    window.addEventListener("keydown", cancelOnEscape);
+    return () => window.removeEventListener("keydown", cancelOnEscape);
+  }, [connection, onConnectionMessage]);
 
   function startDrag(
     event: ReactPointerEvent<SVGGElement>,
@@ -110,6 +141,40 @@ export function Canvas({
   }
 
   function continueDrag(event: ReactPointerEvent<SVGSVGElement>) {
+    if (
+      connection &&
+      event.pointerId === connection.pointerId &&
+      svgRef.current
+    ) {
+      const current = clientToProject(
+        svgRef.current,
+        event.clientX,
+        event.clientY,
+      );
+      if (!current) {
+        setConnection(null);
+        onConnectionMessage("Unable to convert the pointer to project coordinates.");
+        return;
+      }
+      const point = { x: Math.round(current.x), y: Math.round(current.y) };
+      const target =
+        ports
+          .filter(
+            (port) =>
+              port.direction === "input" && port.key !== connection.source.key,
+          )
+          .map((port) => ({
+            port,
+            distance: Math.hypot(
+              point.x - port.anchor.x,
+              point.y - port.anchor.y,
+            ),
+          }))
+          .filter((candidate) => candidate.distance <= 14)
+          .sort((left, right) => left.distance - right.distance)[0]?.port ?? null;
+      setConnection({ ...connection, current: point, target });
+      return;
+    }
     if (!drag || event.pointerId !== drag.pointerId || !svgRef.current) return;
     const current = clientToProject(
       svgRef.current,
@@ -127,13 +192,51 @@ export function Canvas({
   }
 
   function finishDrag(event: ReactPointerEvent<SVGSVGElement>) {
+    if (connection?.pointerId === event.pointerId) {
+      if (connection.target) {
+        suppressSelectionRef.current = true;
+        window.setTimeout(() => {
+          suppressSelectionRef.current = false;
+        }, 0);
+        onAddWire(connection.source, connection.target);
+      } else {
+        onConnectionMessage("Connect to an available input port.");
+      }
+      setConnection(null);
+      return;
+    }
     if (drag?.pointerId !== event.pointerId) return;
     onMoveElement(drag.elementId, drag.next);
     setDrag(null);
   }
 
   function cancelDrag(event: ReactPointerEvent<SVGSVGElement>) {
+    if (connection?.pointerId === event.pointerId) {
+      setConnection(null);
+      onConnectionMessage("Wire connection cancelled.");
+      return;
+    }
     if (drag?.pointerId === event.pointerId) setDrag(null);
+  }
+
+  function startConnection(
+    event: ReactPointerEvent<SVGCircleElement>,
+    port: ConnectablePort,
+  ) {
+    event.stopPropagation();
+    if (event.button !== 0) return;
+    if (port.direction !== "output") {
+      onConnectionMessage("Connections must start at an output port.");
+      return;
+    }
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setConnection({
+      pointerId: event.pointerId,
+      source: port,
+      current: port.anchor,
+      target: null,
+    });
+    onConnectionMessage("Drag to an input port. Press Escape to cancel.");
   }
 
   const renderedDocument = drag
@@ -202,6 +305,17 @@ export function Canvas({
             />
           ))}
         </g>
+        {connection && (
+          <line
+            className="wire-preview"
+            data-testid="wire-preview"
+            x1={connection.source.anchor.x}
+            y1={connection.source.anchor.y}
+            x2={connection.target?.anchor.x ?? connection.current.x}
+            y2={connection.target?.anchor.y ?? connection.current.y}
+            aria-hidden="true"
+          />
+        )}
         <g className="junction-layer">
           {renderedDocument.geometry.junctions.map((junction) => (
             <g
@@ -247,14 +361,41 @@ export function Canvas({
             selected={
               selection?.type === "element" && selection.id === element.id
             }
-            onSelect={() => onSelect({ type: "element", id: element.id })}
+            onSelect={() => {
+              if (suppressSelectionRef.current) {
+                suppressSelectionRef.current = false;
+                return;
+              }
+              onSelect({ type: "element", id: element.id });
+            }}
             onPointerDown={startDrag}
+            ports={ports.filter((port) => port.ownerId === element.id)}
+            connectionTargetKey={connection?.target?.key ?? null}
+            onPortPointerDown={startConnection}
           />
         ))}
+        <g className="boundary-interaction-layer">
+          {ports
+            .filter((port) => port.hint.kind === "boundary_port")
+            .map((port) => (
+              <circle
+                key={port.key}
+                className={`port-hit-area boundary-hit ${port.direction}${connection?.target?.key === port.key ? " connection-target" : ""}`}
+                data-testid={`port-${port.key}`}
+                cx={port.anchor.x}
+                cy={port.anchor.y}
+                r={11}
+                role="button"
+                tabIndex={0}
+                aria-label={`${port.direction} boundary port ${port.name} on ${port.ownerId}${port.direction === "output" ? ", drag to connect" : ", connection target"}`}
+                onPointerDown={(event) => startConnection(event, port)}
+              />
+            ))}
+        </g>
       </svg>
       <div className="canvas-hint">
-        Drag elements to update integer bounds and absolute port anchors. Wires
-        stay fixed.
+        Drag from an output port to an input port to add a wire. Element moves
+        keep existing wire geometry fixed.
       </div>
     </main>
   );

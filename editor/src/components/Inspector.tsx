@@ -213,6 +213,11 @@ export function Inspector({
               {index}: ({point.x}, {point.y})
             </code>
           ))}
+          <section className="readout">
+            <h3>Endpoint hints · read only</h3>
+            <code>{JSON.stringify(wire.sourceHint ?? null)}</code>
+            <code>{JSON.stringify(wire.targetHint ?? null)}</code>
+          </section>
         </>
       );
     }

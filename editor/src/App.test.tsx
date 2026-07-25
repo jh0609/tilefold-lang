@@ -208,4 +208,60 @@ describe("Tilefold editor UI", () => {
   it("loads the exact shared example fixture", () => {
     expect(JSON.parse(exampleJson).format).toBe("tilefold-project");
   });
+
+  it("previews, creates, selects, undoes, and redoes a port connection", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "+ Nat" }));
+    await user.click(screen.getByRole("button", { name: "+ Succ" }));
+    const source = screen.getByTestId("port-element:node_nat_1:value");
+    const target = screen.getByTestId("port-element:node_succ_1:input");
+    expect(source).toHaveAccessibleName(/output port value/);
+    expect(target).toHaveAccessibleName(/input port input/);
+
+    fireEvent.pointerDown(source, {
+      pointerId: 21,
+      button: 0,
+      clientX: 248,
+      clientY: 130,
+    });
+    expect(screen.getByTestId("wire-preview")).toBeInTheDocument();
+    fireEvent.pointerMove(screen.getByTestId("project-canvas"), {
+      pointerId: 21,
+      clientX: 156,
+      clientY: 130,
+    });
+    expect(target.parentElement).toHaveClass("connection-target");
+    fireEvent.pointerUp(screen.getByTestId("project-canvas"), {
+      pointerId: 21,
+    });
+    fireEvent.click(target);
+    expect(screen.queryByTestId("wire-preview")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "wire_1" })).toBeInTheDocument();
+    await user.keyboard("{Control>}z{/Control}");
+    expect(screen.queryByTestId("wire-wire_1")).not.toBeInTheDocument();
+    await user.keyboard("{Control>}y{/Control}");
+    expect(screen.getByTestId("wire-wire_1")).toBeInTheDocument();
+  });
+
+  it("cancels connection preview on empty drop, Escape, and pointercancel", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "+ Nat" }));
+    const source = screen.getByTestId("port-element:node_nat_1:value");
+    const canvas = screen.getByTestId("project-canvas");
+
+    fireEvent.pointerDown(source, { pointerId: 31, button: 0 });
+    fireEvent.pointerUp(canvas, { pointerId: 31 });
+    expect(screen.queryByTestId("wire-preview")).not.toBeInTheDocument();
+
+    fireEvent.pointerDown(source, { pointerId: 32, button: 0 });
+    await user.keyboard("{Escape}");
+    expect(screen.queryByTestId("wire-preview")).not.toBeInTheDocument();
+
+    fireEvent.pointerDown(source, { pointerId: 33, button: 0 });
+    fireEvent.pointerCancel(canvas, { pointerId: 33 });
+    expect(screen.queryByTestId("wire-preview")).not.toBeInTheDocument();
+    expect(screen.getByText(/0 redo/)).toBeInTheDocument();
+  });
 });

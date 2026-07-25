@@ -18,6 +18,7 @@ import {
 } from "./model/editorHistory";
 import { exportProjectJson, parseProjectJson } from "./model/importProject";
 import type { Point, ProjectDocument, Selection } from "./model/project";
+import type { ConnectablePort } from "./model/portConnections";
 
 const initialDocument = parseProjectJson(exampleJson);
 
@@ -61,6 +62,7 @@ export function App() {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [inspectorError, setInspectorError] = useState<string | null>(null);
+  const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
   const [viewBox, setViewBox] = useState(savedViewBox(initialDocument.view));
 
   const viewportCenter = useMemo<Point>(() => {
@@ -168,6 +170,16 @@ export function App() {
     }
   }
 
+  function connectPorts(source: ConnectablePort, target: ConnectablePort) {
+    const nextDocument = runCommand({ type: "add_wire", source, target });
+    if (!nextDocument) return;
+    const wire = nextDocument.geometry.wires.at(-1);
+    if (wire) {
+      setSelection({ type: "wire", id: wire.id });
+      setConnectionMessage(`Added wire ${wire.id}.`);
+    }
+  }
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       const modifier = event.ctrlKey || event.metaKey;
@@ -236,6 +248,8 @@ export function App() {
               to: next,
             });
           }}
+          onAddWire={connectPorts}
+          onConnectionMessage={setConnectionMessage}
         />
         <Inspector
           document={document}
@@ -271,7 +285,7 @@ export function App() {
       <StatusBar
         document={document}
         importError={importError}
-        historyStatus={`${history.past.length} undo · ${history.future.length} redo`}
+        historyStatus={`${history.past.length} undo · ${history.future.length} redo${connectionMessage ? ` · ${connectionMessage}` : ""}`}
       />
     </div>
   );

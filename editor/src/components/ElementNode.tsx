@@ -1,5 +1,6 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
 import type { ProjectElement } from "../model/project";
+import type { ConnectablePort } from "../model/portConnections";
 
 interface ElementNodeProps {
   element: ProjectElement;
@@ -8,6 +9,12 @@ interface ElementNodeProps {
   onPointerDown: (
     event: ReactPointerEvent<SVGGElement>,
     element: ProjectElement,
+  ) => void;
+  ports: ConnectablePort[];
+  connectionTargetKey: string | null;
+  onPortPointerDown: (
+    event: ReactPointerEvent<SVGCircleElement>,
+    port: ConnectablePort,
   ) => void;
 }
 
@@ -22,15 +29,14 @@ const KIND_LABELS: Record<ProjectElement["kind"], string> = {
   nat_rec: "NatRec",
 };
 
-function isOutputPort(port: string): boolean {
-  return ["value", "result", "left", "right"].includes(port);
-}
-
 export function ElementNode({
   element,
   selected,
   onSelect,
   onPointerDown,
+  ports,
+  connectionTargetKey,
+  onPortPointerDown,
 }: ElementNodeProps) {
   const { x, y, width, height } = element.bounds;
   const compact = width < 72 || height < 44;
@@ -91,17 +97,35 @@ export function ElementNode({
         </text>
       )}
       {element.portAnchors.map((anchor) => {
-        const output = isOutputPort(anchor.port);
+        const port = ports.find((candidate) => candidate.name === anchor.port);
+        const output = port?.direction === "output";
+        const connectable = Boolean(port);
         return (
-          <g key={anchor.port} className={`port ${output ? "output" : "input"}`}>
+          <g
+            key={anchor.port}
+            className={`port ${output ? "output" : "input"}${port?.key === connectionTargetKey ? " connection-target" : ""}${connectable ? " connectable" : " display-only"}`}
+          >
+            {port && (
+              <circle
+                className="port-hit-area"
+                cx={anchor.x}
+                cy={anchor.y}
+                r={11}
+                data-testid={`port-${port.key}`}
+                role="button"
+                tabIndex={0}
+                aria-label={`${port.direction} port ${anchor.port} on ${element.id}${port.direction === "output" ? ", drag to connect" : ", connection target"}`}
+                onPointerDown={(event) => onPortPointerDown(event, port)}
+              />
+            )}
             <circle
               className="port-anchor"
               cx={anchor.x}
               cy={anchor.y}
               r={5}
-              aria-label={`${output ? "output" : "input"} port ${anchor.port}`}
+              aria-hidden="true"
             >
-              <title>{`${anchor.port} · ${output ? "output" : "input"} · connection editing unavailable`}</title>
+              <title>{`${anchor.port} · ${output ? "output" : "input"}${output ? " · drag to connect" : " · drop target"}`}</title>
             </circle>
             {!compact && (
               <text

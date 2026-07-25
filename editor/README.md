@@ -36,7 +36,7 @@ The first version borrows only a restrained subset of three familiar tools:
   limited port colors, and an emphasized literal value.
 
 It intentionally does not copy Blueprint-style chrome or add a palette,
-minimap, connection gestures, routing, resize handles, search, dark mode, glow,
+minimap, automatic routing, resize handles, search, dark mode, glow,
 or elaborate transitions. Result is represented by the orange result boundary
 defined by project JSON v1 rather than inventing a Result element kind.
 
@@ -119,15 +119,29 @@ On narrow screens the compact toolbar wraps and the 310px Inspector moves below
 the canvas. Project coordinates and saved data do not change. Hover strengthens
 the border without layout shift; selection uses both a blue non-scaling outline
 and a `SEL`/`SELECTED` badge; dragging uses pointer capture and a grab cursor.
-Ports are display-only circles with accessible direction/name tooltips. Wires
-use their exact stored polyline order and never acquire arrows or inferred
-junction markers.
+Output ports are drag handles and input ports are drop targets, with accessible
+direction/name labels and enlarged transparent hit areas. Dragging shows a
+temporary straight, dashed preview; dropping on empty space, pressing Escape,
+or receiving `pointercancel` cancels without changing history. A successful
+drop creates one typed `Add wire` command, selects the wire, and participates in
+undo/redo.
+
+New wires use the smallest globally unused `wire_N` stable ID and store exactly
+the two absolute integer anchors in source-to-target order. Both endpoint hints
+are preserved in Project JSON. Connections must start at a known output and end
+at a known input with the same Core type. Duplicate links and reuse of an
+already-wired input or output are blocked; branching requires an explicit
+junction. Parameter/capture boundaries are outputs and result boundaries are
+inputs, following the OCaml geometry model.
+
+Existing wire endpoints, bend points, junctions, reconnection, and routing are
+not editable. Moving a node still does not update existing wire geometry.
 
 ## Next steps
 
 The next editor layer can add:
 
-- port-to-port connection interaction and explicit wire commands;
+- wire endpoint reconnection and bend-point editing;
 - container movement with a specified deterministic group-translation policy;
 - OCaml JavaScript/WASM integration for decode, validation, inference,
   execution, diagnostics, and trace display.
