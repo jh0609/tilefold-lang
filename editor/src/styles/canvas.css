@@ -200,6 +200,16 @@
   stroke-width: 4;
 }
 
+.element-node:focus-visible {
+  outline: none;
+}
+
+.element-node:focus-visible > .element-body {
+  stroke: var(--select);
+  stroke-width: 4;
+  stroke-dasharray: 6 4;
+}
+
 .kind-nat_literal rect {
   fill: #eaf8f3;
   stroke: var(--nat);

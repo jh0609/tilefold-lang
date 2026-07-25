@@ -81,7 +81,14 @@ export function ElementNode({
       }}
       onPointerDown={(event) => onPointerDown(event, element)}
     >
-      <rect x={x} y={y} width={width} height={height} rx={8} />
+      <rect
+        className="element-body"
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        rx={8}
+      />
       <text
         className="element-kind"
         x={x + (compact ? 3 : 12)}

@@ -40,6 +40,22 @@ describe("Tilefold editor UI", () => {
     expect(screen.getByText(/3 elements/)).toBeInTheDocument();
   });
 
+  it("selects a focused element from the keyboard without changing history", () => {
+    render(<App />);
+    const element = screen.getByTestId("element-drop_unit");
+    const body = element.querySelector(":scope > rect");
+    expect(body).toHaveClass("element-body");
+
+    element.focus();
+    expect(element).toHaveFocus();
+    fireEvent.keyDown(element, { key: "Enter" });
+
+    expect(
+      screen.getByRole("heading", { name: "drop_unit" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("0 undo · 0 redo")).toBeInTheDocument();
+  });
+
   it("edits a Nat value from the inspector", async () => {
     const user = userEvent.setup();
     render(<App />);

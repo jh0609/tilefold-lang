@@ -114,6 +114,9 @@ starts a connection, but grabbing the center of a 20×20 literal no longer does.
 Non-compact port labels use a separate row below the element title so input
 names do not collide with operation names; this is presentation-only and does
 not move anchors or change exported geometry.
+Keyboard focus is drawn as a dashed ring on the visible element body rather
+than around its larger transparent port hit targets. Enter or Space selects the
+focused element without creating a document command.
 
 Canvas navigation is UI-only. Wheel zoom stays anchored under the pointer and
 is clamped to 25–400% of the saved Project view; middle-button dragging pans
