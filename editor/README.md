@@ -95,14 +95,15 @@ blocked when the first container already has one.
 
 Pointer positions are transformed through the SVG current transformation matrix
 and rounded to project integers. Element movement translates its bounds and
-absolute port anchors by the same delta. It does not change stable IDs,
-properties, array order, or wire points.
+absolute port anchors by the same delta. Wire endpoints whose explicit
+`element_port` hints reference the moved element follow their new port anchors
+during the drag preview and in the committed document. Geometry proximity is
+never used to infer attachment.
 
 Containers are selectable but intentionally read-only. Moving a container
 without a fully specified policy for contained elements and wires could change
-Geometry ownership. Wire polylines are rendered and preserved but not edited or
-rerouted. Consequently a moved element can visually separate from an existing
-wire endpoint. This is a visible limitation, not an inferred reconnection.
+Geometry ownership. Container boundary points therefore stay fixed when an
+element connected to one moves.
 
 Deletion is currently supported only for unreferenced elements. A wire hint
 that references an element blocks deletion and reports the wire IDs. No
@@ -111,9 +112,10 @@ cascade deletion is performed.
 Document changes use typed commands and an immutable 100-entry history.
 Undo/redo is available from the toolbar and with Ctrl/Cmd+Z,
 Ctrl/Cmd+Shift+Z, or Ctrl/Cmd+Y. A completed pointer drag creates one history
-entry rather than one entry per pointer movement. Consecutive edits to the same
-Nat value are coalesced. Opening an example or another file starts a fresh
-history so undo never crosses document boundaries.
+entry containing both the element position and every affected wire endpoint,
+rather than one entry per pointer movement. Undo and redo restore both together.
+Consecutive edits to the same Nat value are coalesced. Opening an example or
+another file starts a fresh history so undo never crosses document boundaries.
 
 On narrow screens the compact toolbar wraps and the 310px Inspector moves below
 the canvas. Project coordinates and saved data do not change. Hover strengthens
@@ -148,10 +150,23 @@ correct direction, the polyline is structurally valid, and its endpoint exactly
 matches the integer port anchor. The Inspector explains why a handle is
 unavailable.
 
-Wire bend points, segments, junctions, and routing are not editable. Moving a
-node still does not update existing wire geometry, which can intentionally make
-its old wire handles unavailable until the stored geometry is repaired by a
-future feature.
+Moving an element applies the same preservation policy to every semantically
+attached endpoint: source hints update only the first point, target hints update
+only the last point, and self-loops update both. Stable wire IDs, wire array
+order, endpoint hints, opposite endpoints, and all middle points remain
+unchanged. Multiple attached wires are updated atomically in one typed command.
+Drag state remains UI-only, so live preview never creates history entries.
+
+If an older document has an endpoint point that no longer matches its otherwise
+valid element-port hint, moving that element repairs the endpoint to the new
+anchor. An attached hint that cannot resolve to the named port, has the wrong
+direction, has an invalid polyline, or would create consecutive duplicate
+points rejects the whole move without changing the document. Unrelated invalid
+geometry is not treated as an attachment.
+
+Wire bend points, segments, junctions, and routing are not editable. Element
+movement deliberately does not reroute or translate middle points. Container
+movement remains unsupported.
 
 ## Next steps
 

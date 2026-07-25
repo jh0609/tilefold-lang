@@ -31,7 +31,9 @@ describe("Tilefold editor UI", () => {
     render(<App />);
     expect(screen.getByTestId("element-node_nat_2")).toBeInTheDocument();
     await user.click(screen.getByTestId("element-node_nat_2"));
-    expect(screen.getByRole("heading", { name: "node_nat_2" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "node_nat_2" }),
+    ).toBeInTheDocument();
     await user.click(screen.getByTestId("project-canvas"));
     expect(screen.getByText("No selection")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Open example" }));
@@ -75,17 +77,27 @@ describe("Tilefold editor UI", () => {
       clientX: 100,
       clientY: 90,
     });
+    expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
+      "points",
+      "120,100 120,70",
+    );
     fireEvent.pointerUp(screen.getByTestId("project-canvas"), { pointerId: 7 });
     fireEvent.click(element);
     expect(screen.getByLabelText("X")).toHaveValue("100");
     expect(screen.getByLabelText("Y")).toHaveValue("90");
+    expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
+      "points",
+      "120,100 120,70",
+    );
   });
 
   it("adds the smallest available Nat ID and selects it", async () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(screen.getByRole("button", { name: "+ Nat" }));
-    expect(screen.getByRole("heading", { name: "node_nat_1" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "node_nat_1" }),
+    ).toBeInTheDocument();
   });
 
   it("undoes and redoes an added element from the toolbar", async () => {
@@ -143,6 +155,53 @@ describe("Tilefold editor UI", () => {
     expect(screen.getByText("1 undo · 0 redo")).toBeInTheDocument();
   });
 
+  it("moves multiple source and target wire previews and restores them with undo and redo", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const element = screen.getByTestId("element-node_succ");
+    const canvas = screen.getByTestId("project-canvas");
+    fireEvent.pointerDown(element, {
+      pointerId: 70,
+      button: 0,
+      clientX: 130,
+      clientY: 60,
+    });
+    fireEvent.pointerMove(canvas, {
+      pointerId: 70,
+      clientX: 170,
+      clientY: 100,
+    });
+    expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
+      "points",
+      "80,70 160,110",
+    );
+    expect(screen.getByTestId("wire-wire_result")).toHaveAttribute(
+      "points",
+      "200,110 240,70",
+    );
+    fireEvent.pointerUp(canvas, { pointerId: 70 });
+    expect(screen.getByText("1 undo · 0 redo")).toBeInTheDocument();
+
+    await user.keyboard("{Control>}z{/Control}");
+    expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
+      "points",
+      "80,70 120,70",
+    );
+    expect(screen.getByTestId("wire-wire_result")).toHaveAttribute(
+      "points",
+      "160,70 240,70",
+    );
+    await user.keyboard("{Control>}y{/Control}");
+    expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
+      "points",
+      "80,70 160,110",
+    );
+    expect(screen.getByTestId("wire-wire_result")).toHaveAttribute(
+      "points",
+      "200,110 240,70",
+    );
+  });
+
   it("does not commit a cancelled drag", () => {
     render(<App />);
     const element = screen.getByTestId("element-node_nat_2");
@@ -161,6 +220,37 @@ describe("Tilefold editor UI", () => {
       pointerId: 8,
     });
     expect(screen.getByText("0 undo · 0 redo")).toBeInTheDocument();
+    expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
+      "points",
+      "80,70 120,70",
+    );
+  });
+
+  it("cancels an element move with Escape without changing wire geometry", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const element = screen.getByTestId("element-node_nat_2");
+    fireEvent.pointerDown(element, {
+      pointerId: 80,
+      button: 0,
+      clientX: 60,
+      clientY: 60,
+    });
+    fireEvent.pointerMove(screen.getByTestId("project-canvas"), {
+      pointerId: 80,
+      clientX: 100,
+      clientY: 90,
+    });
+    expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
+      "points",
+      "120,100 120,70",
+    );
+    await user.keyboard("{Escape}");
+    expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
+      "points",
+      "80,70 120,70",
+    );
+    expect(screen.getByText(/0 undo · 0 redo/)).toBeInTheDocument();
   });
 
   it("blocks deletion of a referenced element", async () => {
@@ -272,9 +362,7 @@ describe("Tilefold editor UI", () => {
       screen.queryByTestId("wire-wire_nat_succ-source-handle"),
     ).not.toBeInTheDocument();
     await user.click(screen.getByTestId("wire-wire_nat_succ"));
-    const sourceHandle = screen.getByTestId(
-      "wire-wire_nat_succ-source-handle",
-    );
+    const sourceHandle = screen.getByTestId("wire-wire_nat_succ-source-handle");
     expect(sourceHandle).toHaveAccessibleName(
       "Reconnect source endpoint of wire wire_nat_succ",
     );
@@ -301,7 +389,9 @@ describe("Tilefold editor UI", () => {
       pointerId: 41,
     });
     fireEvent.click(screen.getByTestId("element-node_nat_1"));
-    expect(screen.getByRole("heading", { name: "wire_nat_succ" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "wire_nat_succ" }),
+    ).toBeInTheDocument();
     expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
       "points",
       "248,130 120,70",
@@ -344,7 +434,9 @@ describe("Tilefold editor UI", () => {
     await user.click(screen.getByTestId("wire-wire_nat_succ"));
     const handle = screen.getByTestId("wire-wire_nat_succ-target-handle");
     const canvas = screen.getByTestId("project-canvas");
-    const original = screen.getByTestId("wire-wire_nat_succ").getAttribute("points");
+    const original = screen
+      .getByTestId("wire-wire_nat_succ")
+      .getAttribute("points");
 
     fireEvent.pointerDown(handle, { pointerId: 51, button: 0 });
     fireEvent.pointerUp(canvas, { pointerId: 51 });
@@ -352,13 +444,17 @@ describe("Tilefold editor UI", () => {
       "points",
       original,
     );
-    expect(screen.getByRole("heading", { name: "wire_nat_succ" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "wire_nat_succ" }),
+    ).toBeInTheDocument();
 
     fireEvent.pointerDown(handle, { pointerId: 52, button: 0 });
     await user.keyboard("{Escape}");
     fireEvent.click(canvas);
     expect(screen.queryByTestId("wire-preview")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "wire_nat_succ" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "wire_nat_succ" }),
+    ).toBeInTheDocument();
 
     fireEvent.pointerDown(handle, { pointerId: 53, button: 0 });
     fireEvent.pointerCancel(canvas, { pointerId: 53 });

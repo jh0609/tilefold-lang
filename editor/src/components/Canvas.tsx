@@ -128,29 +128,37 @@ export function Canvas({
 
   useEffect(() => {
     function cancelOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape" && connection) {
+      if (event.key !== "Escape") return;
+      if (connection) {
         suppressNextSelectionRef.current = true;
         setConnection(null);
         onConnectionMessage("Wire connection cancelled.");
+      } else if (drag) {
+        suppressNextSelectionRef.current = true;
+        setDrag(null);
+        onConnectionMessage("Element move cancelled.");
       }
     }
     window.addEventListener("keydown", cancelOnEscape);
     return () => window.removeEventListener("keydown", cancelOnEscape);
-  }, [connection, onConnectionMessage]);
+  }, [connection, drag, onConnectionMessage]);
 
   function startDrag(
     event: ReactPointerEvent<SVGGElement>,
     element: ProjectElement,
   ) {
-    if (event.button !== 0 || !svgRef.current) return;
-    const start = clientToProject(
-      svgRef.current,
-      event.clientX,
-      event.clientY,
-    );
+    if (event.button !== 0 || !svgRef.current || connection || drag) return;
+    const start = clientToProject(svgRef.current, event.clientX, event.clientY);
     if (!start) return;
     event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      onConnectionMessage(
+        "Unable to capture the pointer; element move cancelled.",
+      );
+      return;
+    }
     onSelect({ type: "element", id: element.id });
     setDrag({
       pointerId: event.pointerId,
@@ -174,7 +182,9 @@ export function Canvas({
       );
       if (!current) {
         setConnection(null);
-        onConnectionMessage("Unable to convert the pointer to project coordinates.");
+        onConnectionMessage(
+          "Unable to convert the pointer to project coordinates.",
+        );
         return;
       }
       const point = { x: Math.round(current.x), y: Math.round(current.y) };
@@ -188,7 +198,8 @@ export function Canvas({
             ),
           }))
           .filter((candidate) => candidate.distance <= 14)
-          .sort((left, right) => left.distance - right.distance)[0]?.port ?? null;
+          .sort((left, right) => left.distance - right.distance)[0]?.port ??
+        null;
       let validHover: ConnectablePort | null = null;
       let rejection: string | null = null;
       if (hover) {
@@ -296,7 +307,9 @@ export function Canvas({
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
     } catch {
-      onConnectionMessage("Unable to capture the pointer; connection cancelled.");
+      onConnectionMessage(
+        "Unable to capture the pointer; connection cancelled.",
+      );
       return;
     }
     setConnection({
@@ -343,7 +356,9 @@ export function Canvas({
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
     } catch {
-      onConnectionMessage("Unable to capture the pointer; reconnection cancelled.");
+      onConnectionMessage(
+        "Unable to capture the pointer; reconnection cancelled.",
+      );
       return;
     }
     onSelect({ type: "wire", id: wireId });
@@ -362,9 +377,11 @@ export function Canvas({
     );
   }
 
-  const renderedDocument = drag
+  const movePreview = drag
     ? moveElement(document, drag.elementId, drag.next)
-    : document;
+    : null;
+  const renderedDocument =
+    movePreview && !("error" in movePreview) ? movePreview.document : document;
 
   function selectUnlessSuppressed(next: Selection | null) {
     if (suppressNextSelectionRef.current) {
@@ -401,8 +418,20 @@ export function Canvas({
             <path d="M 20 0 L 0 0 0 20" className="grid-line" />
           </pattern>
         </defs>
-        <rect className="canvas-background" x="-5000" y="-5000" width="10000" height="10000" />
-        <rect className="grid-fill" x="-5000" y="-5000" width="10000" height="10000" />
+        <rect
+          className="canvas-background"
+          x="-5000"
+          y="-5000"
+          width="10000"
+          height="10000"
+        />
+        <rect
+          className="grid-fill"
+          x="-5000"
+          y="-5000"
+          width="10000"
+          height="10000"
+        />
         {renderedDocument.geometry.containers.map((container) => (
           <ContainerShape
             key={container.id}
@@ -425,7 +454,9 @@ export function Canvas({
                   ? "wire selected"
                   : "wire"
               }
-              points={wire.points.map((point) => `${point.x},${point.y}`).join(" ")}
+              points={wire.points
+                .map((point) => `${point.x},${point.y}`)
+                .join(" ")}
               role="button"
               tabIndex={0}
               aria-label={`Wire ${wire.id}`}
@@ -447,26 +478,30 @@ export function Canvas({
             className="wire-preview"
             data-testid="wire-preview"
             x1={
-              connection.kind === "reconnect" && connection.endpoint === "source"
+              connection.kind === "reconnect" &&
+              connection.endpoint === "source"
                 ? (connection.validHover?.anchor.x ?? connection.current.x)
                 : connection.kind === "new"
                   ? connection.source.anchor.x
                   : connection.fixed.anchor.x
             }
             y1={
-              connection.kind === "reconnect" && connection.endpoint === "source"
+              connection.kind === "reconnect" &&
+              connection.endpoint === "source"
                 ? (connection.validHover?.anchor.y ?? connection.current.y)
                 : connection.kind === "new"
                   ? connection.source.anchor.y
                   : connection.fixed.anchor.y
             }
             x2={
-              connection.kind === "reconnect" && connection.endpoint === "source"
+              connection.kind === "reconnect" &&
+              connection.endpoint === "source"
                 ? connection.fixed.anchor.x
                 : (connection.validHover?.anchor.x ?? connection.current.x)
             }
             y2={
-              connection.kind === "reconnect" && connection.endpoint === "source"
+              connection.kind === "reconnect" &&
+              connection.endpoint === "source"
                 ? connection.fixed.anchor.y
                 : (connection.validHover?.anchor.y ?? connection.current.y)
             }
@@ -599,7 +634,8 @@ export function Canvas({
       </svg>
       <div className="canvas-hint">
         Drag output to input to add a wire. Select a wire and drag its S/T
-        handle to reconnect one endpoint. Element moves keep wire geometry fixed.
+        handle to reconnect one endpoint. Connected wire endpoints follow
+        element moves while middle points stay fixed.
       </div>
     </main>
   );

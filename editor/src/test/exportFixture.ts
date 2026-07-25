@@ -4,6 +4,7 @@ import { exportProjectJson, parseProjectJson } from "../model/importProject";
 import {
   addElement,
   addWire,
+  moveElement,
   reconnectWireEndpoint,
 } from "../model/editorOps";
 import { collectConnectablePorts } from "../model/portConnections";
@@ -20,7 +21,8 @@ const sourcePort = ports.find(
 const targetPort = ports.find(
   (port) => port.key === "element:node_succ_1:input",
 );
-if (!sourcePort || !targetPort) throw new Error("Export fixture ports missing.");
+if (!sourcePort || !targetPort)
+  throw new Error("Export fixture ports missing.");
 const added = addWire(project, sourcePort, targetPort);
 if ("error" in added) throw new Error(added.error);
 project = added.document;
@@ -151,5 +153,61 @@ await writeFile(
   resolve(".tmp/exported-reconnect-boundary.tilefold.json"),
   exportProjectJson(boundaryResultDocument),
   "utf8",
+);
+
+async function writeMovedFixture(
+  name: string,
+  document: ReturnType<typeof parseProjectJson>,
+  elementId: string,
+  next: { x: number; y: number },
+) {
+  const result = moveElement(document, elementId, next);
+  if ("error" in result) throw new Error(result.error);
+  await writeFile(
+    resolve(`.tmp/${name}.tilefold.json`),
+    exportProjectJson(result.document),
+    "utf8",
+  );
+}
+
+await writeMovedFixture(
+  "exported-move-source",
+  parseProjectJson(await readFile(source, "utf8")),
+  "node_nat_2",
+  { x: 100, y: 90 },
+);
+await writeMovedFixture(
+  "exported-move-target",
+  parseProjectJson(await readFile(source, "utf8")),
+  "node_succ",
+  { x: 170, y: 60 },
+);
+await writeMovedFixture(
+  "exported-move-boundary",
+  parseProjectJson(await readFile(source, "utf8")),
+  "drop_unit",
+  { x: 30, y: 20 },
+);
+
+const middlePointDocument = parseProjectJson(await readFile(source, "utf8"));
+const withMiddlePoint = {
+  ...middlePointDocument,
+  geometry: {
+    ...middlePointDocument.geometry,
+    wires: middlePointDocument.geometry.wires.map((wire) =>
+      wire.id === "wire_nat_succ"
+        ? {
+            ...wire,
+            points: [wire.points[0]!, { x: 100, y: 90 }, wire.points.at(-1)!],
+          }
+        : wire,
+    ),
+  },
+};
+await writeMovedFixture(
+  "exported-move-middle-point",
+  withMiddlePoint,
+  "node_nat_2",
+  { x: 90, y: 60 },
 );
 console.log(target);
