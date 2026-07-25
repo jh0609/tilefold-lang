@@ -8,9 +8,11 @@ import type {
   Selection,
 } from "./project";
 import {
-  coreTypeEqual,
   endpointHintEqual,
+  pointEqual,
+  validateConnection,
   type ConnectablePort,
+  type WireEndpoint,
 } from "./portConnections";
 
 export function nextStableId(
@@ -126,62 +128,22 @@ export function addWire(
   source: ConnectablePort,
   target: ConnectablePort,
 ): { document: ProjectDocument; wire: ProjectWire } | { error: string } {
-  if (source.direction !== "output") {
-    return { error: "Connections must start at an output port." };
-  }
-  if (target.direction !== "input") {
-    return { error: "Connect to an input port." };
-  }
-  if (source.key === target.key) {
-    return { error: "A port cannot be connected to itself." };
-  }
-  if (!coreTypeEqual(source.type, target.type)) {
-    return { error: "The port types are not compatible." };
-  }
-  if (
-    source.anchor.x === target.anchor.x &&
-    source.anchor.y === target.anchor.y
-  ) {
-    return { error: "The two wire anchors must be different." };
-  }
-  const available = collectStableIds(document);
-  if (!available.has(source.ownerId) || !available.has(target.ownerId)) {
-    return { error: "This port is not available in Project JSON v1." };
-  }
-  if (
-    document.geometry.wires.some(
-      (wire) =>
-        endpointHintEqual(wire.sourceHint, source.hint) &&
-        endpointHintEqual(wire.targetHint, target.hint),
-    )
-  ) {
-    return { error: "This connection already exists." };
-  }
-  if (
-    document.geometry.wires.some((wire) =>
-      endpointHintEqual(wire.targetHint, target.hint),
-    )
-  ) {
-    return { error: "This input port already has an incoming wire." };
-  }
-  if (
-    document.geometry.wires.some((wire) =>
-      endpointHintEqual(wire.sourceHint, source.hint),
-    )
-  ) {
-    return {
-      error:
-        "This output already has a wire; use an explicit junction for branching.",
-    };
-  }
+  const validation = validateConnection(document, source, target);
+  if ("error" in validation) return validation;
   const wire: ProjectWire = {
     id: nextStableId(document, "wire_"),
     points: [
-      { x: Math.round(source.anchor.x), y: Math.round(source.anchor.y) },
-      { x: Math.round(target.anchor.x), y: Math.round(target.anchor.y) },
+      {
+        x: Math.round(validation.source.anchor.x),
+        y: Math.round(validation.source.anchor.y),
+      },
+      {
+        x: Math.round(validation.target.anchor.x),
+        y: Math.round(validation.target.anchor.y),
+      },
     ],
-    sourceHint: source.hint,
-    targetHint: target.hint,
+    sourceHint: validation.source.hint,
+    targetHint: validation.target.hint,
   };
   return {
     wire,
@@ -191,6 +153,64 @@ export function addWire(
         ...document.geometry,
         wires: [...document.geometry.wires, wire],
       },
+    },
+  };
+}
+
+export function reconnectWireEndpoint(
+  document: ProjectDocument,
+  wireId: string,
+  endpoint: WireEndpoint,
+  source: ConnectablePort,
+  target: ConnectablePort,
+): { document: ProjectDocument; wire: ProjectWire } | { error: string } {
+  const wireIndex = document.geometry.wires.findIndex(
+    (wire) => wire.id === wireId,
+  );
+  if (wireIndex < 0) return { error: `Wire ${wireId} does not exist.` };
+  const wire = document.geometry.wires[wireIndex]!;
+  if (wire.points.length < 2) {
+    return { error: `Wire ${wireId} does not contain a valid polyline.` };
+  }
+  const validation = validateConnection(document, source, target, {
+    excludeWireId: wireId,
+  });
+  if ("error" in validation) return validation;
+  const beforeHint =
+    endpoint === "source" ? wire.sourceHint : wire.targetHint;
+  const afterPort =
+    endpoint === "source" ? validation.source : validation.target;
+  if (endpointHintEqual(beforeHint, afterPort.hint)) {
+    return { error: "The connection is unchanged." };
+  }
+  const points = wire.points.map((point) => ({ ...point }));
+  const pointIndex = endpoint === "source" ? 0 : points.length - 1;
+  points[pointIndex] = {
+    x: Math.round(afterPort.anchor.x),
+    y: Math.round(afterPort.anchor.y),
+  };
+  if (
+    points.some(
+      (point, index) =>
+        index > 0 && pointEqual(points[index - 1]!, point),
+    )
+  ) {
+    return {
+      error:
+        "Reconnection would create consecutive duplicate wire points.",
+    };
+  }
+  const updated: ProjectWire =
+    endpoint === "source"
+      ? { ...wire, sourceHint: afterPort.hint, points }
+      : { ...wire, targetHint: afterPort.hint, points };
+  const wires = [...document.geometry.wires];
+  wires[wireIndex] = updated;
+  return {
+    wire: updated,
+    document: {
+      ...document,
+      geometry: { ...document.geometry, wires },
     },
   };
 }

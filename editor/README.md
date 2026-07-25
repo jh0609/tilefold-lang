@@ -134,14 +134,30 @@ already-wired input or output are blocked; branching requires an explicit
 junction. Parameter/capture boundaries are outputs and result boundaries are
 inputs, following the OCaml geometry model.
 
-Existing wire endpoints, bend points, junctions, reconnection, and routing are
-not editable. Moving a node still does not update existing wire geometry.
+Select an existing wire to reveal distinct `S` (source) and `T` (target)
+endpoint handles. Drag `S` only to a compatible output port or `T` only to a
+compatible input port. Empty drops, invalid ports, Escape, and pointer
+cancellation leave the original wire untouched. A successful reconnection is
+one typed command and one undo/redo step.
+
+Reconnection preserves the wire stable ID and its exact array position. It
+changes only the selected hint and the corresponding first or last point; all
+middle points, the opposite endpoint, and unrelated project data remain
+unchanged. Handles appear only when the hint resolves to a known port with the
+correct direction, the polyline is structurally valid, and its endpoint exactly
+matches the integer port anchor. The Inspector explains why a handle is
+unavailable.
+
+Wire bend points, segments, junctions, and routing are not editable. Moving a
+node still does not update existing wire geometry, which can intentionally make
+its old wire handles unavailable until the stored geometry is repaired by a
+future feature.
 
 ## Next steps
 
 The next editor layer can add:
 
-- wire endpoint reconnection and bend-point editing;
+- wire bend-point and segment editing;
 - container movement with a specified deterministic group-translation policy;
 - OCaml JavaScript/WASM integration for decode, validation, inference,
   execution, diagnostics, and trace display.

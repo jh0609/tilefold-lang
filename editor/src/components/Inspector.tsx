@@ -5,6 +5,7 @@ import type {
   ProjectElement,
   Selection,
 } from "../model/project";
+import { wireEndpointAvailability } from "../model/portConnections";
 
 interface InspectorProps {
   document: ProjectDocument;
@@ -201,6 +202,16 @@ export function Inspector({
       (candidate) => candidate.id === selection.id,
     );
     if (wire) {
+      const sourceAvailability = wireEndpointAvailability(
+        document,
+        wire,
+        "source",
+      );
+      const targetAvailability = wireEndpointAvailability(
+        document,
+        wire,
+        "target",
+      );
       content = (
         <>
           <div className="inspector-heading">
@@ -217,6 +228,28 @@ export function Inspector({
             <h3>Endpoint hints · read only</h3>
             <code>{JSON.stringify(wire.sourceHint ?? null)}</code>
             <code>{JSON.stringify(wire.targetHint ?? null)}</code>
+          </section>
+          <section className="readout">
+            <h3>Endpoint reconnection</h3>
+            <span>
+              Source:{" "}
+              {sourceAvailability.available
+                ? "available"
+                : sourceAvailability.reason}
+            </span>
+            <span>
+              Target:{" "}
+              {targetAvailability.available
+                ? "available"
+                : targetAvailability.reason}
+            </span>
+            {(sourceAvailability.available ||
+              targetAvailability.available) && (
+              <p>
+                Drag an S or T endpoint handle on the selected wire to reconnect
+                it.
+              </p>
+            )}
           </section>
         </>
       );

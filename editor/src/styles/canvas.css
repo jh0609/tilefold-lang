@@ -84,6 +84,42 @@
   pointer-events: none;
 }
 
+.wire-endpoint-handle {
+  pointer-events: none;
+}
+
+.wire-endpoint-hit {
+  fill: transparent;
+  stroke: transparent;
+  pointer-events: all;
+  cursor: crosshair;
+}
+
+.wire-endpoint-visible {
+  fill: #ffffff;
+  stroke: var(--selection);
+  stroke-width: 2.5;
+  pointer-events: none;
+}
+
+.wire-endpoint-handle.target .wire-endpoint-visible {
+  fill: var(--selection);
+  stroke: #ffffff;
+}
+
+.wire-endpoint-label {
+  fill: var(--text);
+  font-size: 9px;
+  font-weight: 800;
+  pointer-events: none;
+}
+
+.wire-endpoint-hit:focus {
+  outline: none;
+  stroke: var(--selection);
+  stroke-width: 2;
+}
+
 .port-hit-area {
   fill: transparent;
   stroke: transparent;

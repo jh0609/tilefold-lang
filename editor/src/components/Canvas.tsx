@@ -9,7 +9,10 @@ import { clientToProject } from "../model/coordinates";
 import { moveElement } from "../model/editorOps";
 import {
   collectConnectablePorts,
+  validateConnection,
+  wireEndpointAvailability,
   type ConnectablePort,
+  type WireEndpoint,
 } from "../model/portConnections";
 import type {
   Point,
@@ -35,15 +38,30 @@ interface CanvasProps {
   onSelect: (selection: Selection | null) => void;
   onMoveElement: (id: string, next: Point) => void;
   onAddWire: (source: ConnectablePort, target: ConnectablePort) => void;
+  onReconnectWire: (
+    wireId: string,
+    endpoint: WireEndpoint,
+    source: ConnectablePort,
+    target: ConnectablePort,
+  ) => void;
   onConnectionMessage: (message: string | null) => void;
 }
 
-interface ConnectionDrag {
+interface ConnectionDragBase {
   pointerId: number;
-  source: ConnectablePort;
   current: Point;
-  target: ConnectablePort | null;
+  validHover: ConnectablePort | null;
+  rejection: string | null;
 }
+
+type ConnectionDrag =
+  | (ConnectionDragBase & { kind: "new"; source: ConnectablePort })
+  | (ConnectionDragBase & {
+      kind: "reconnect";
+      wireId: string;
+      endpoint: WireEndpoint;
+      fixed: ConnectablePort;
+    });
 
 function ContainerShape({
   container,
@@ -98,10 +116,12 @@ export function Canvas({
   onSelect,
   onMoveElement,
   onAddWire,
+  onReconnectWire,
   onConnectionMessage,
 }: CanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
-  const suppressSelectionRef = useRef(false);
+  const suppressNextSelectionRef = useRef(false);
+  const completedPointerRef = useRef<number | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [connection, setConnection] = useState<ConnectionDrag | null>(null);
   const ports = useMemo(() => collectConnectablePorts(document), [document]);
@@ -109,6 +129,7 @@ export function Canvas({
   useEffect(() => {
     function cancelOnEscape(event: KeyboardEvent) {
       if (event.key === "Escape" && connection) {
+        suppressNextSelectionRef.current = true;
         setConnection(null);
         onConnectionMessage("Wire connection cancelled.");
       }
@@ -157,12 +178,8 @@ export function Canvas({
         return;
       }
       const point = { x: Math.round(current.x), y: Math.round(current.y) };
-      const target =
+      const hover =
         ports
-          .filter(
-            (port) =>
-              port.direction === "input" && port.key !== connection.source.key,
-          )
           .map((port) => ({
             port,
             distance: Math.hypot(
@@ -172,7 +189,27 @@ export function Canvas({
           }))
           .filter((candidate) => candidate.distance <= 14)
           .sort((left, right) => left.distance - right.distance)[0]?.port ?? null;
-      setConnection({ ...connection, current: point, target });
+      let validHover: ConnectablePort | null = null;
+      let rejection: string | null = null;
+      if (hover) {
+        const source =
+          connection.kind === "new"
+            ? connection.source
+            : connection.endpoint === "source"
+              ? hover
+              : connection.fixed;
+        const target =
+          connection.kind === "reconnect" && connection.endpoint === "source"
+            ? connection.fixed
+            : hover;
+        const validation = validateConnection(document, source, target, {
+          excludeWireId:
+            connection.kind === "reconnect" ? connection.wireId : undefined,
+        });
+        if ("error" in validation) rejection = validation.error;
+        else validHover = hover;
+      }
+      setConnection({ ...connection, current: point, validHover, rejection });
       return;
     }
     if (!drag || event.pointerId !== drag.pointerId || !svgRef.current) return;
@@ -193,14 +230,32 @@ export function Canvas({
 
   function finishDrag(event: ReactPointerEvent<SVGSVGElement>) {
     if (connection?.pointerId === event.pointerId) {
-      if (connection.target) {
-        suppressSelectionRef.current = true;
-        window.setTimeout(() => {
-          suppressSelectionRef.current = false;
-        }, 0);
-        onAddWire(connection.source, connection.target);
+      completedPointerRef.current = event.pointerId;
+      suppressNextSelectionRef.current = true;
+      if (connection.validHover) {
+        if (connection.kind === "new") {
+          onAddWire(connection.source, connection.validHover);
+        } else {
+          const source =
+            connection.endpoint === "source"
+              ? connection.validHover
+              : connection.fixed;
+          const target =
+            connection.endpoint === "target"
+              ? connection.validHover
+              : connection.fixed;
+          onReconnectWire(
+            connection.wireId,
+            connection.endpoint,
+            source,
+            target,
+          );
+        }
       } else {
-        onConnectionMessage("Connect to an available input port.");
+        onConnectionMessage(
+          connection.rejection ??
+            `Connect to an available ${connection.kind === "reconnect" && connection.endpoint === "source" ? "output" : "input"} port.`,
+        );
       }
       setConnection(null);
       return;
@@ -212,11 +267,20 @@ export function Canvas({
 
   function cancelDrag(event: ReactPointerEvent<SVGSVGElement>) {
     if (connection?.pointerId === event.pointerId) {
+      suppressNextSelectionRef.current = true;
       setConnection(null);
       onConnectionMessage("Wire connection cancelled.");
       return;
     }
     if (drag?.pointerId === event.pointerId) setDrag(null);
+  }
+
+  function lostPointerCapture(event: ReactPointerEvent<SVGSVGElement>) {
+    if (completedPointerRef.current === event.pointerId) {
+      completedPointerRef.current = null;
+      return;
+    }
+    cancelDrag(event);
   }
 
   function startConnection(
@@ -229,19 +293,86 @@ export function Canvas({
       onConnectionMessage("Connections must start at an output port.");
       return;
     }
-    event.currentTarget.setPointerCapture(event.pointerId);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      onConnectionMessage("Unable to capture the pointer; connection cancelled.");
+      return;
+    }
     setConnection({
+      kind: "new",
       pointerId: event.pointerId,
       source: port,
       current: port.anchor,
-      target: null,
+      validHover: null,
+      rejection: null,
     });
     onConnectionMessage("Drag to an input port. Press Escape to cancel.");
+  }
+
+  function startReconnect(
+    event: ReactPointerEvent<SVGCircleElement>,
+    wireId: string,
+    endpoint: WireEndpoint,
+  ) {
+    event.stopPropagation();
+    if (event.button !== 0) return;
+    const wire = document.geometry.wires.find(
+      (candidate) => candidate.id === wireId,
+    );
+    if (!wire) return;
+    const moving = wireEndpointAvailability(document, wire, endpoint);
+    const opposite = wireEndpointAvailability(
+      document,
+      wire,
+      endpoint === "source" ? "target" : "source",
+    );
+    if (
+      !moving.available ||
+      !moving.point ||
+      !opposite.available ||
+      !opposite.port
+    ) {
+      onConnectionMessage(
+        moving.reason ??
+          opposite.reason ??
+          "This endpoint cannot be reconnected.",
+      );
+      return;
+    }
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      onConnectionMessage("Unable to capture the pointer; reconnection cancelled.");
+      return;
+    }
+    onSelect({ type: "wire", id: wireId });
+    setConnection({
+      kind: "reconnect",
+      pointerId: event.pointerId,
+      wireId,
+      endpoint,
+      fixed: opposite.port,
+      current: moving.point,
+      validHover: null,
+      rejection: null,
+    });
+    onConnectionMessage(
+      `Reconnect ${wireId} ${endpoint}: drag to an ${endpoint === "source" ? "output" : "input"} port.`,
+    );
   }
 
   const renderedDocument = drag
     ? moveElement(document, drag.elementId, drag.next)
     : document;
+
+  function selectUnlessSuppressed(next: Selection | null) {
+    if (suppressNextSelectionRef.current) {
+      suppressNextSelectionRef.current = false;
+      return;
+    }
+    onSelect(next);
+  }
 
   return (
     <main className="canvas-shell">
@@ -251,10 +382,14 @@ export function Canvas({
         data-testid="project-canvas"
         viewBox={viewBox}
         aria-label="Tilefold project canvas"
-        onClick={() => onSelect(null)}
+        onClick={() => selectUnlessSuppressed(null)}
+        onPointerDownCapture={() => {
+          if (!connection) suppressNextSelectionRef.current = false;
+        }}
         onPointerMove={continueDrag}
         onPointerUp={finishDrag}
         onPointerCancel={cancelDrag}
+        onLostPointerCapture={lostPointerCapture}
       >
         <defs>
           <pattern
@@ -275,7 +410,9 @@ export function Canvas({
             selected={
               selection?.type === "container" && selection.id === container.id
             }
-            onSelect={() => onSelect({ type: "container", id: container.id })}
+            onSelect={() =>
+              selectUnlessSuppressed({ type: "container", id: container.id })
+            }
           />
         ))}
         <g className="wire-layer">
@@ -309,10 +446,30 @@ export function Canvas({
           <line
             className="wire-preview"
             data-testid="wire-preview"
-            x1={connection.source.anchor.x}
-            y1={connection.source.anchor.y}
-            x2={connection.target?.anchor.x ?? connection.current.x}
-            y2={connection.target?.anchor.y ?? connection.current.y}
+            x1={
+              connection.kind === "reconnect" && connection.endpoint === "source"
+                ? (connection.validHover?.anchor.x ?? connection.current.x)
+                : connection.kind === "new"
+                  ? connection.source.anchor.x
+                  : connection.fixed.anchor.x
+            }
+            y1={
+              connection.kind === "reconnect" && connection.endpoint === "source"
+                ? (connection.validHover?.anchor.y ?? connection.current.y)
+                : connection.kind === "new"
+                  ? connection.source.anchor.y
+                  : connection.fixed.anchor.y
+            }
+            x2={
+              connection.kind === "reconnect" && connection.endpoint === "source"
+                ? connection.fixed.anchor.x
+                : (connection.validHover?.anchor.x ?? connection.current.x)
+            }
+            y2={
+              connection.kind === "reconnect" && connection.endpoint === "source"
+                ? connection.fixed.anchor.y
+                : (connection.validHover?.anchor.y ?? connection.current.y)
+            }
             aria-hidden="true"
           />
         )}
@@ -362,15 +519,11 @@ export function Canvas({
               selection?.type === "element" && selection.id === element.id
             }
             onSelect={() => {
-              if (suppressSelectionRef.current) {
-                suppressSelectionRef.current = false;
-                return;
-              }
-              onSelect({ type: "element", id: element.id });
+              selectUnlessSuppressed({ type: "element", id: element.id });
             }}
             onPointerDown={startDrag}
             ports={ports.filter((port) => port.ownerId === element.id)}
-            connectionTargetKey={connection?.target?.key ?? null}
+            connectionTargetKey={connection?.validHover?.key ?? null}
             onPortPointerDown={startConnection}
           />
         ))}
@@ -380,7 +533,7 @@ export function Canvas({
             .map((port) => (
               <circle
                 key={port.key}
-                className={`port-hit-area boundary-hit ${port.direction}${connection?.target?.key === port.key ? " connection-target" : ""}`}
+                className={`port-hit-area boundary-hit ${port.direction}${connection?.validHover?.key === port.key ? " connection-target" : ""}`}
                 data-testid={`port-${port.key}`}
                 cx={port.anchor.x}
                 cy={port.anchor.y}
@@ -392,10 +545,61 @@ export function Canvas({
               />
             ))}
         </g>
+        {selection?.type === "wire" &&
+          (() => {
+            const wire = renderedDocument.geometry.wires.find(
+              (candidate) => candidate.id === selection.id,
+            );
+            if (!wire) return null;
+            return (["source", "target"] as const).map((endpoint) => {
+              const availability = wireEndpointAvailability(
+                renderedDocument,
+                wire,
+                endpoint,
+              );
+              if (!availability.available || !availability.point) return null;
+              return (
+                <g
+                  key={endpoint}
+                  className={`wire-endpoint-handle ${endpoint}`}
+                >
+                  <circle
+                    className="wire-endpoint-hit"
+                    data-testid={`wire-${wire.id}-${endpoint}-handle`}
+                    cx={availability.point.x}
+                    cy={availability.point.y}
+                    r={12}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Reconnect ${endpoint} endpoint of wire ${wire.id}`}
+                    onPointerDown={(event) =>
+                      startReconnect(event, wire.id, endpoint)
+                    }
+                  />
+                  <circle
+                    className="wire-endpoint-visible"
+                    cx={availability.point.x}
+                    cy={availability.point.y}
+                    r={7}
+                    aria-hidden="true"
+                  />
+                  <text
+                    className="wire-endpoint-label"
+                    x={availability.point.x}
+                    y={availability.point.y - 11}
+                    textAnchor="middle"
+                    aria-hidden="true"
+                  >
+                    {endpoint === "source" ? "S" : "T"}
+                  </text>
+                </g>
+              );
+            });
+          })()}
       </svg>
       <div className="canvas-hint">
-        Drag from an output port to an input port to add a wire. Element moves
-        keep existing wire geometry fixed.
+        Drag output to input to add a wire. Select a wire and drag its S/T
+        handle to reconnect one endpoint. Element moves keep wire geometry fixed.
       </div>
     </main>
   );

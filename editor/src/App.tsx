@@ -18,7 +18,10 @@ import {
 } from "./model/editorHistory";
 import { exportProjectJson, parseProjectJson } from "./model/importProject";
 import type { Point, ProjectDocument, Selection } from "./model/project";
-import type { ConnectablePort } from "./model/portConnections";
+import type {
+  ConnectablePort,
+  WireEndpoint,
+} from "./model/portConnections";
 
 const initialDocument = parseProjectJson(exampleJson);
 
@@ -180,6 +183,24 @@ export function App() {
     }
   }
 
+  function reconnectWire(
+    wireId: string,
+    endpoint: WireEndpoint,
+    source: ConnectablePort,
+    target: ConnectablePort,
+  ) {
+    const nextDocument = runCommand({
+      type: "reconnect_wire_endpoint",
+      wireId,
+      endpoint,
+      source,
+      target,
+    });
+    if (!nextDocument) return;
+    setSelection({ type: "wire", id: wireId });
+    setConnectionMessage(`Reconnected ${wireId} ${endpoint} endpoint.`);
+  }
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       const modifier = event.ctrlKey || event.metaKey;
@@ -249,6 +270,7 @@ export function App() {
             });
           }}
           onAddWire={connectPorts}
+          onReconnectWire={reconnectWire}
           onConnectionMessage={setConnectionMessage}
         />
         <Inspector

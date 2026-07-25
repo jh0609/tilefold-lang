@@ -4,11 +4,12 @@ import {
   addWire,
   deleteSelection,
   moveElement,
+  reconnectWireEndpoint,
   resizeOrMoveElement,
   updateNatValue,
 } from "./editorOps";
 import { exportProjectJson, parseProjectJson } from "./importProject";
-import type { ConnectablePort } from "./portConnections";
+import type { ConnectablePort, WireEndpoint } from "./portConnections";
 import type {
   Bounds,
   Point,
@@ -24,6 +25,13 @@ export type EditorCommand =
     }
   | { type: "add_result_boundary" }
   | { type: "add_wire"; source: ConnectablePort; target: ConnectablePort }
+  | {
+      type: "reconnect_wire_endpoint";
+      wireId: string;
+      endpoint: WireEndpoint;
+      source: ConnectablePort;
+      target: ConnectablePort;
+    }
   | {
       type: "delete_selection";
       selection: Selection;
@@ -82,6 +90,29 @@ export function applyEditorCommand(
         };
       }
     }
+    case "reconnect_wire_endpoint": {
+      const result = reconnectWireEndpoint(
+        document,
+        command.wireId,
+        command.endpoint,
+        command.source,
+        command.target,
+      );
+      if ("error" in result) return { document, error: result.error };
+      try {
+        return {
+          document: parseProjectJson(exportProjectJson(result.document)),
+        };
+      } catch (error) {
+        return {
+          document,
+          error:
+            error instanceof Error
+              ? `Reconnected wire failed the editor structure check: ${error.message}`
+              : "Reconnected wire failed the editor structure check.",
+        };
+      }
+    }
     case "delete_selection":
       return deleteSelection(document, command.selection);
     case "move_element":
@@ -105,6 +136,8 @@ export function editorCommandLabel(command: EditorCommand): string {
       return "Add Result";
     case "add_wire":
       return "Add wire";
+    case "reconnect_wire_endpoint":
+      return `Reconnect ${command.wireId} ${command.endpoint}`;
     case "delete_selection":
       return `Delete ${command.selection.id}`;
     case "move_element":

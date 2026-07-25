@@ -264,4 +264,108 @@ describe("Tilefold editor UI", () => {
     expect(screen.queryByTestId("wire-preview")).not.toBeInTheDocument();
     expect(screen.getByText(/0 redo/)).toBeInTheDocument();
   });
+
+  it("shows handles only for a selected wire and reconnects its source atomically", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    expect(
+      screen.queryByTestId("wire-wire_nat_succ-source-handle"),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByTestId("wire-wire_nat_succ"));
+    const sourceHandle = screen.getByTestId(
+      "wire-wire_nat_succ-source-handle",
+    );
+    expect(sourceHandle).toHaveAccessibleName(
+      "Reconnect source endpoint of wire wire_nat_succ",
+    );
+    expect(
+      screen.getByTestId("wire-wire_nat_succ-target-handle"),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "+ Nat" }));
+    await user.click(screen.getByTestId("wire-wire_nat_succ"));
+
+    fireEvent.pointerDown(
+      screen.getByTestId("wire-wire_nat_succ-source-handle"),
+      { pointerId: 41, button: 0, clientX: 80, clientY: 70 },
+    );
+    expect(screen.getByTestId("wire-preview")).toBeInTheDocument();
+    fireEvent.pointerMove(screen.getByTestId("project-canvas"), {
+      pointerId: 41,
+      clientX: 248,
+      clientY: 130,
+    });
+    expect(
+      screen.getByTestId("port-element:node_nat_1:value").parentElement,
+    ).toHaveClass("connection-target");
+    fireEvent.pointerUp(screen.getByTestId("project-canvas"), {
+      pointerId: 41,
+    });
+    fireEvent.click(screen.getByTestId("element-node_nat_1"));
+    expect(screen.getByRole("heading", { name: "wire_nat_succ" })).toBeInTheDocument();
+    expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
+      "points",
+      "248,130 120,70",
+    );
+
+    await user.keyboard("{Control>}z{/Control}");
+    expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
+      "points",
+      "80,70 120,70",
+    );
+    await user.keyboard("{Control>}y{/Control}");
+    expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
+      "points",
+      "248,130 120,70",
+    );
+
+    await user.click(screen.getByRole("button", { name: "+ Succ" }));
+    await user.click(screen.getByTestId("wire-wire_nat_succ"));
+    fireEvent.pointerDown(
+      screen.getByTestId("wire-wire_nat_succ-target-handle"),
+      { pointerId: 42, button: 0, clientX: 120, clientY: 70 },
+    );
+    fireEvent.pointerMove(screen.getByTestId("project-canvas"), {
+      pointerId: 42,
+      clientX: 156,
+      clientY: 130,
+    });
+    fireEvent.pointerUp(screen.getByTestId("project-canvas"), {
+      pointerId: 42,
+    });
+    expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
+      "points",
+      "248,130 156,130",
+    );
+  });
+
+  it("cancels endpoint reconnection without changing the selected wire", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByTestId("wire-wire_nat_succ"));
+    const handle = screen.getByTestId("wire-wire_nat_succ-target-handle");
+    const canvas = screen.getByTestId("project-canvas");
+    const original = screen.getByTestId("wire-wire_nat_succ").getAttribute("points");
+
+    fireEvent.pointerDown(handle, { pointerId: 51, button: 0 });
+    fireEvent.pointerUp(canvas, { pointerId: 51 });
+    expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
+      "points",
+      original,
+    );
+    expect(screen.getByRole("heading", { name: "wire_nat_succ" })).toBeInTheDocument();
+
+    fireEvent.pointerDown(handle, { pointerId: 52, button: 0 });
+    await user.keyboard("{Escape}");
+    fireEvent.click(canvas);
+    expect(screen.queryByTestId("wire-preview")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "wire_nat_succ" })).toBeInTheDocument();
+
+    fireEvent.pointerDown(handle, { pointerId: 53, button: 0 });
+    fireEvent.pointerCancel(canvas, { pointerId: 53 });
+    expect(screen.queryByTestId("wire-preview")).not.toBeInTheDocument();
+    expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
+      "points",
+      original,
+    );
+  });
 });

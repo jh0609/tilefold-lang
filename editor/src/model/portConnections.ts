@@ -4,6 +4,7 @@ import type {
   Point,
   ProjectDocument,
   ProjectElement,
+  ProjectWire,
 } from "./project";
 
 export type PortDirection = "input" | "output";
@@ -189,4 +190,158 @@ export function endpointHintEqual(
         left.outletId === right.outletId
       );
   }
+}
+
+export function pointEqual(left: Point, right: Point): boolean {
+  return (
+    Math.round(left.x) === Math.round(right.x) &&
+    Math.round(left.y) === Math.round(right.y)
+  );
+}
+
+export function resolveEndpointHint(
+  document: ProjectDocument,
+  hint: EndpointHint | undefined,
+): ConnectablePort | null {
+  if (!hint) return null;
+  return (
+    collectConnectablePorts(document).find((port) =>
+      endpointHintEqual(hint, port.hint),
+    ) ?? null
+  );
+}
+
+export interface ConnectionValidationOptions {
+  excludeWireId?: string;
+}
+
+export type ConnectionValidation =
+  | { source: ConnectablePort; target: ConnectablePort }
+  | { error: string };
+
+function canonicalPort(
+  document: ProjectDocument,
+  candidate: ConnectablePort,
+): ConnectablePort | null {
+  return (
+    collectConnectablePorts(document).find(
+      (port) =>
+        port.key === candidate.key &&
+        port.ownerId === candidate.ownerId &&
+        endpointHintEqual(port.hint, candidate.hint) &&
+        pointEqual(port.anchor, candidate.anchor),
+    ) ?? null
+  );
+}
+
+export function validateConnection(
+  document: ProjectDocument,
+  sourceCandidate: ConnectablePort,
+  targetCandidate: ConnectablePort,
+  options: ConnectionValidationOptions = {},
+): ConnectionValidation {
+  const source = canonicalPort(document, sourceCandidate);
+  const target = canonicalPort(document, targetCandidate);
+  if (!source || !target) {
+    return { error: "This port is not available in Project JSON v1." };
+  }
+  if (source.direction !== "output") {
+    return { error: "Connections must start at an output port." };
+  }
+  if (target.direction !== "input") {
+    return { error: "Connect to an input port." };
+  }
+  if (source.key === target.key) {
+    return { error: "A port cannot be connected to itself." };
+  }
+  if (!coreTypeEqual(source.type, target.type)) {
+    return { error: "The port types are not compatible." };
+  }
+  if (pointEqual(source.anchor, target.anchor)) {
+    return { error: "The two wire anchors must be different." };
+  }
+  const otherWires = document.geometry.wires.filter(
+    (wire) => wire.id !== options.excludeWireId,
+  );
+  if (
+    otherWires.some(
+      (wire) =>
+        endpointHintEqual(wire.sourceHint, source.hint) &&
+        endpointHintEqual(wire.targetHint, target.hint),
+    )
+  ) {
+    return { error: "This connection already exists." };
+  }
+  if (
+    otherWires.some((wire) => endpointHintEqual(wire.targetHint, target.hint))
+  ) {
+    return { error: "This input port already has an incoming wire." };
+  }
+  if (
+    otherWires.some((wire) => endpointHintEqual(wire.sourceHint, source.hint))
+  ) {
+    return {
+      error:
+        "This output already has a wire; use an explicit junction for branching.",
+    };
+  }
+  return { source, target };
+}
+
+export type WireEndpoint = "source" | "target";
+
+export interface WireEndpointAvailability {
+  available: boolean;
+  reason?: string;
+  port?: ConnectablePort;
+  point?: Point;
+}
+
+export function wireEndpointAvailability(
+  document: ProjectDocument,
+  wire: ProjectWire,
+  endpoint: WireEndpoint,
+): WireEndpointAvailability {
+  if (wire.points.length < 2) {
+    return {
+      available: false,
+      reason: "The wire does not contain a valid polyline.",
+    };
+  }
+  if (
+    wire.points.some(
+      (point, index) =>
+        index > 0 && pointEqual(wire.points[index - 1]!, point),
+    )
+  ) {
+    return {
+      available: false,
+      reason: "The wire contains consecutive duplicate points.",
+    };
+  }
+  const hint = endpoint === "source" ? wire.sourceHint : wire.targetHint;
+  const point =
+    endpoint === "source" ? wire.points[0] : wire.points.at(-1);
+  const port = resolveEndpointHint(document, hint);
+  if (!port || !point) {
+    return {
+      available: false,
+      reason: "This wire endpoint reference cannot be resolved.",
+    };
+  }
+  const expectedDirection = endpoint === "source" ? "output" : "input";
+  if (port.direction !== expectedDirection) {
+    return {
+      available: false,
+      reason: `The ${endpoint} hint does not reference an ${expectedDirection} port.`,
+    };
+  }
+  if (!pointEqual(point, port.anchor)) {
+    return {
+      available: false,
+      reason:
+        "The endpoint geometry does not match its referenced port anchor.",
+    };
+  }
+  return { available: true, port, point };
 }
