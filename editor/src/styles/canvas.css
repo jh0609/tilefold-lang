@@ -13,6 +13,10 @@
   user-select: none;
 }
 
+.canvas.is-panning {
+  cursor: grabbing;
+}
+
 .canvas-background {
   fill: var(--bg-canvas);
 }
@@ -297,4 +301,26 @@
   background: rgba(255, 255, 255, 0.91);
   padding: 6px 9px;
   font-size: 11px;
+}
+
+.canvas-camera-status {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.91);
+  padding: 5px 8px;
+  font-size: 10px;
+  pointer-events: none;
+}
+
+.canvas-camera-status strong {
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
 }

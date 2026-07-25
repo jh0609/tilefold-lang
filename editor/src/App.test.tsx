@@ -155,6 +155,78 @@ describe("Tilefold editor UI", () => {
     expect(screen.getByText("1 undo · 0 redo")).toBeInTheDocument();
   });
 
+  it("zooms around the wheel pointer without changing document history", () => {
+    render(<App />);
+    const canvas = screen.getByTestId("project-canvas");
+    expect(canvas).toHaveAttribute("viewBox", "0 0 400 260");
+    expect(screen.getByText("100%")).toBeInTheDocument();
+
+    fireEvent.wheel(canvas, {
+      clientX: 200,
+      clientY: 130,
+      deltaY: -120,
+      deltaMode: 0,
+    });
+
+    const zoomed = canvas
+      .getAttribute("viewBox")
+      ?.split(" ")
+      .map(Number);
+    expect(zoomed).toBeDefined();
+    expect(zoomed?.[2]).toBeLessThan(400);
+    expect(zoomed?.[3]).toBeLessThan(260);
+    expect(screen.getByText("120%")).toBeInTheDocument();
+    expect(screen.getByText("0 undo · 0 redo")).toBeInTheDocument();
+  });
+
+  it("pans with the middle button, preserves selection, and resets the view", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const canvas = screen.getByTestId("project-canvas");
+    await user.click(screen.getByTestId("element-node_nat_2"));
+
+    fireEvent.pointerDown(canvas, {
+      pointerId: 91,
+      button: 1,
+      clientX: 200,
+      clientY: 130,
+    });
+    fireEvent.pointerMove(canvas, {
+      pointerId: 91,
+      clientX: 240,
+      clientY: 150,
+    });
+    expect(canvas).toHaveAttribute("viewBox", "-40 -20 400 260");
+    expect(
+      screen.getByRole("heading", { name: "node_nat_2" }),
+    ).toBeInTheDocument();
+    fireEvent.pointerUp(canvas, { pointerId: 91 });
+    expect(screen.getByText("0 undo · 0 redo")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Reset view" }));
+    expect(canvas).toHaveAttribute("viewBox", "0 0 400 260");
+  });
+
+  it("restores the starting camera when a pan is cancelled", () => {
+    render(<App />);
+    const canvas = screen.getByTestId("project-canvas");
+    fireEvent.pointerDown(canvas, {
+      pointerId: 92,
+      button: 1,
+      clientX: 200,
+      clientY: 130,
+    });
+    fireEvent.pointerMove(canvas, {
+      pointerId: 92,
+      clientX: 240,
+      clientY: 150,
+    });
+    expect(canvas).not.toHaveAttribute("viewBox", "0 0 400 260");
+    fireEvent.pointerCancel(canvas, { pointerId: 92 });
+    expect(canvas).toHaveAttribute("viewBox", "0 0 400 260");
+    expect(screen.getByText(/Canvas pan cancelled/)).toBeInTheDocument();
+  });
+
   it("moves multiple source and target wire previews and restores them with undo and redo", async () => {
     const user = userEvent.setup();
     render(<App />);

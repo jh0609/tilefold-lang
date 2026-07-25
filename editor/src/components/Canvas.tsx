@@ -5,7 +5,13 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { clientToProject } from "../model/coordinates";
+import {
+  clientToProject,
+  formatViewBox,
+  panViewBox,
+  parseViewBox,
+  zoomViewBox,
+} from "../model/coordinates";
 import { moveElement } from "../model/editorOps";
 import {
   collectConnectablePorts,
@@ -35,6 +41,9 @@ interface CanvasProps {
   document: ProjectDocument;
   selection: Selection | null;
   viewBox: string;
+  referenceViewBox: string;
+  zoomPercent: number;
+  onViewBoxChange: (viewBox: string) => void;
   onSelect: (selection: Selection | null) => void;
   onMoveElement: (id: string, next: Point) => void;
   onAddWire: (source: ConnectablePort, target: ConnectablePort) => void;
@@ -45,6 +54,12 @@ interface CanvasProps {
     target: ConnectablePort,
   ) => void;
   onConnectionMessage: (message: string | null) => void;
+}
+
+interface PanState {
+  pointerId: number;
+  anchor: Point;
+  originViewBox: string;
 }
 
 interface ConnectionDragBase {
@@ -113,6 +128,9 @@ export function Canvas({
   document,
   selection,
   viewBox,
+  referenceViewBox,
+  zoomPercent,
+  onViewBoxChange,
   onSelect,
   onMoveElement,
   onAddWire,
@@ -124,6 +142,7 @@ export function Canvas({
   const completedPointerRef = useRef<number | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [connection, setConnection] = useState<ConnectionDrag | null>(null);
+  const [pan, setPan] = useState<PanState | null>(null);
   const ports = useMemo(() => collectConnectablePorts(document), [document]);
 
   useEffect(() => {
@@ -137,17 +156,100 @@ export function Canvas({
         suppressNextSelectionRef.current = true;
         setDrag(null);
         onConnectionMessage("Element move cancelled.");
+      } else if (pan) {
+        suppressNextSelectionRef.current = true;
+        onViewBoxChange(pan.originViewBox);
+        setPan(null);
+        onConnectionMessage("Canvas pan cancelled.");
       }
     }
     window.addEventListener("keydown", cancelOnEscape);
     return () => window.removeEventListener("keydown", cancelOnEscape);
-  }, [connection, drag, onConnectionMessage]);
+  }, [connection, drag, onConnectionMessage, onViewBoxChange, pan]);
+
+  useEffect(() => {
+    const canvas = svgRef.current;
+    if (!canvas) return;
+    const zoomAtPointer = (event: WheelEvent) => {
+      event.preventDefault();
+      if (connection || drag || pan) return;
+      const anchor = clientToProject(canvas, event.clientX, event.clientY);
+      const camera = parseViewBox(viewBox);
+      const reference = parseViewBox(referenceViewBox);
+      if (!anchor || !camera || !reference) {
+        onConnectionMessage("Unable to update the canvas camera.");
+        return;
+      }
+      const deltaScale =
+        event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 120 : 1;
+      const normalizedDelta = Math.max(
+        -240,
+        Math.min(240, event.deltaY * deltaScale),
+      );
+      const next = zoomViewBox(
+        camera,
+        anchor,
+        Math.exp(normalizedDelta * 0.0015),
+        reference,
+      );
+      onViewBoxChange(formatViewBox(next));
+    };
+    canvas.addEventListener("wheel", zoomAtPointer, { passive: false });
+    return () => canvas.removeEventListener("wheel", zoomAtPointer);
+  }, [
+    connection,
+    drag,
+    onConnectionMessage,
+    onViewBoxChange,
+    pan,
+    referenceViewBox,
+    viewBox,
+  ]);
+
+  function startPan(event: ReactPointerEvent<SVGSVGElement>) {
+    if (
+      event.button !== 1 ||
+      !svgRef.current ||
+      connection ||
+      drag ||
+      pan
+    ) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const anchor = clientToProject(
+      svgRef.current,
+      event.clientX,
+      event.clientY,
+    );
+    if (!anchor) {
+      onConnectionMessage(
+        "Unable to convert the pointer to project coordinates.",
+      );
+      return;
+    }
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      onConnectionMessage("Unable to capture the pointer; pan cancelled.");
+      return;
+    }
+    suppressNextSelectionRef.current = true;
+    setPan({
+      pointerId: event.pointerId,
+      anchor,
+      originViewBox: viewBox,
+    });
+  }
 
   function startDrag(
     event: ReactPointerEvent<SVGGElement>,
     element: ProjectElement,
   ) {
-    if (event.button !== 0 || !svgRef.current || connection || drag) return;
+    if (event.button !== 0 || !svgRef.current || connection || drag || pan) {
+      return;
+    }
     const start = clientToProject(svgRef.current, event.clientX, event.clientY);
     if (!start) return;
     event.stopPropagation();
@@ -170,6 +272,29 @@ export function Canvas({
   }
 
   function continueDrag(event: ReactPointerEvent<SVGSVGElement>) {
+    if (pan?.pointerId === event.pointerId && svgRef.current) {
+      const current = clientToProject(
+        svgRef.current,
+        event.clientX,
+        event.clientY,
+      );
+      const camera = parseViewBox(viewBox);
+      if (!current || !camera) {
+        onViewBoxChange(pan.originViewBox);
+        setPan(null);
+        onConnectionMessage("Canvas pan cancelled after a coordinate failure.");
+        return;
+      }
+      onViewBoxChange(
+        formatViewBox(
+          panViewBox(camera, {
+            x: pan.anchor.x - current.x,
+            y: pan.anchor.y - current.y,
+          }),
+        ),
+      );
+      return;
+    }
     if (
       connection &&
       event.pointerId === connection.pointerId &&
@@ -240,6 +365,11 @@ export function Canvas({
   }
 
   function finishDrag(event: ReactPointerEvent<SVGSVGElement>) {
+    if (pan?.pointerId === event.pointerId) {
+      completedPointerRef.current = event.pointerId;
+      setPan(null);
+      return;
+    }
     if (connection?.pointerId === event.pointerId) {
       completedPointerRef.current = event.pointerId;
       suppressNextSelectionRef.current = true;
@@ -277,6 +407,13 @@ export function Canvas({
   }
 
   function cancelDrag(event: ReactPointerEvent<SVGSVGElement>) {
+    if (pan?.pointerId === event.pointerId) {
+      suppressNextSelectionRef.current = true;
+      onViewBoxChange(pan.originViewBox);
+      setPan(null);
+      onConnectionMessage("Canvas pan cancelled.");
+      return;
+    }
     if (connection?.pointerId === event.pointerId) {
       suppressNextSelectionRef.current = true;
       setConnection(null);
@@ -299,7 +436,7 @@ export function Canvas({
     port: ConnectablePort,
   ) {
     event.stopPropagation();
-    if (event.button !== 0) return;
+    if (event.button !== 0 || pan) return;
     if (port.direction !== "output") {
       onConnectionMessage("Connections must start at an output port.");
       return;
@@ -329,7 +466,7 @@ export function Canvas({
     endpoint: WireEndpoint,
   ) {
     event.stopPropagation();
-    if (event.button !== 0) return;
+    if (event.button !== 0 || pan) return;
     const wire = document.geometry.wires.find(
       (candidate) => candidate.id === wireId,
     );
@@ -395,12 +532,17 @@ export function Canvas({
     <main className="canvas-shell">
       <svg
         ref={svgRef}
-        className="canvas"
+        className={`canvas${pan ? " is-panning" : ""}`}
         data-testid="project-canvas"
         viewBox={viewBox}
         aria-label="Tilefold project canvas"
         onClick={() => selectUnlessSuppressed(null)}
-        onPointerDownCapture={() => {
+        onAuxClick={(event) => event.preventDefault()}
+        onPointerDownCapture={(event) => {
+          if (event.button === 1) {
+            startPan(event);
+            return;
+          }
           if (!connection) suppressNextSelectionRef.current = false;
         }}
         onPointerMove={continueDrag}
@@ -633,9 +775,12 @@ export function Canvas({
           })()}
       </svg>
       <div className="canvas-hint">
-        Drag output to input to add a wire. Select a wire and drag its S/T
-        handle to reconnect one endpoint. Connected wire endpoints follow
-        element moves while middle points stay fixed.
+        Wheel to zoom · Middle-drag to pan · Drag output to input to connect ·
+        Select a wire and drag its S/T handle to reconnect.
+      </div>
+      <div className="canvas-camera-status" aria-live="polite">
+        <strong>{zoomPercent}%</strong>
+        <span>canvas zoom</span>
       </div>
     </main>
   );

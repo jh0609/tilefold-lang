@@ -51,7 +51,8 @@ spacing, and radius.
   current document, adds Nat/Succ/Result data, blocks unsafe deletion, provides
   undo/redo, and resets the camera.
 - The SVG canvas renders containers, relative boundary anchors, elements,
-  absolute port anchors, wire polylines, junctions, and explicit outlets.
+  absolute port anchors, wire polylines, junctions, and explicit outlets. The
+  wheel zooms around the pointer and a middle-button drag pans the camera.
 - The Inspector edits element integer bounds and canonical Nat strings and
   shows read-only information for containers, wires, junctions, and saved view.
 - The status bar distinguishes the editor structure check from the unavailable
@@ -99,6 +100,15 @@ absolute port anchors by the same delta. Wire endpoints whose explicit
 `element_port` hints reference the moved element follow their new port anchors
 during the drag preview and in the committed document. Geometry proximity is
 never used to infer attachment.
+
+Canvas navigation is UI-only. Wheel zoom stays anchored under the pointer and
+is clamped to 25–400% of the saved Project view; middle-button dragging pans
+without changing selection. The current percentage is shown in the canvas and
+Reset view restores the imported `view.cameraX`, `cameraY`, and `zoom`.
+Navigation never creates a document command, history entry, or exported field.
+Escape, `pointercancel`, or lost pointer capture restores a pan's starting
+camera. Wheel navigation is paused during element, connection, reconnection, or
+pan gestures so their coordinate transforms remain stable.
 
 Containers are selectable but intentionally read-only. Moving a container
 without a fully specified policy for contained elements and wires could change

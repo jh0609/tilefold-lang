@@ -4,7 +4,11 @@ import { Canvas } from "./components/Canvas";
 import { Inspector } from "./components/Inspector";
 import { StatusBar } from "./components/StatusBar";
 import { Toolbar } from "./components/Toolbar";
-import { savedViewBox } from "./model/coordinates";
+import {
+  cameraZoomPercent,
+  parseViewBox,
+  savedViewBox,
+} from "./model/coordinates";
 import {
   type EditorCommand,
 } from "./model/editorCommands";
@@ -67,14 +71,21 @@ export function App() {
   const [inspectorError, setInspectorError] = useState<string | null>(null);
   const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
   const [viewBox, setViewBox] = useState(savedViewBox(initialDocument.view));
+  const referenceViewBox = savedViewBox(document.view);
 
   const viewportCenter = useMemo<Point>(() => {
-    const [x, y, width, height] = viewBox.split(" ").map(Number);
+    const camera = parseViewBox(viewBox);
+    if (!camera) return { x: 0, y: 0 };
     return {
-      x: Math.round(x + width / 2),
-      y: Math.round(y + height / 2),
+      x: Math.round(camera.x + camera.width / 2),
+      y: Math.round(camera.y + camera.height / 2),
     };
   }, [viewBox]);
+  const zoomPercent = useMemo(() => {
+    const camera = parseViewBox(viewBox);
+    const reference = parseViewBox(referenceViewBox);
+    return camera && reference ? cameraZoomPercent(camera, reference) : 100;
+  }, [referenceViewBox, viewBox]);
 
   function resetDocument(next: ProjectDocument) {
     setHistory(createEditorHistory(next));
@@ -253,6 +264,9 @@ export function App() {
           document={document}
           selection={selection}
           viewBox={viewBox}
+          referenceViewBox={referenceViewBox}
+          zoomPercent={zoomPercent}
+          onViewBoxChange={setViewBox}
           onSelect={(next) => {
             setSelection(next);
             setInspectorError(null);
