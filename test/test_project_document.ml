@@ -272,3 +272,8 @@ let () =
           };
         ];
     }
+
+let () =
+  if Array.length Sys.argv > 1 then
+    let exported = decode (read_file Sys.argv.(1)) in
+    ignore (validate exported)

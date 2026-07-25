@@ -1,0 +1,226 @@
+.canvas-shell {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--bg-canvas);
+}
+
+.canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  user-select: none;
+}
+
+.canvas-background {
+  fill: var(--bg-canvas);
+}
+
+.grid-fill {
+  fill: url("#minor-grid");
+}
+
+.grid-line {
+  fill: none;
+  stroke: var(--grid);
+  stroke-width: 1;
+}
+
+.container-shape rect {
+  fill: color-mix(in srgb, var(--container) 8%, transparent);
+  stroke: color-mix(in srgb, var(--container) 65%, white);
+  stroke-width: 2;
+  stroke-dasharray: 8 5;
+  vector-effect: non-scaling-stroke;
+}
+
+.container-shape text {
+  fill: #5e5182;
+  font-size: 7px;
+  font-weight: 700;
+}
+
+.container-shape:hover rect {
+  fill: color-mix(in srgb, var(--container) 12%, transparent);
+}
+
+.container-shape.selected rect {
+  stroke: var(--select);
+  stroke-width: 4;
+}
+
+.boundary-port {
+  fill: #fff;
+  stroke: var(--structure);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.role-result {
+  fill: #ffead5;
+  stroke: var(--result);
+}
+
+.role-parameter {
+  fill: #e7edf4;
+}
+
+.wire {
+  fill: none;
+  stroke: #40546b;
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  cursor: pointer;
+  vector-effect: non-scaling-stroke;
+}
+
+.wire:hover,
+.wire.selected {
+  stroke: var(--select);
+  stroke-width: 4;
+}
+
+.junction {
+  fill: #344054;
+  stroke: #fff;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.junction-outlet {
+  fill: var(--select);
+  stroke: #fff;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.element-node {
+  cursor: grab;
+}
+
+.element-node:active {
+  cursor: grabbing;
+}
+
+.element-node rect {
+  fill: #fff;
+  stroke: var(--structure);
+  stroke-width: 2;
+  filter: drop-shadow(0 2px 2px rgba(16, 24, 40, 0.1));
+  vector-effect: non-scaling-stroke;
+}
+
+.element-node:hover rect {
+  stroke-width: 2.7;
+  filter: drop-shadow(0 3px 4px rgba(16, 24, 40, 0.14));
+}
+
+.element-node.selected rect {
+  stroke: var(--select);
+  stroke-width: 4;
+}
+
+.kind-nat_literal rect {
+  fill: #eaf8f3;
+  stroke: var(--nat);
+}
+
+.kind-succ rect,
+.kind-nat_rec rect {
+  fill: #edf5fd;
+  stroke: var(--operation);
+}
+
+.kind-unit_literal rect,
+.kind-drop rect,
+.kind-copy rect {
+  fill: #f2f4f7;
+  stroke: var(--structure);
+}
+
+.kind-function rect,
+.kind-apply rect {
+  fill: #f2edfb;
+  stroke: var(--call);
+}
+
+.element-kind {
+  fill: var(--text);
+  font-size: 12px;
+  font-weight: 750;
+  pointer-events: none;
+}
+
+.element-primary-value {
+  fill: #075f4b;
+  font-size: 18px;
+  font-weight: 800;
+  pointer-events: none;
+}
+
+.element-node.compact .element-kind {
+  font-size: 5px;
+}
+
+.element-node.compact .element-primary-value {
+  font-size: 10px;
+}
+
+.element-id {
+  fill: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 9px;
+  pointer-events: none;
+}
+
+.selection-badge {
+  fill: var(--select);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  pointer-events: none;
+}
+
+.element-node.compact .selection-badge {
+  font-size: 4px;
+}
+
+.port-anchor {
+  fill: #fff;
+  stroke: var(--structure);
+  stroke-width: 2;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.port.output .port-anchor {
+  fill: #d8f3e9;
+  stroke: var(--nat);
+}
+
+.port.input .port-anchor {
+  fill: #e7f0fa;
+  stroke: var(--operation);
+}
+
+.port-label {
+  fill: #475467;
+  font-size: 8px;
+  font-weight: 650;
+  pointer-events: none;
+}
+
+.canvas-hint {
+  position: absolute;
+  left: 14px;
+  bottom: 12px;
+  max-width: 540px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: #475467;
+  background: rgba(255, 255, 255, 0.91);
+  padding: 6px 9px;
+  font-size: 11px;
+}

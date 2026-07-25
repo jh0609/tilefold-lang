@@ -2,3 +2,6 @@ _build/
 _opam/
 *.install
 *.merlin
+editor/node_modules/
+editor/dist/
+editor/.tmp/

@@ -1,0 +1,146 @@
+.editor-app {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 100%;
+  height: 100vh;
+}
+
+.toolbar {
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 62px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 2px 6px rgba(16, 24, 40, 0.04);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 205px;
+}
+
+.brand-mark {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: var(--radius);
+  color: #fff;
+  background: #344054;
+  font-weight: 800;
+}
+
+.brand div {
+  display: grid;
+  gap: 1px;
+}
+
+.brand span {
+  max-width: 165px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brand .format-label {
+  color: #475467;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 9px;
+}
+
+.toolbar-group {
+  display: flex;
+  gap: 5px;
+  padding-left: 16px;
+  border-left: 1px solid #e4e7ec;
+}
+
+.file-button {
+  display: inline-flex;
+  align-items: center;
+}
+
+.file-button input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.view-button {
+  margin-left: auto;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 310px;
+  min-height: 0;
+}
+
+.status-bar {
+  display: flex;
+  gap: 16px;
+  min-height: 30px;
+  overflow-x: auto;
+  align-items: center;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  background: var(--bg-panel);
+  padding: 5px 12px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.status-ok {
+  color: #087a5b;
+  font-weight: 700;
+}
+
+.status-error {
+  color: var(--error);
+  font-weight: 700;
+}
+
+@media (max-width: 980px) {
+  .toolbar {
+    flex-wrap: wrap;
+    gap: 7px;
+  }
+
+  .brand {
+    width: 100%;
+  }
+
+  .toolbar-group {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .view-button {
+    margin-left: 0;
+  }
+
+  .workspace {
+    grid-template-columns: minmax(0, 1fr) 280px;
+  }
+}
+
+@media (max-width: 700px) {
+  .editor-app {
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(440px, 62vh) auto;
+  }
+}

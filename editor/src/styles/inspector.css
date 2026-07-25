@@ -1,0 +1,147 @@
+.inspector {
+  overflow-y: auto;
+  border-left: 1px solid var(--border);
+  background: var(--bg-panel);
+  padding: 18px;
+}
+
+.inspector-heading {
+  margin-bottom: 18px;
+}
+
+.inspector h2 {
+  margin: 7px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 16px;
+}
+
+.inspector h3 {
+  margin: 0 0 8px;
+  color: #475467;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.kind-chip {
+  display: inline-block;
+  border-radius: 999px;
+  color: #344054;
+  background: #eaecf0;
+  padding: 3px 8px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 10px;
+}
+
+.read-only-label {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.inspector label {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 12px;
+  color: #475467;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.inspector input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  color: var(--text);
+  background: #fff;
+}
+
+.readout {
+  display: grid;
+  gap: 7px;
+  margin-top: 22px;
+  border-top: 1px solid #eaecf0;
+  padding-top: 15px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.readout code,
+.inspector > code {
+  display: block;
+  color: #475467;
+  font-size: 11px;
+}
+
+.empty-inspector {
+  padding: 30px 8px 16px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.empty-inspector h2 {
+  color: #344054;
+}
+
+.empty-icon {
+  font-size: 26px;
+}
+
+.project-summary {
+  padding-bottom: 18px;
+  border-bottom: 1px solid #eaecf0;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  margin: 14px 0;
+}
+
+.summary-grid > span {
+  display: grid;
+  border: 1px solid #e4e7ec;
+  border-radius: 6px;
+  padding: 8px;
+  color: #344054;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-weight: 700;
+}
+
+.summary-grid small {
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: 500;
+}
+
+.structure-pass {
+  color: #087a5b;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.inline-error,
+.limitation {
+  border-left: 3px solid #f79009;
+  color: #93370d;
+  background: #fffaeb;
+  padding: 9px 10px;
+  font-size: 11px;
+}
+
+@media (max-width: 700px) {
+  .inspector {
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+}
