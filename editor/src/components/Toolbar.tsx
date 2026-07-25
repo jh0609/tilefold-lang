@@ -3,6 +3,8 @@ interface ToolbarProps {
   format: string;
   version: number;
   canDelete: boolean;
+  undoLabel: string | null;
+  redoLabel: string | null;
   onOpenExample: () => void;
   onOpenFile: (file: File) => void;
   onExport: () => void;
@@ -10,6 +12,8 @@ interface ToolbarProps {
   onAddSucc: () => void;
   onAddResult: () => void;
   onDelete: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
   onResetView: () => void;
 }
 
@@ -18,6 +22,8 @@ export function Toolbar({
   format,
   version,
   canDelete,
+  undoLabel,
+  redoLabel,
   onOpenExample,
   onOpenFile,
   onExport,
@@ -25,6 +31,8 @@ export function Toolbar({
   onAddSucc,
   onAddResult,
   onDelete,
+  onUndo,
+  onRedo,
   onResetView,
 }: ToolbarProps) {
   return (
@@ -74,6 +82,24 @@ export function Toolbar({
         </button>
         <button type="button" onClick={onDelete} disabled={!canDelete}>
           Delete selected
+        </button>
+      </div>
+      <div className="toolbar-group" aria-label="Edit history">
+        <button
+          type="button"
+          onClick={onUndo}
+          disabled={undoLabel === null}
+          title={undoLabel ? `Undo ${undoLabel}` : "Nothing to undo"}
+        >
+          Undo
+        </button>
+        <button
+          type="button"
+          onClick={onRedo}
+          disabled={redoLabel === null}
+          title={redoLabel ? `Redo ${redoLabel}` : "Nothing to redo"}
+        >
+          Redo
         </button>
       </div>
       <button type="button" className="view-button" onClick={onResetView}>

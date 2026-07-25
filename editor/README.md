@@ -48,8 +48,8 @@ spacing, and radius.
 ## Screen layout
 
 - The top toolbar opens the shared example or a local JSON file, exports the
-  current document, adds Nat/Succ/Result data, blocks unsafe deletion, and
-  resets the camera.
+  current document, adds Nat/Succ/Result data, blocks unsafe deletion, provides
+  undo/redo, and resets the camera.
 - The SVG canvas renders containers, relative boundary anchors, elements,
   absolute port anchors, wire polylines, junctions, and explicit outlets.
 - The Inspector edits element integer bounds and canonical Nat strings and
@@ -108,6 +108,13 @@ Deletion is currently supported only for unreferenced elements. A wire hint
 that references an element blocks deletion and reports the wire IDs. No
 cascade deletion is performed.
 
+Document changes use typed commands and an immutable 100-entry history.
+Undo/redo is available from the toolbar and with Ctrl/Cmd+Z,
+Ctrl/Cmd+Shift+Z, or Ctrl/Cmd+Y. A completed pointer drag creates one history
+entry rather than one entry per pointer movement. Consecutive edits to the same
+Nat value are coalesced. Opening an example or another file starts a fresh
+history so undo never crosses document boundaries.
+
 On narrow screens the compact toolbar wraps and the 310px Inspector moves below
 the canvas. Project coordinates and saved data do not change. Hover strengthens
 the border without layout shift; selection uses both a blue non-scaling outline
@@ -121,7 +128,6 @@ junction markers.
 The next editor layer can add:
 
 - port-to-port connection interaction and explicit wire commands;
-- typed command-based undo/redo;
 - container movement with a specified deterministic group-translation policy;
 - OCaml JavaScript/WASM integration for decode, validation, inference,
   execution, diagnostics, and trace display.

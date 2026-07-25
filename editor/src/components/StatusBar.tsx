@@ -3,9 +3,11 @@ import type { ProjectDocument } from "../model/project";
 export function StatusBar({
   document,
   importError,
+  historyStatus,
 }: {
   document: ProjectDocument;
   importError: string | null;
+  historyStatus: string;
 }) {
   const { elements, containers, wires, junctions } = document.geometry;
   return (
@@ -20,6 +22,7 @@ export function StatusBar({
         {wires.length} wires · {junctions.length} junctions
       </span>
       <span>Ready to export</span>
+      <span>{historyStatus}</span>
       {importError && (
         <span className="status-error" role="alert">
           Import error: {importError}

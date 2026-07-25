@@ -4,6 +4,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { clientToProject } from "../model/coordinates";
+import { moveElement } from "../model/editorOps";
 import type {
   Point,
   ProjectContainer,
@@ -18,6 +19,7 @@ interface DragState {
   elementId: string;
   start: Point;
   origin: Point;
+  next: Point;
 }
 
 interface CanvasProps {
@@ -103,6 +105,7 @@ export function Canvas({
       elementId: element.id,
       start,
       origin: { x: element.bounds.x, y: element.bounds.y },
+      next: { x: element.bounds.x, y: element.bounds.y },
     });
   }
 
@@ -114,15 +117,28 @@ export function Canvas({
       event.clientY,
     );
     if (!current) return;
-    onMoveElement(drag.elementId, {
-      x: Math.round(drag.origin.x + current.x - drag.start.x),
-      y: Math.round(drag.origin.y + current.y - drag.start.y),
+    setDrag({
+      ...drag,
+      next: {
+        x: Math.round(drag.origin.x + current.x - drag.start.x),
+        y: Math.round(drag.origin.y + current.y - drag.start.y),
+      },
     });
   }
 
   function finishDrag(event: ReactPointerEvent<SVGSVGElement>) {
+    if (drag?.pointerId !== event.pointerId) return;
+    onMoveElement(drag.elementId, drag.next);
+    setDrag(null);
+  }
+
+  function cancelDrag(event: ReactPointerEvent<SVGSVGElement>) {
     if (drag?.pointerId === event.pointerId) setDrag(null);
   }
+
+  const renderedDocument = drag
+    ? moveElement(document, drag.elementId, drag.next)
+    : document;
 
   return (
     <main className="canvas-shell">
@@ -135,7 +151,7 @@ export function Canvas({
         onClick={() => onSelect(null)}
         onPointerMove={continueDrag}
         onPointerUp={finishDrag}
-        onPointerCancel={finishDrag}
+        onPointerCancel={cancelDrag}
       >
         <defs>
           <pattern
@@ -149,7 +165,7 @@ export function Canvas({
         </defs>
         <rect className="canvas-background" x="-5000" y="-5000" width="10000" height="10000" />
         <rect className="grid-fill" x="-5000" y="-5000" width="10000" height="10000" />
-        {document.geometry.containers.map((container) => (
+        {renderedDocument.geometry.containers.map((container) => (
           <ContainerShape
             key={container.id}
             container={container}
@@ -160,7 +176,7 @@ export function Canvas({
           />
         ))}
         <g className="wire-layer">
-          {document.geometry.wires.map((wire) => (
+          {renderedDocument.geometry.wires.map((wire) => (
             <polyline
               key={wire.id}
               data-testid={`wire-${wire.id}`}
@@ -187,7 +203,7 @@ export function Canvas({
           ))}
         </g>
         <g className="junction-layer">
-          {document.geometry.junctions.map((junction) => (
+          {renderedDocument.geometry.junctions.map((junction) => (
             <g
               key={junction.id}
               role="button"
@@ -224,7 +240,7 @@ export function Canvas({
             </g>
           ))}
         </g>
-        {document.geometry.elements.map((element) => (
+        {renderedDocument.geometry.elements.map((element) => (
           <ElementNode
             key={element.id}
             element={element}

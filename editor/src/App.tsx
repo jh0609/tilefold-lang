@@ -6,13 +6,16 @@ import { StatusBar } from "./components/StatusBar";
 import { Toolbar } from "./components/Toolbar";
 import { savedViewBox } from "./model/coordinates";
 import {
-  addElement,
-  addResultBoundary,
-  deleteSelection,
-  moveElement,
-  resizeOrMoveElement,
-  updateNatValue,
-} from "./model/editorOps";
+  type EditorCommand,
+} from "./model/editorCommands";
+import {
+  createEditorHistory,
+  executeEditorCommand,
+  redoEditorCommand,
+  redoLabel,
+  undoEditorCommand,
+  undoLabel,
+} from "./model/editorHistory";
 import { exportProjectJson, parseProjectJson } from "./model/importProject";
 import type { Point, ProjectDocument, Selection } from "./model/project";
 
@@ -48,7 +51,10 @@ function isTextEditingTarget(target: EventTarget | null): boolean {
 }
 
 export function App() {
-  const [document, setDocument] = useState(initialDocument);
+  const [history, setHistory] = useState(() =>
+    createEditorHistory(initialDocument),
+  );
+  const document = history.present;
   const [projectName, setProjectName] = useState(
     "nat-succ.tilefold.json",
   );
@@ -65,25 +71,67 @@ export function App() {
     };
   }, [viewBox]);
 
-  function openExample() {
-    const next = parseProjectJson(exampleJson);
-    setDocument(next);
-    setProjectName("nat-succ.tilefold.json");
+  function resetDocument(next: ProjectDocument) {
+    setHistory(createEditorHistory(next));
     setSelection(null);
-    setImportError(null);
     setInspectorError(null);
     setViewBox(savedViewBox(next.view));
+  }
+
+  function runCommand(command: EditorCommand): ProjectDocument | null {
+    const result = executeEditorCommand(history, command);
+    if (result.error) {
+      setInspectorError(result.error);
+      return null;
+    }
+    setHistory(result.history);
+    setInspectorError(null);
+    return result.history === history ? null : result.history.present;
+  }
+
+  function selectionExists(
+    nextDocument: ProjectDocument,
+    current: Selection | null,
+  ): boolean {
+    if (!current) return false;
+    const collections = {
+      element: nextDocument.geometry.elements,
+      container: nextDocument.geometry.containers,
+      wire: nextDocument.geometry.wires,
+      junction: nextDocument.geometry.junctions,
+    };
+    return collections[current.type].some((item) => item.id === current.id);
+  }
+
+  function undo() {
+    const next = undoEditorCommand(history);
+    if (next === history) return;
+    setHistory(next);
+    if (!selectionExists(next.present, selection)) setSelection(null);
+    setInspectorError(null);
+  }
+
+  function redo() {
+    const next = redoEditorCommand(history);
+    if (next === history) return;
+    setHistory(next);
+    if (!selectionExists(next.present, selection)) setSelection(null);
+    setInspectorError(null);
+  }
+
+  function openExample() {
+    const next = parseProjectJson(exampleJson);
+    resetDocument(next);
+    setProjectName("nat-succ.tilefold.json");
+    setImportError(null);
   }
 
   async function openFile(file: File) {
     try {
       const next = parseProjectJson(await readFileText(file));
-      setDocument(next);
+      resetDocument(next);
       setProjectName(file.name);
-      setSelection(null);
       setImportError(null);
-      setInspectorError(null);
-      setViewBox(savedViewBox(next.view));
     } catch (error) {
       setImportError(
         error instanceof Error ? error.message : "Unknown import failure",
@@ -92,36 +140,49 @@ export function App() {
   }
 
   function add(kind: "nat_literal" | "succ") {
-    const result = addElement(document, kind, viewportCenter);
-    setDocument(result.document);
-    setSelection({ type: "element", id: result.element.id });
-    setInspectorError(null);
+    const idPrefix = kind === "nat_literal" ? "node_nat_" : "node_succ_";
+    const command = {
+      type: "add_element",
+      kind,
+      center: viewportCenter,
+    } as const;
+    const nextDocument = runCommand(command);
+    if (!nextDocument) return;
+    const element = nextDocument.geometry.elements.at(-1);
+    if (element?.id.startsWith(idPrefix)) {
+      setSelection({ type: "element", id: element.id });
+    }
   }
 
   function addResult() {
-    const result = addResultBoundary(document);
-    if ("error" in result) {
-      setInspectorError(result.error);
-      return;
-    }
-    setDocument(result.document);
-    setSelection({ type: "container", id: result.document.geometry.containers[0]!.id });
-    setInspectorError(null);
+    const nextDocument = runCommand({ type: "add_result_boundary" });
+    if (!nextDocument) return;
+    const container = nextDocument.geometry.containers[0];
+    if (container) setSelection({ type: "container", id: container.id });
   }
 
   function removeSelected() {
-    const result = deleteSelection(document, selection);
-    if (result.error) {
-      setInspectorError(result.error);
-      return;
+    if (!selection) return;
+    if (runCommand({ type: "delete_selection", selection })) {
+      setSelection(null);
     }
-    setDocument(result.document);
-    setSelection(null);
-    setInspectorError(null);
   }
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      const modifier = event.ctrlKey || event.metaKey;
+      const key = event.key.toLowerCase();
+      if (modifier && key === "z") {
+        event.preventDefault();
+        if (event.shiftKey) redo();
+        else undo();
+        return;
+      }
+      if (modifier && key === "y") {
+        event.preventDefault();
+        redo();
+        return;
+      }
       if (
         (event.key === "Delete" || event.key === "Backspace") &&
         !isTextEditingTarget(event.target)
@@ -141,6 +202,8 @@ export function App() {
         format={document.format}
         version={document.version}
         canDelete={selection !== null}
+        undoLabel={undoLabel(history)}
+        redoLabel={redoLabel(history)}
         onOpenExample={openExample}
         onOpenFile={openFile}
         onExport={() => downloadProject(document)}
@@ -148,6 +211,8 @@ export function App() {
         onAddSucc={() => add("succ")}
         onAddResult={addResult}
         onDelete={removeSelected}
+        onUndo={undo}
+        onRedo={redo}
         onResetView={() => setViewBox(savedViewBox(document.view))}
       />
       <div className="workspace">
@@ -159,26 +224,55 @@ export function App() {
             setSelection(next);
             setInspectorError(null);
           }}
-          onMoveElement={(id, next) =>
-            setDocument((current) => moveElement(current, id, next))
-          }
+          onMoveElement={(id, next) => {
+            const element = document.geometry.elements.find(
+              (candidate) => candidate.id === id,
+            );
+            if (!element) return;
+            runCommand({
+              type: "move_element",
+              id,
+              from: { x: element.bounds.x, y: element.bounds.y },
+              to: next,
+            });
+          }}
         />
         <Inspector
           document={document}
           selection={selection}
           error={inspectorError}
-          onBoundsChange={(id, bounds) =>
-            setDocument((current) =>
-              resizeOrMoveElement(current, id, bounds),
-            )
-          }
-          onNatValueChange={(id, value) =>
-            setDocument((current) => updateNatValue(current, id, value))
-          }
+          onBoundsChange={(id, bounds) => {
+            const element = document.geometry.elements.find(
+              (candidate) => candidate.id === id,
+            );
+            if (!element) return;
+            runCommand({
+              type: "resize_or_move_element",
+              id,
+              before: element.bounds,
+              after: bounds,
+            });
+          }}
+          onNatValueChange={(id, value) => {
+            const element = document.geometry.elements.find(
+              (candidate) => candidate.id === id,
+            );
+            if (!element || element.kind !== "nat_literal") return;
+            runCommand({
+              type: "set_nat_value",
+              id,
+              before: element.properties.value,
+              after: value,
+            });
+          }}
           onError={setInspectorError}
         />
       </div>
-      <StatusBar document={document} importError={importError} />
+      <StatusBar
+        document={document}
+        importError={importError}
+        historyStatus={`${history.past.length} undo · ${history.future.length} redo`}
+      />
     </div>
   );
 }

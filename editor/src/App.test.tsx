@@ -49,6 +49,18 @@ describe("Tilefold editor UI", () => {
     expect(screen.getByText("42")).toHaveClass("element-primary-value");
   });
 
+  it("undoes one coalesced Nat edit while the input has focus", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByTestId("element-node_nat_2"));
+    const input = screen.getByLabelText("Nat value");
+    await user.clear(input);
+    await user.type(input, "42");
+    expect(screen.getByText("1 undo · 0 redo")).toBeInTheDocument();
+    await user.keyboard("{Control>}z{/Control}");
+    expect(input).toHaveValue("2");
+  });
+
   it("drags an element through SVG project coordinates", () => {
     render(<App />);
     const element = screen.getByTestId("element-node_nat_2");
@@ -74,6 +86,81 @@ describe("Tilefold editor UI", () => {
     render(<App />);
     await user.click(screen.getByRole("button", { name: "+ Nat" }));
     expect(screen.getByRole("heading", { name: "node_nat_1" })).toBeInTheDocument();
+  });
+
+  it("undoes and redoes an added element from the toolbar", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "+ Nat" }));
+    expect(screen.getByTestId("element-node_nat_1")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(screen.queryByTestId("element-node_nat_1")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Redo" }));
+    expect(screen.getByTestId("element-node_nat_1")).toBeInTheDocument();
+  });
+
+  it("starts a fresh history when reopening the example", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "+ Nat" }));
+    expect(screen.getByRole("button", { name: "Undo" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Open example" }));
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+    expect(screen.getByText("0 undo · 0 redo")).toBeInTheDocument();
+  });
+
+  it("supports undo and redo keyboard shortcuts", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "+ Succ" }));
+    expect(screen.getByTestId("element-node_succ_1")).toBeInTheDocument();
+    await user.keyboard("{Control>}z{/Control}");
+    expect(screen.queryByTestId("element-node_succ_1")).not.toBeInTheDocument();
+    await user.keyboard("{Control>}{Shift>}z{/Shift}{/Control}");
+    expect(screen.getByTestId("element-node_succ_1")).toBeInTheDocument();
+  });
+
+  it("records one undo entry for a completed drag", () => {
+    render(<App />);
+    const element = screen.getByTestId("element-node_nat_2");
+    fireEvent.pointerDown(element, {
+      pointerId: 7,
+      button: 0,
+      clientX: 60,
+      clientY: 60,
+    });
+    fireEvent.pointerMove(screen.getByTestId("project-canvas"), {
+      pointerId: 7,
+      clientX: 80,
+      clientY: 70,
+    });
+    fireEvent.pointerMove(screen.getByTestId("project-canvas"), {
+      pointerId: 7,
+      clientX: 100,
+      clientY: 90,
+    });
+    fireEvent.pointerUp(screen.getByTestId("project-canvas"), { pointerId: 7 });
+    expect(screen.getByText("1 undo · 0 redo")).toBeInTheDocument();
+  });
+
+  it("does not commit a cancelled drag", () => {
+    render(<App />);
+    const element = screen.getByTestId("element-node_nat_2");
+    fireEvent.pointerDown(element, {
+      pointerId: 8,
+      button: 0,
+      clientX: 60,
+      clientY: 60,
+    });
+    fireEvent.pointerMove(screen.getByTestId("project-canvas"), {
+      pointerId: 8,
+      clientX: 100,
+      clientY: 90,
+    });
+    fireEvent.pointerCancel(screen.getByTestId("project-canvas"), {
+      pointerId: 8,
+    });
+    expect(screen.getByText("0 undo · 0 redo")).toBeInTheDocument();
   });
 
   it("blocks deletion of a referenced element", async () => {
