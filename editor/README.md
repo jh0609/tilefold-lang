@@ -49,7 +49,7 @@ spacing, and radius.
 
 - The top toolbar opens the shared example or a local JSON file, exports the
   current document, adds Nat/Succ/Result data, blocks unsafe deletion, provides
-  undo/redo, and resets the camera.
+  undo/redo, fits all rendered geometry, and resets the camera.
 - The SVG canvas renders containers, relative boundary anchors, elements,
   absolute port anchors, wire polylines, junctions, and explicit outlets. The
   wheel zooms around the pointer and a middle-button drag pans the camera.
@@ -115,7 +115,11 @@ starts a connection, but grabbing the center of a 20×20 literal no longer does.
 Canvas navigation is UI-only. Wheel zoom stays anchored under the pointer and
 is clamped to 25–400% of the saved Project view; middle-button dragging pans
 without changing selection. The current percentage is shown in the canvas and
-Reset view restores the imported `view.cameraX`, `cameraY`, and `zoom`.
+Fit view frames elements, containers, wire points, junctions, and outlets with
+24 project units of padding while preserving the saved view's aspect ratio.
+It never zooms in beyond 400%, but it can zoom out beyond the wheel's 25% limit
+when required to keep a large document visible. Reset view restores the imported
+`view.cameraX`, `cameraY`, and `zoom`.
 Navigation never creates a document command, history entry, or exported field.
 Escape, `pointercancel`, or lost pointer capture restores a pan's starting
 camera. Wheel navigation is paused during element, connection, reconnection, or

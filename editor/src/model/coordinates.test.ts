@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   cameraZoomPercent,
+  fitViewBoxToBounds,
   formatViewBox,
   panViewBox,
   parseViewBox,
+  projectContentBounds,
   zoomViewBox,
 } from "./coordinates";
+import { parseProjectJson } from "./importProject";
+import exampleJson from "../../../examples/nat-succ.tilefold.json?raw";
 
 describe("camera coordinates", () => {
   const reference = { x: 0, y: 0, width: 400, height: 260 };
@@ -65,6 +69,64 @@ describe("camera coordinates", () => {
       y: 18,
       width: 400,
       height: 260,
+    });
+  });
+
+  it("measures all rendered project geometry", () => {
+    const document = parseProjectJson(exampleJson);
+    document.geometry.wires.push({
+      id: "wire_far",
+      points: [
+        { x: -20, y: 70 },
+        { x: 260, y: 180 },
+      ],
+    });
+    document.geometry.junctions.push({
+      id: "junction_far",
+      anchor: { x: 100, y: -30 },
+      outlets: [{ id: "outlet_far", order: 0, anchor: { x: 280, y: 40 } }],
+    });
+    document.geometry.elements[0].portAnchors.push({
+      port: "far",
+      x: 290,
+      y: 50,
+    });
+
+    expect(projectContentBounds(document)).toEqual({
+      x: -20,
+      y: -30,
+      width: 310,
+      height: 210,
+    });
+  });
+
+  it("fits content with padding while preserving the saved aspect ratio", () => {
+    const fitted = fitViewBoxToBounds(
+      { x: -20, y: 10, width: 520, height: 200 },
+      reference,
+    );
+    expect(fitted).toEqual({
+      x: -44,
+      y: -74.6,
+      width: 568,
+      height: 369.2,
+    });
+    expect(fitted.width / fitted.height).toBeCloseTo(
+      reference.width / reference.height,
+    );
+  });
+
+  it("does not zoom beyond 400% when fitting small content", () => {
+    const fitted = fitViewBoxToBounds(
+      { x: 95, y: 95, width: 10, height: 10 },
+      reference,
+      0,
+    );
+    expect(fitted).toEqual({
+      x: 50,
+      y: 67.5,
+      width: 100,
+      height: 65,
     });
   });
 });

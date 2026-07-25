@@ -253,6 +253,46 @@ describe("Tilefold editor UI", () => {
     expect(canvas).toHaveAttribute("viewBox", "0 0 400 260");
   });
 
+  it("fits all project geometry without changing selection or history", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const canvas = screen.getByTestId("project-canvas");
+    const addLabels = [
+      "+ Nat",
+      "+ Succ",
+      "+ Nat",
+      "+ Succ",
+      "+ Nat",
+      "+ Succ",
+      "+ Nat",
+      "+ Succ",
+    ];
+    for (const label of addLabels) {
+      await user.click(screen.getByRole("button", { name: label }));
+    }
+    expect(
+      screen.getByRole("heading", { name: "node_succ_4" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("8 undo · 0 redo")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Fit view" }));
+    const fitted = canvas
+      .getAttribute("viewBox")
+      ?.split(" ")
+      .map(Number);
+    expect(fitted).toBeDefined();
+    expect(fitted?.[0]).toBeLessThanOrEqual(-24);
+    expect(fitted?.[2]).toBeGreaterThan(400);
+    expect(
+      screen.getByRole("heading", { name: "node_succ_4" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("8 undo · 0 redo")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Reset view" }));
+    expect(canvas).toHaveAttribute("viewBox", "0 0 400 260");
+    expect(screen.getByText("8 undo · 0 redo")).toBeInTheDocument();
+  });
+
   it("restores the starting camera when a pan is cancelled", () => {
     render(<App />);
     const canvas = screen.getByTestId("project-canvas");

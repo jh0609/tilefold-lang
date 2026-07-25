@@ -6,7 +6,10 @@ import { StatusBar } from "./components/StatusBar";
 import { Toolbar } from "./components/Toolbar";
 import {
   cameraZoomPercent,
+  fitViewBoxToBounds,
+  formatViewBox,
   parseViewBox,
+  projectContentBounds,
   savedViewBox,
 } from "./model/coordinates";
 import {
@@ -185,6 +188,13 @@ export function App() {
     }
   }
 
+  function fitView() {
+    const contentBounds = projectContentBounds(document);
+    const reference = parseViewBox(referenceViewBox);
+    if (!contentBounds || !reference) return;
+    setViewBox(formatViewBox(fitViewBoxToBounds(contentBounds, reference)));
+  }
+
   function connectPorts(source: ConnectablePort, target: ConnectablePort) {
     const nextDocument = runCommand({ type: "add_wire", source, target });
     if (!nextDocument) return;
@@ -258,6 +268,7 @@ export function App() {
         onDelete={removeSelected}
         onUndo={undo}
         onRedo={redo}
+        onFitView={fitView}
         onResetView={() => setViewBox(savedViewBox(document.view))}
       />
       <div className="workspace">

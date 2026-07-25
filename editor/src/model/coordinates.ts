@@ -1,4 +1,9 @@
-import type { Point, SavedView } from "./project";
+import type {
+  Bounds,
+  Point,
+  ProjectDocument,
+  SavedView,
+} from "./project";
 
 export interface CameraViewBox {
   x: number;
@@ -14,6 +19,7 @@ export interface SvgLike {
 
 const MIN_ZOOM_RATIO = 0.25;
 const MAX_ZOOM_RATIO = 4;
+export const FIT_VIEW_PADDING = 24;
 
 export function clientToProject(
   svg: SvgLike,
@@ -104,6 +110,84 @@ export function cameraZoomPercent(
   reference: CameraViewBox,
 ): number {
   return Math.round((reference.width / viewBox.width) * 100);
+}
+
+export function projectContentBounds(
+  document: ProjectDocument,
+): Bounds | null {
+  let minimumX = Number.POSITIVE_INFINITY;
+  let minimumY = Number.POSITIVE_INFINITY;
+  let maximumX = Number.NEGATIVE_INFINITY;
+  let maximumY = Number.NEGATIVE_INFINITY;
+
+  function includePoint(point: Point) {
+    minimumX = Math.min(minimumX, point.x);
+    minimumY = Math.min(minimumY, point.y);
+    maximumX = Math.max(maximumX, point.x);
+    maximumY = Math.max(maximumY, point.y);
+  }
+
+  function includeBounds(bounds: Bounds) {
+    includePoint(bounds);
+    includePoint({
+      x: bounds.x + bounds.width,
+      y: bounds.y + bounds.height,
+    });
+  }
+
+  document.geometry.elements.forEach((element) => {
+    includeBounds(element.bounds);
+    element.portAnchors.forEach(includePoint);
+  });
+  document.geometry.containers.forEach((container) => {
+    includeBounds(container.bounds);
+    container.boundaryPorts.forEach((boundary) =>
+      includePoint({
+        x: container.bounds.x + boundary.anchor.x,
+        y: container.bounds.y + boundary.anchor.y,
+      }),
+    );
+  });
+  document.geometry.wires.forEach((wire) =>
+    wire.points.forEach(includePoint),
+  );
+  document.geometry.junctions.forEach((junction) => {
+    includePoint(junction.anchor);
+    junction.outlets.forEach((outlet) => includePoint(outlet.anchor));
+  });
+
+  if (!Number.isFinite(minimumX)) return null;
+  return {
+    x: minimumX,
+    y: minimumY,
+    width: maximumX - minimumX,
+    height: maximumY - minimumY,
+  };
+}
+
+export function fitViewBoxToBounds(
+  bounds: Bounds,
+  reference: CameraViewBox,
+  padding = FIT_VIEW_PADDING,
+): CameraViewBox {
+  const safePadding = Number.isFinite(padding) ? Math.max(0, padding) : 0;
+  const aspectRatio = reference.width / reference.height;
+  const requiredWidth = bounds.width + safePadding * 2;
+  const requiredHeight = bounds.height + safePadding * 2;
+  const width = Math.max(
+    requiredWidth,
+    requiredHeight * aspectRatio,
+    reference.width / MAX_ZOOM_RATIO,
+  );
+  const height = width / aspectRatio;
+  const centerX = bounds.x + bounds.width / 2;
+  const centerY = bounds.y + bounds.height / 2;
+  return {
+    x: centerX - width / 2,
+    y: centerY - height / 2,
+    width,
+    height,
+  };
 }
 
 export function savedViewBox(view?: SavedView): string {

@@ -14,6 +14,7 @@ interface ToolbarProps {
   onDelete: () => void;
   onUndo: () => void;
   onRedo: () => void;
+  onFitView: () => void;
   onResetView: () => void;
 }
 
@@ -33,6 +34,7 @@ export function Toolbar({
   onDelete,
   onUndo,
   onRedo,
+  onFitView,
   onResetView,
 }: ToolbarProps) {
   return (
@@ -102,9 +104,18 @@ export function Toolbar({
           Redo
         </button>
       </div>
-      <button type="button" className="view-button" onClick={onResetView}>
-        Reset view
-      </button>
+      <div className="view-controls" aria-label="Canvas view">
+        <button type="button" onClick={onFitView}>
+          Fit view
+        </button>
+        <button
+          type="button"
+          className="view-button"
+          onClick={onResetView}
+        >
+          Reset view
+        </button>
+      </div>
     </header>
   );
 }
