@@ -111,6 +111,9 @@ transparent 22-unit port hit target is biased eight units outward from the node
 center while the visible anchor, semantic port anchor, connection preview, and
 exported geometry remain unchanged. Clicking the visible five-unit port still
 starts a connection, but grabbing the center of a 20×20 literal no longer does.
+Non-compact port labels use a separate row below the element title so input
+names do not collide with operation names; this is presentation-only and does
+not move anchors or change exported geometry.
 
 Canvas navigation is UI-only. Wheel zoom stays anchored under the pointer and
 is clamped to 25–400% of the saved Project view; middle-button dragging pans

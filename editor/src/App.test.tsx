@@ -111,6 +111,31 @@ describe("Tilefold editor UI", () => {
     expect(inputAnchor).toHaveAttribute("cy", "30");
   });
 
+  it("places non-compact port labels below the element title row", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "+ Succ" }));
+    const element = screen.getByTestId("element-node_succ_1");
+    const kind = element.querySelector(".element-kind");
+    const labels = element.querySelectorAll(".port-label");
+    const anchors = element.querySelectorAll(".port-anchor");
+
+    expect(kind).toHaveAttribute("y", "124");
+    expect(Array.from(labels, (label) => label.getAttribute("y"))).toEqual([
+      "135",
+      "135",
+    ]);
+    expect(
+      Array.from(anchors, (anchor) => [
+        anchor.getAttribute("cx"),
+        anchor.getAttribute("cy"),
+      ]),
+    ).toEqual([
+      ["156", "130"],
+      ["244", "130"],
+    ]);
+  });
+
   it("adds the smallest available Nat ID and selects it", async () => {
     const user = userEvent.setup();
     render(<App />);
