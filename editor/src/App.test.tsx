@@ -689,7 +689,7 @@ describe("Tilefold editor UI", () => {
   it("places non-compact port labels below the element title row", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: "+ Succ" }));
+    await user.click(screen.getByRole("button", { name: "Add Succ" }));
     const element = screen.getByTestId("element-node_succ_1");
     const kind = element.querySelector(".element-kind");
     const labels = element.querySelectorAll(".port-label");
@@ -714,7 +714,7 @@ describe("Tilefold editor UI", () => {
   it("adds the smallest available Nat ID and selects it", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: "+ Nat" }));
+    await user.click(screen.getByRole("button", { name: "Add Nat" }));
     expect(
       screen.getByRole("heading", { name: "node_nat_1" }),
     ).toBeInTheDocument();
@@ -723,8 +723,8 @@ describe("Tilefold editor UI", () => {
   it("places consecutive additions in deterministic open slots and redoes exactly", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: "+ Nat" }));
-    await user.click(screen.getByRole("button", { name: "+ Succ" }));
+    await user.click(screen.getByRole("button", { name: "Add Nat" }));
+    await user.click(screen.getByRole("button", { name: "Add Succ" }));
     const natRect = screen
       .getByTestId("element-node_nat_1")
       .querySelector(":scope > rect");
@@ -749,7 +749,7 @@ describe("Tilefold editor UI", () => {
   it("undoes and redoes an added element from the toolbar", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: "+ Nat" }));
+    await user.click(screen.getByRole("button", { name: "Add Nat" }));
     expect(screen.getByTestId("element-node_nat_1")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Undo" }));
     expect(screen.queryByTestId("element-node_nat_1")).not.toBeInTheDocument();
@@ -760,7 +760,7 @@ describe("Tilefold editor UI", () => {
   it("starts a fresh history when reopening the example", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: "+ Nat" }));
+    await user.click(screen.getByRole("button", { name: "Add Nat" }));
     expect(screen.getByRole("button", { name: "Undo" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Open example" }));
     expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
@@ -770,7 +770,7 @@ describe("Tilefold editor UI", () => {
   it("supports undo and redo keyboard shortcuts", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: "+ Succ" }));
+    await user.click(screen.getByRole("button", { name: "Add Succ" }));
     expect(screen.getByTestId("element-node_succ_1")).toBeInTheDocument();
     await user.keyboard("{Control>}z{/Control}");
     expect(screen.queryByTestId("element-node_succ_1")).not.toBeInTheDocument();
@@ -858,14 +858,14 @@ describe("Tilefold editor UI", () => {
     render(<App />);
     const canvas = screen.getByTestId("project-canvas");
     const addLabels = [
-      "+ Nat",
-      "+ Succ",
-      "+ Nat",
-      "+ Succ",
-      "+ Nat",
-      "+ Succ",
-      "+ Nat",
-      "+ Succ",
+      "Add Nat",
+      "Add Succ",
+      "Add Nat",
+      "Add Succ",
+      "Add Nat",
+      "Add Succ",
+      "Add Nat",
+      "Add Succ",
     ];
     for (const label of addLabels) {
       await user.click(screen.getByRole("button", { name: label }));
@@ -1011,13 +1011,134 @@ describe("Tilefold editor UI", () => {
     expect(screen.getByText(/0 undo · 0 redo/)).toBeInTheDocument();
   });
 
-  it("blocks deletion of a referenced element", async () => {
+  it("deletes a referenced element and its wire, then restores both with Undo", async () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(screen.getByTestId("element-node_nat_2"));
     await user.click(screen.getByRole("button", { name: "Delete selected" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("wire_nat_succ");
+    expect(screen.queryByTestId("element-node_nat_2")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("wire-wire_nat_succ")).not.toBeInTheDocument();
+    expect(screen.getByText("1 undo · 0 redo")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Undo" }));
     expect(screen.getByTestId("element-node_nat_2")).toBeInTheDocument();
+    expect(screen.getByTestId("wire-wire_nat_succ")).toBeInTheDocument();
+  });
+
+  it("adds every exposed Core node kind with selectable ports", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    for (const label of ["Add Unit", "Add Drop", "Add Copy", "Add Apply", "Add NatRec"]) {
+      await user.click(screen.getByRole("button", { name: label }));
+    }
+    expect(screen.getByTestId("element-node_unit_1")).toBeInTheDocument();
+    expect(screen.getByTestId("element-node_drop_1")).toBeInTheDocument();
+    expect(screen.getByTestId("element-node_copy_1")).toBeInTheDocument();
+    expect(screen.getByTestId("element-node_apply_1")).toBeInTheDocument();
+    expect(screen.getByTestId("element-node_nat_rec_1")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("port-element:node_copy_1:left"),
+    ).toHaveAccessibleName(/output port left/);
+    expect(
+      screen.getByTestId("port-element:node_apply_1:function"),
+    ).toHaveAccessibleName(/input port function/);
+    expect(
+      screen.getByTestId("port-element:node_nat_rec_1:step"),
+    ).toHaveAccessibleName(/input port step/);
+    expect(screen.getByText("5 undo · 0 redo")).toBeInTheDocument();
+  });
+
+  it("edits new node type presets in the Inspector without document side state", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "Add Drop" }));
+    const type = screen.getByLabelText("Value type");
+    expect(type).toHaveValue('"nat"');
+    await user.selectOptions(type, '{"arrow":["nat","nat"]}');
+    expect(type).toHaveValue('{"arrow":["nat","nat"]}');
+    expect(screen.getByText("2 undo · 0 redo")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(screen.getByLabelText("Value type")).toHaveValue('"nat"');
+  });
+
+  it("deletes a Result boundary and its wire directly, then restores both", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(
+      screen.getByRole("button", {
+        name: "input boundary port result on entry_result, select to inspect",
+      }),
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: "Delete boundary entry_result",
+      }),
+    );
+    expect(
+      screen.queryByRole("button", {
+        name: "input boundary port result on entry_result, select to inspect",
+      }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("wire-wire_result")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(
+      screen.getByRole("button", {
+        name: "input boundary port result on entry_result, select to inspect",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("wire-wire_result")).toBeInTheDocument();
+  });
+
+  it("deletes a selected wire with Delete and restores it with Undo", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByTestId("wire-wire_nat_succ"));
+    await user.keyboard("{Delete}");
+    expect(screen.queryByTestId("wire-wire_nat_succ")).not.toBeInTheDocument();
+    await user.keyboard("{Control>}z{/Control}");
+    expect(screen.getByTestId("wire-wire_nat_succ")).toBeInTheDocument();
+  });
+
+  it("selects and deletes a junction directly, then restores it", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const input = JSON.parse(exampleJson);
+    input.geometry.junctions = [
+      {
+        id: "junction_delete",
+        anchor: { x: 200, y: 110 },
+        outlets: [
+          {
+            id: "junction_delete_left",
+            order: 0,
+            anchor: { x: 190, y: 120 },
+          },
+          {
+            id: "junction_delete_right",
+            order: 1,
+            anchor: { x: 210, y: 120 },
+          },
+        ],
+      },
+    ];
+    await user.upload(
+      screen.getByLabelText("Open JSON file"),
+      new File([JSON.stringify(input)], "junction.tilefold.json", {
+        type: "application/json",
+      }),
+    );
+    const junction = await screen.findByRole("button", {
+      name: "Junction junction_delete",
+    });
+    await user.click(junction);
+    expect(junction).toHaveClass("selected");
+    await user.click(screen.getByRole("button", { name: "Delete selected" }));
+    expect(
+      screen.queryByRole("button", { name: "Junction junction_delete" }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(
+      screen.getByRole("button", { name: "Junction junction_delete" }),
+    ).toBeInTheDocument();
   });
 
   it("keeps the current document after a failed file import", async () => {
@@ -1060,8 +1181,8 @@ describe("Tilefold editor UI", () => {
   it("previews, creates, selects, undoes, and redoes a port connection", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: "+ Nat" }));
-    await user.click(screen.getByRole("button", { name: "+ Succ" }));
+    await user.click(screen.getByRole("button", { name: "Add Nat" }));
+    await user.click(screen.getByRole("button", { name: "Add Succ" }));
     const source = screen.getByTestId("port-element:node_nat_1:value");
     const target = screen.getByTestId("port-element:node_succ_1:input");
     expect(source).toHaveAccessibleName(/output port value/);
@@ -1074,6 +1195,8 @@ describe("Tilefold editor UI", () => {
       clientY: 130,
     });
     expect(screen.getByTestId("wire-preview")).toBeInTheDocument();
+    expect(target.parentElement).toHaveClass("connection-compatible");
+    expect(screen.getByRole("status")).toHaveTextContent("Choose a highlighted input port");
     fireEvent.pointerMove(screen.getByTestId("project-canvas"), {
       pointerId: 21,
       clientX: 276,
@@ -1095,7 +1218,7 @@ describe("Tilefold editor UI", () => {
   it("cancels connection preview on empty drop, Escape, and pointercancel", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: "+ Nat" }));
+    await user.click(screen.getByRole("button", { name: "Add Nat" }));
     const source = screen.getByTestId("port-element:node_nat_1:value");
     const canvas = screen.getByTestId("project-canvas");
 
@@ -1127,7 +1250,7 @@ describe("Tilefold editor UI", () => {
     expect(
       screen.getByTestId("wire-wire_nat_succ-target-handle"),
     ).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "+ Nat" }));
+    await user.click(screen.getByRole("button", { name: "Add Nat" }));
     await user.click(screen.getByTestId("wire-wire_nat_succ"));
 
     fireEvent.pointerDown(
@@ -1166,7 +1289,7 @@ describe("Tilefold editor UI", () => {
       "248,130 120,70",
     );
 
-    await user.click(screen.getByRole("button", { name: "+ Succ" }));
+    await user.click(screen.getByRole("button", { name: "Add Succ" }));
     await user.click(screen.getByTestId("wire-wire_nat_succ"));
     fireEvent.pointerDown(
       screen.getByTestId("wire-wire_nat_succ-target-handle"),

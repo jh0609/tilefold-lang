@@ -68,13 +68,37 @@ describe("editor command history", () => {
     expect(element?.properties).toEqual({ value: "2" });
   });
 
-  it("does not record a failed command", () => {
+  it("deletes an element and connected wire in one undoable command", () => {
     const initial = parseProjectJson(exampleJson);
     const result = executeEditorCommand(createEditorHistory(initial), {
       type: "delete_selection",
       selection: { type: "element", id: "node_nat_2" },
     });
-    expect(result.error).toContain("wire_nat_succ");
+    expect(result.error).toBeUndefined();
+    expect(result.history.past).toHaveLength(1);
+    expect(
+      result.history.present.geometry.elements.some(
+        (element) => element.id === "node_nat_2",
+      ),
+    ).toBe(false);
+    expect(
+      result.history.present.geometry.wires.some(
+        (wire) => wire.id === "wire_nat_succ",
+      ),
+    ).toBe(false);
+    expect(undoEditorCommand(result.history).present).toBe(initial);
+    expect(
+      redoEditorCommand(undoEditorCommand(result.history)).present,
+    ).toBe(result.history.present);
+  });
+
+  it("does not record unsupported container deletion", () => {
+    const initial = parseProjectJson(exampleJson);
+    const result = executeEditorCommand(createEditorHistory(initial), {
+      type: "delete_selection",
+      selection: { type: "container", id: "entry" },
+    });
+    expect(result.error).toBe("Deleting containers is not supported.");
     expect(result.history.present).toBe(initial);
     expect(result.history.past).toEqual([]);
   });

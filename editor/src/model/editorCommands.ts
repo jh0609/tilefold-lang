@@ -6,16 +6,29 @@ import {
   moveElement,
   reconnectWireEndpoint,
   resizeOrMoveElement,
+  updateApplyTypes,
+  updateElementType,
   updateNatValue,
+  type AddableElementKind,
 } from "./editorOps";
 import { exportProjectJson, parseProjectJson } from "./importProject";
-import type { ConnectablePort, WireEndpoint } from "./portConnections";
-import type { Bounds, Point, ProjectDocument, Selection } from "./project";
+import {
+  coreTypeEqual,
+  type ConnectablePort,
+  type WireEndpoint,
+} from "./portConnections";
+import type {
+  Bounds,
+  CoreType,
+  Point,
+  ProjectDocument,
+  Selection,
+} from "./project";
 
 export type EditorCommand =
   | {
       type: "add_element";
-      kind: "nat_literal" | "succ";
+      kind: AddableElementKind;
       center: Point;
     }
   | { type: "add_result_boundary" }
@@ -48,6 +61,18 @@ export type EditorCommand =
       id: string;
       before: string;
       after: string;
+    }
+  | {
+      type: "set_element_type";
+      id: string;
+      before: CoreType;
+      after: CoreType;
+    }
+  | {
+      type: "set_apply_types";
+      id: string;
+      before: { parameterType: CoreType; resultType: CoreType };
+      after: { parameterType: CoreType; resultType: CoreType };
     };
 
 export interface CommandResult {
@@ -135,13 +160,32 @@ export function applyEditorCommand(
       return {
         document: updateNatValue(document, command.id, command.after),
       };
+    case "set_element_type":
+      return updateElementType(document, command.id, command.after);
+    case "set_apply_types":
+      return updateApplyTypes(
+        document,
+        command.id,
+        command.after.parameterType,
+        command.after.resultType,
+      );
   }
 }
+
+const ELEMENT_LABELS: Record<AddableElementKind, string> = {
+  unit_literal: "Unit",
+  nat_literal: "Nat",
+  succ: "Succ",
+  drop: "Drop",
+  copy: "Copy",
+  apply: "Apply",
+  nat_rec: "NatRec",
+};
 
 export function editorCommandLabel(command: EditorCommand): string {
   switch (command.type) {
     case "add_element":
-      return command.kind === "nat_literal" ? "Add Nat" : "Add Succ";
+      return `Add ${ELEMENT_LABELS[command.kind]}`;
     case "add_result_boundary":
       return "Add Result";
     case "add_wire":
@@ -156,6 +200,10 @@ export function editorCommandLabel(command: EditorCommand): string {
       return `Edit bounds for ${command.id}`;
     case "set_nat_value":
       return `Edit value for ${command.id}`;
+    case "set_element_type":
+      return `Edit type for ${command.id}`;
+    case "set_apply_types":
+      return `Edit types for ${command.id}`;
   }
 }
 
@@ -172,6 +220,16 @@ export function isNoOpCommand(command: EditorCommand): boolean {
       );
     case "set_nat_value":
       return command.before === command.after;
+    case "set_element_type":
+      return coreTypeEqual(command.before, command.after);
+    case "set_apply_types":
+      return (
+        coreTypeEqual(
+          command.before.parameterType,
+          command.after.parameterType,
+        ) &&
+        coreTypeEqual(command.before.resultType, command.after.resultType)
+      );
     default:
       return false;
   }

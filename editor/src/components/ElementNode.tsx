@@ -1,5 +1,5 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
-import type { ProjectElement } from "../model/project";
+import type { CoreType, ProjectElement } from "../model/project";
 import type { ConnectablePort } from "../model/portConnections";
 
 interface ElementNodeProps {
@@ -13,6 +13,8 @@ interface ElementNodeProps {
   ) => void;
   ports: ConnectablePort[];
   connectionTargetKey: string | null;
+  compatiblePortKeys: ReadonlySet<string>;
+  rejectedPortKeys: ReadonlySet<string>;
   onPortPointerDown: (
     event: ReactPointerEvent<SVGCircleElement>,
     port: ConnectablePort,
@@ -31,6 +33,56 @@ const KIND_LABELS: Record<ProjectElement["kind"], string> = {
 };
 
 const COMPACT_PORT_HIT_OFFSET = 8;
+
+function typeLabel(type: CoreType): string {
+  if (type === "nat") return "Nat";
+  if (type === "unit") return "Unit";
+  return `${typeLabel(type.arrow[0])} → ${typeLabel(type.arrow[1])}`;
+}
+
+function typeClass(type: CoreType): string {
+  if (type === "nat") return "type-nat";
+  if (type === "unit") return "type-unit";
+  return "type-arrow";
+}
+
+function nodeSignature(element: ProjectElement, ports: ConnectablePort[]) {
+  const input = (name: string) =>
+    ports.find((port) => port.direction === "input" && port.name === name)?.type;
+  const output = (name: string) =>
+    ports.find((port) => port.direction === "output" && port.name === name)?.type;
+  switch (element.kind) {
+    case "unit_literal":
+      return "Unit value";
+    case "nat_literal":
+      return "Nat value";
+    case "succ":
+      return "Nat → Nat";
+    case "drop": {
+      const value = input("input");
+      return value ? `${typeLabel(value)} → ∅` : "";
+    }
+    case "copy": {
+      const value = input("input");
+      return value ? `${typeLabel(value)} → 2 outputs` : "";
+    }
+    case "apply": {
+      const argument = input("argument");
+      const result = output("result");
+      return argument && result
+        ? `${typeLabel(argument)} → ${typeLabel(result)}`
+        : "";
+    }
+    case "nat_rec": {
+      const result = output("result");
+      return result ? `Nat fold → ${typeLabel(result)}` : "";
+    }
+    case "function": {
+      const value = output("value");
+      return value ? typeLabel(value) : "";
+    }
+  }
+}
 
 function portHitCenter(
   element: ProjectElement,
@@ -58,12 +110,15 @@ export function ElementNode({
   onPointerDown,
   ports,
   connectionTargetKey,
+  compatiblePortKeys,
+  rejectedPortKeys,
   onPortPointerDown,
 }: ElementNodeProps) {
   const { x, y, width, height } = element.bounds;
   const compact = width < 72 || height < 44;
   const value =
     element.kind === "nat_literal" ? element.properties.value : undefined;
+  const signature = nodeSignature(element, ports);
   return (
     <g
       className={`element-node kind-${element.kind}${compact ? " compact" : ""}${selected ? " selected" : ""}${traceHighlighted ? " trace-highlighted" : ""}`}
@@ -124,8 +179,8 @@ export function ElementNode({
         </text>
       )}
       {!compact && (
-        <text className="element-id" x={x + 12} y={y + height - 8}>
-          {element.id}
+        <text className="element-signature" x={x + 12} y={y + height - 8}>
+          {signature}
         </text>
       )}
       {selected && (
@@ -142,11 +197,13 @@ export function ElementNode({
         const port = ports.find((candidate) => candidate.name === anchor.port);
         const output = port?.direction === "output";
         const connectable = Boolean(port);
+        const compatible = port ? compatiblePortKeys.has(port.key) : false;
+        const rejected = port ? rejectedPortKeys.has(port.key) : false;
         const hitCenter = portHitCenter(element, anchor, compact);
         return (
           <g
             key={anchor.port}
-            className={`port ${output ? "output" : "input"}${port?.key === connectionTargetKey ? " connection-target" : ""}${connectable ? " connectable" : " display-only"}`}
+            className={`port ${output ? "output" : "input"}${port ? ` ${typeClass(port.type)}` : ""}${port?.key === connectionTargetKey ? " connection-target" : ""}${compatible ? " connection-compatible" : ""}${rejected ? " connection-rejected" : ""}${connectable ? " connectable" : " display-only"}`}
           >
             {port && (
               <circle
@@ -179,6 +236,9 @@ export function ElementNode({
               >
                 {anchor.port}
               </text>
+            )}
+            {port && (
+              <title>{`${anchor.port} · ${port.direction} · ${typeLabel(port.type)}`}</title>
             )}
           </g>
         );

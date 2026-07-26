@@ -74,6 +74,17 @@ function idAt(object: Record<string, unknown>, path: string): string {
   return stringAt(required(object, "id", path), `${path}.id`);
 }
 
+function coreTypeAt(value: unknown, path: string): void {
+  if (value === "unit" || value === "nat") return;
+  const type = objectAt(value, path);
+  const arrow = arrayAt(required(type, "arrow", path), `${path}.arrow`);
+  if (arrow.length !== 2) {
+    throw new StructureError(`${path}.arrow`, "expected two type entries");
+  }
+  coreTypeAt(arrow[0], `${path}.arrow[0]`);
+  coreTypeAt(arrow[1], `${path}.arrow[1]`);
+}
+
 function elementAt(value: unknown, path: string): ProjectElement {
   const element = objectAt(value, path);
   idAt(element, path);
@@ -86,11 +97,61 @@ function elementAt(value: unknown, path: string): ProjectElement {
     required(element, "properties", path),
     `${path}.properties`,
   );
-  if (kind === "nat_literal") {
-    stringAt(
-      required(properties, "value", `${path}.properties`),
-      `${path}.properties.value`,
-    );
+  switch (kind) {
+    case "nat_literal":
+      stringAt(
+        required(properties, "value", `${path}.properties`),
+        `${path}.properties.value`,
+      );
+      break;
+    case "drop":
+    case "copy":
+    case "nat_rec":
+      coreTypeAt(
+        required(properties, "type", `${path}.properties`),
+        `${path}.properties.type`,
+      );
+      break;
+    case "apply":
+      coreTypeAt(
+        required(properties, "parameterType", `${path}.properties`),
+        `${path}.properties.parameterType`,
+      );
+      coreTypeAt(
+        required(properties, "resultType", `${path}.properties`),
+        `${path}.properties.resultType`,
+      );
+      break;
+    case "function": {
+      stringAt(
+        required(properties, "templateId", `${path}.properties`),
+        `${path}.properties.templateId`,
+      );
+      coreTypeAt(
+        required(properties, "parameterType", `${path}.properties`),
+        `${path}.properties.parameterType`,
+      );
+      coreTypeAt(
+        required(properties, "resultType", `${path}.properties`),
+        `${path}.properties.resultType`,
+      );
+      arrayAt(
+        required(properties, "captures", `${path}.properties`),
+        `${path}.properties.captures`,
+      ).forEach((capture, index) => {
+        const capturePath = `${path}.properties.captures[${index}]`;
+        const record = objectAt(capture, capturePath);
+        stringAt(
+          required(record, "key", capturePath),
+          `${capturePath}.key`,
+        );
+        coreTypeAt(
+          required(record, "type", capturePath),
+          `${capturePath}.type`,
+        );
+      });
+      break;
+    }
   }
   const anchors = arrayAt(
     required(element, "portAnchors", path),
@@ -121,6 +182,22 @@ function containerAt(value: unknown, path: string): void {
     required(kind, "templateId", `${path}.kind`),
     `${path}.kind.templateId`,
   );
+  if (kindName === "template") {
+    coreTypeAt(
+      required(kind, "parameterType", `${path}.kind`),
+      `${path}.kind.parameterType`,
+    );
+  }
+  coreTypeAt(
+    required(kind, "resultType", `${path}.kind`),
+    `${path}.kind.resultType`,
+  );
+  arrayAt(
+    required(kind, "dependencies", `${path}.kind`),
+    `${path}.kind.dependencies`,
+  ).forEach((dependency, index) =>
+    stringAt(dependency, `${path}.kind.dependencies[${index}]`),
+  );
   const boundaries = arrayAt(
     required(container, "boundaryPorts", path),
     `${path}.boundaryPorts`,
@@ -129,6 +206,23 @@ function containerAt(value: unknown, path: string): void {
     const boundaryPath = `${path}.boundaryPorts[${index}]`;
     const record = objectAt(boundary, boundaryPath);
     idAt(record, boundaryPath);
+    const role = stringAt(
+      required(record, "role", boundaryPath),
+      `${boundaryPath}.role`,
+    );
+    if (role !== "parameter" && role !== "result" && role !== "capture") {
+      throw new StructureError(`${boundaryPath}.role`, "unknown boundary role");
+    }
+    if (role === "capture") {
+      stringAt(
+        required(record, "captureKey", boundaryPath),
+        `${boundaryPath}.captureKey`,
+      );
+    }
+    coreTypeAt(
+      required(record, "type", boundaryPath),
+      `${boundaryPath}.type`,
+    );
     pointAt(
       required(record, "anchor", boundaryPath),
       `${boundaryPath}.anchor`,

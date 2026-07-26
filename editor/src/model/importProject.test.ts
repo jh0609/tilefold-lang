@@ -50,6 +50,50 @@ describe("Project JSON v1 import and export", () => {
     );
   });
 
+  it("rejects missing and malformed Core type properties", () => {
+    const missing = JSON.parse(exampleJson);
+    delete missing.geometry.elements[0].properties.type;
+    expect(() => parseProjectJson(JSON.stringify(missing))).toThrow(
+      "$.geometry.elements[0].properties.type",
+    );
+
+    const malformed = JSON.parse(exampleJson);
+    malformed.geometry.elements[0].properties.type = {
+      arrow: ["nat"],
+    };
+    expect(() => parseProjectJson(JSON.stringify(malformed))).toThrow(
+      "expected two type entries",
+    );
+  });
+
+  it("requires the container and boundary Core type fields used by OCaml", () => {
+    const missingContainerResult = JSON.parse(exampleJson);
+    delete missingContainerResult.geometry.containers[0].kind.resultType;
+    expect(() =>
+      parseProjectJson(JSON.stringify(missingContainerResult)),
+    ).toThrow("$.geometry.containers[0].kind.resultType");
+
+    const missingDependencies = JSON.parse(exampleJson);
+    delete missingDependencies.geometry.containers[0].kind.dependencies;
+    expect(() =>
+      parseProjectJson(JSON.stringify(missingDependencies)),
+    ).toThrow("$.geometry.containers[0].kind.dependencies");
+
+    const missingBoundaryType = JSON.parse(exampleJson);
+    delete missingBoundaryType.geometry.containers[0].boundaryPorts[0].type;
+    expect(() =>
+      parseProjectJson(JSON.stringify(missingBoundaryType)),
+    ).toThrow("$.geometry.containers[0].boundaryPorts[0].type");
+
+    const malformedBoundaryType = JSON.parse(exampleJson);
+    malformedBoundaryType.geometry.containers[0].boundaryPorts[0].type = {
+      arrow: ["unit"],
+    };
+    expect(() =>
+      parseProjectJson(JSON.stringify(malformedBoundaryType)),
+    ).toThrow("expected two type entries");
+  });
+
   it("preserves large Nat strings and meaningful orders", () => {
     const input = JSON.parse(exampleJson);
     const huge = "12345678901234567890123456789012345678901234567890";

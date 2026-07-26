@@ -21,6 +21,7 @@ import {
   type WireEndpoint,
 } from "../model/portConnections";
 import type {
+  CoreType,
   Point,
   ProjectContainer,
   ProjectDocument,
@@ -45,6 +46,8 @@ interface CanvasProps {
   referenceViewBox: string;
   zoomPercent: number;
   onViewBoxChange: (viewBox: string) => void;
+  onFitView: () => void;
+  onResetView: () => void;
   onSelect: (selection: Selection | null) => void;
   onMoveElement: (id: string, next: Point) => void;
   onAddWire: (source: ConnectablePort, target: ConnectablePort) => void;
@@ -79,13 +82,21 @@ type ConnectionDrag =
       fixed: ConnectablePort;
     });
 
+function portTypeClass(type: CoreType): string {
+  if (type === "nat") return "type-nat";
+  if (type === "unit") return "type-unit";
+  return "type-arrow";
+}
+
 function ContainerShape({
   container,
   selected,
+  selectedBoundaryId,
   onSelect,
 }: {
   container: ProjectContainer;
   selected: boolean;
+  selectedBoundaryId: string | null;
   onSelect: () => void;
 }) {
   const { x, y, width, height } = container.bounds;
@@ -113,10 +124,11 @@ function ContainerShape({
       {container.boundaryPorts.map((boundary) => (
         <circle
           key={boundary.id}
-          className={`boundary-port role-${boundary.role}`}
+          className={`boundary-port role-${boundary.role} ${portTypeClass(boundary.type)}${selectedBoundaryId === boundary.id ? " selected" : ""}`}
           cx={x + boundary.anchor.x}
           cy={y + boundary.anchor.y}
           r={6}
+          aria-hidden="true"
         >
           <title>{`${boundary.role} boundary ${boundary.id}`}</title>
         </circle>
@@ -133,6 +145,8 @@ export function Canvas({
   referenceViewBox,
   zoomPercent,
   onViewBoxChange,
+  onFitView,
+  onResetView,
   onSelect,
   onMoveElement,
   onAddWire,
@@ -146,6 +160,33 @@ export function Canvas({
   const [connection, setConnection] = useState<ConnectionDrag | null>(null);
   const [pan, setPan] = useState<PanState | null>(null);
   const ports = useMemo(() => collectConnectablePorts(document), [document]);
+  const connectionTargets = useMemo(() => {
+    const compatible = new Set<string>();
+    const rejected = new Set<string>();
+    if (!connection) return { compatible, rejected };
+    for (const candidate of ports) {
+      const expectsOutput =
+        connection.kind === "reconnect" && connection.endpoint === "source";
+      if (candidate.direction !== (expectsOutput ? "output" : "input")) continue;
+      const source =
+        connection.kind === "new"
+          ? connection.source
+          : connection.endpoint === "source"
+            ? candidate
+            : connection.fixed;
+      const target =
+        connection.kind === "reconnect" && connection.endpoint === "source"
+          ? connection.fixed
+          : candidate;
+      const validation = validateConnection(document, source, target, {
+        excludeWireId:
+          connection.kind === "reconnect" ? connection.wireId : undefined,
+      });
+      if ("error" in validation) rejected.add(candidate.key);
+      else compatible.add(candidate.key);
+    }
+    return { compatible, rejected };
+  }, [connection, document, ports]);
 
   useEffect(() => {
     function cancelOnEscape(event: KeyboardEvent) {
@@ -243,6 +284,25 @@ export function Canvas({
       anchor,
       originViewBox: viewBox,
     });
+  }
+
+  function zoomAtCenter(factor: number) {
+    const camera = parseViewBox(viewBox);
+    const reference = parseViewBox(referenceViewBox);
+    if (!camera || !reference) return;
+    onViewBoxChange(
+      formatViewBox(
+        zoomViewBox(
+          camera,
+          {
+            x: camera.x + camera.width / 2,
+            y: camera.y + camera.height / 2,
+          },
+          factor,
+          reference,
+        ),
+      ),
+    );
   }
 
   function startDrag(
@@ -583,6 +643,12 @@ export function Canvas({
             selected={
               selection?.type === "container" && selection.id === container.id
             }
+            selectedBoundaryId={
+              selection?.type === "boundary" &&
+              selection.containerId === container.id
+                ? selection.id
+                : null
+            }
             onSelect={() =>
               selectUnlessSuppressed({ type: "container", id: container.id })
             }
@@ -656,6 +722,12 @@ export function Canvas({
           {renderedDocument.geometry.junctions.map((junction) => (
             <g
               key={junction.id}
+              className={
+                selection?.type === "junction" &&
+                selection.id === junction.id
+                  ? "junction-item selected"
+                  : "junction-item"
+              }
               role="button"
               tabIndex={0}
               aria-label={`Junction ${junction.id}`}
@@ -704,6 +776,8 @@ export function Canvas({
             onPointerDown={startDrag}
             ports={ports.filter((port) => port.ownerId === element.id)}
             connectionTargetKey={connection?.validHover?.key ?? null}
+            compatiblePortKeys={connectionTargets.compatible}
+            rejectedPortKeys={connectionTargets.rejected}
             onPortPointerDown={startConnection}
           />
         ))}
@@ -713,15 +787,41 @@ export function Canvas({
             .map((port) => (
               <circle
                 key={port.key}
-                className={`port-hit-area boundary-hit ${port.direction}${connection?.validHover?.key === port.key ? " connection-target" : ""}`}
+                className={`port-hit-area boundary-hit ${port.direction}${connection?.validHover?.key === port.key ? " connection-target" : ""}${connectionTargets.compatible.has(port.key) ? " connection-compatible" : ""}${connectionTargets.rejected.has(port.key) ? " connection-rejected" : ""}`}
                 data-testid={`port-${port.key}`}
                 cx={port.anchor.x}
                 cy={port.anchor.y}
                 r={11}
                 role="button"
                 tabIndex={0}
-                aria-label={`${port.direction} boundary port ${port.name} on ${port.ownerId}${port.direction === "output" ? ", drag to connect" : ", connection target"}`}
-                onPointerDown={(event) => startConnection(event, port)}
+                aria-label={`${port.direction} boundary port ${port.name} on ${port.ownerId}${port.direction === "output" ? ", drag to connect" : ", select to inspect"}`}
+                onPointerDown={
+                  port.direction === "output"
+                    ? (event) => startConnection(event, port)
+                    : undefined
+                }
+                onClick={(event) => {
+                  if (port.hint.kind !== "boundary_port") return;
+                  event.stopPropagation();
+                  selectUnlessSuppressed({
+                    type: "boundary",
+                    id: port.hint.boundaryId,
+                    containerId: port.hint.containerId,
+                  });
+                }}
+                onKeyDown={(event) => {
+                  if (
+                    port.hint.kind === "boundary_port" &&
+                    (event.key === "Enter" || event.key === " ")
+                  ) {
+                    event.preventDefault();
+                    selectUnlessSuppressed({
+                      type: "boundary",
+                      id: port.hint.boundaryId,
+                      containerId: port.hint.containerId,
+                    });
+                  }
+                }}
               />
             ))}
         </g>
@@ -777,13 +877,54 @@ export function Canvas({
             });
           })()}
       </svg>
-      <div className="canvas-hint">
-        Wheel to zoom · Middle-drag to pan · Drag output to input to connect ·
-        Select a wire and drag its S/T handle to reconnect.
+      {connection && (
+        <div
+          className={`connection-banner${connection.rejection ? " is-rejected" : ""}`}
+          role="status"
+        >
+          <strong>
+            {connection.kind === "new" ? "Connect wire" : "Reconnect wire"}
+          </strong>
+          <span>
+            {connection.rejection ??
+              `Choose a highlighted ${connection.kind === "reconnect" && connection.endpoint === "source" ? "output" : "input"} port · Escape cancels`}
+          </span>
+        </div>
+      )}
+      <div className="canvas-hud" aria-label="Canvas controls">
+        <button
+          type="button"
+          aria-label="Zoom out"
+          title="Zoom out"
+          onClick={() => zoomAtCenter(1.25)}
+        >
+          −
+        </button>
+        <span className="canvas-zoom-value" aria-label="Canvas zoom">
+          {zoomPercent}%
+        </span>
+        <button
+          type="button"
+          aria-label="Zoom in"
+          title="Zoom in"
+          onClick={() => zoomAtCenter(0.8)}
+        >
+          +
+        </button>
+        <span className="hud-divider" aria-hidden="true" />
+        <button type="button" onClick={onFitView}>
+          Fit view
+        </button>
+        <button type="button" onClick={onResetView}>
+          Reset view
+        </button>
       </div>
-      <div className="canvas-camera-status" aria-live="polite">
-        <strong>{zoomPercent}%</strong>
-        <span>canvas zoom</span>
+      <div className="canvas-hint">
+        <strong>Canvas</strong>
+        <span>Wheel zoom</span>
+        <span>Middle-drag pan</span>
+        <span>Output → input connects</span>
+        <span>Delete removes selection</span>
       </div>
     </main>
   );

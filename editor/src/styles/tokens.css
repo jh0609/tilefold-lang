@@ -13,6 +13,9 @@
   --result: #dd751d;
   --structure: #64748b;
   --container: #6750a4;
+  --port-nat: #18866b;
+  --port-unit: #64748b;
+  --port-arrow: #7856b8;
   --radius: 8px;
   --space: 8px;
   color: var(--text);
@@ -39,7 +42,8 @@ body,
 
 button,
 .button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -63,6 +67,8 @@ button:hover,
 button:focus-visible,
 .button:focus-within,
 input:focus-visible,
+select:focus-visible,
+summary:focus-visible,
 [role="button"]:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--select) 28%, transparent);
   outline-offset: 2px;

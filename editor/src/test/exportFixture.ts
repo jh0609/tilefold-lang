@@ -210,4 +210,23 @@ await writeMovedFixture(
   "node_nat_2",
   { x: 90, y: 60 },
 );
+
+let paletteDocument = parseProjectJson(await readFile(source, "utf8"));
+for (const [kind, x] of [
+  ["unit_literal", 320],
+  ["drop", 440],
+  ["copy", 560],
+  ["apply", 680],
+  ["nat_rec", 820],
+] as const) {
+  paletteDocument = addElement(paletteDocument, kind, {
+    x,
+    y: 240,
+  }).document;
+}
+await writeFile(
+  resolve(".tmp/exported-palette-nodes.tilefold.json"),
+  exportProjectJson(paletteDocument),
+  "utf8",
+);
 console.log(target);

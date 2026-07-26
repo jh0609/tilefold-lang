@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import exampleJson from "../../examples/nat-succ.tilefold.json?raw";
 import { Canvas } from "./components/Canvas";
 import { Inspector } from "./components/Inspector";
+import { NodePalette } from "./components/NodePalette";
 import { StatusBar } from "./components/StatusBar";
 import { Toolbar } from "./components/Toolbar";
 import {
@@ -28,8 +29,16 @@ import {
   undoLabel,
 } from "./model/editorHistory";
 import { exportProjectJson, parseProjectJson } from "./model/importProject";
-import { findOpenElementCenter } from "./model/editorOps";
-import type { Point, ProjectDocument, Selection } from "./model/project";
+import {
+  findOpenElementCenter,
+  type AddableElementKind,
+} from "./model/editorOps";
+import type {
+  CoreType,
+  Point,
+  ProjectDocument,
+  Selection,
+} from "./model/project";
 import type {
   ConnectablePort,
   WireEndpoint,
@@ -213,13 +222,30 @@ export function App() {
     current: Selection | null,
   ): boolean {
     if (!current) return false;
-    const collections = {
-      element: nextDocument.geometry.elements,
-      container: nextDocument.geometry.containers,
-      wire: nextDocument.geometry.wires,
-      junction: nextDocument.geometry.junctions,
-    };
-    return collections[current.type].some((item) => item.id === current.id);
+    switch (current.type) {
+      case "element":
+        return nextDocument.geometry.elements.some(
+          (item) => item.id === current.id,
+        );
+      case "container":
+        return nextDocument.geometry.containers.some(
+          (item) => item.id === current.id,
+        );
+      case "wire":
+        return nextDocument.geometry.wires.some(
+          (item) => item.id === current.id,
+        );
+      case "junction":
+        return nextDocument.geometry.junctions.some(
+          (item) => item.id === current.id,
+        );
+      case "boundary":
+        return nextDocument.geometry.containers.some(
+          (container) =>
+            container.id === current.containerId &&
+            container.boundaryPorts.some((item) => item.id === current.id),
+        );
+    }
   }
 
   function undo() {
@@ -260,8 +286,7 @@ export function App() {
     }
   }
 
-  function add(kind: "nat_literal" | "succ") {
-    const idPrefix = kind === "nat_literal" ? "node_nat_" : "node_succ_";
+  function add(kind: AddableElementKind) {
     const command = {
       type: "add_element",
       kind,
@@ -270,16 +295,36 @@ export function App() {
     const nextDocument = runCommand(command);
     if (!nextDocument) return;
     const element = nextDocument.geometry.elements.at(-1);
-    if (element?.id.startsWith(idPrefix)) {
+    if (element) {
       setSelection({ type: "element", id: element.id });
     }
+  }
+
+  function selectionCanBeDeleted(current: Selection | null): boolean {
+    if (!current || current.type === "container") return false;
+    if (current.type !== "boundary") return true;
+    return document.geometry.containers
+      .find((container) => container.id === current.containerId)
+      ?.boundaryPorts.some(
+        (boundary) =>
+          boundary.id === current.id && boundary.role === "result",
+      ) ?? false;
   }
 
   function addResult() {
     const nextDocument = runCommand({ type: "add_result_boundary" });
     if (!nextDocument) return;
     const container = nextDocument.geometry.containers[0];
-    if (container) setSelection({ type: "container", id: container.id });
+    const boundary = container?.boundaryPorts.find(
+      (candidate) => candidate.role === "result",
+    );
+    if (container && boundary) {
+      setSelection({
+        type: "boundary",
+        id: boundary.id,
+        containerId: container.id,
+      });
+    }
   }
 
   function removeSelected() {
@@ -368,25 +413,21 @@ export function App() {
         projectName={projectName}
         format={document.format}
         version={document.version}
-        canDelete={selection !== null}
+        canDelete={selectionCanBeDeleted(selection)}
         undoLabel={undoLabel(history)}
         redoLabel={redoLabel(history)}
         onOpenExample={openExample}
         onOpenFile={openFile}
         onExport={() => downloadProject(document)}
-        onAddNat={() => add("nat_literal")}
-        onAddSucc={() => add("succ")}
-        onAddResult={addResult}
         onDelete={removeSelected}
         onUndo={undo}
         onRedo={redo}
-        onFitView={fitView}
-        onResetView={() => setViewBox(savedViewBox(document.view))}
         onRun={runProject}
         onCancel={cancelExecution}
         running={executionState.status === "running"}
       />
       <div className="workspace">
+        <NodePalette onAddElement={add} onAddResult={addResult} />
         <Canvas
           document={document}
           selection={selection}
@@ -395,6 +436,8 @@ export function App() {
           referenceViewBox={referenceViewBox}
           zoomPercent={zoomPercent}
           onViewBoxChange={setViewBox}
+          onFitView={fitView}
+          onResetView={() => setViewBox(savedViewBox(document.view))}
           onSelect={(next) => {
             setSelection(next);
             setInspectorError(null);
@@ -455,6 +498,46 @@ export function App() {
               after: value,
             });
           }}
+          onElementTypeChange={(id, type: CoreType) => {
+            const element = document.geometry.elements.find(
+              (candidate) => candidate.id === id,
+            );
+            if (
+              !element ||
+              (element.kind !== "drop" &&
+                element.kind !== "copy" &&
+                element.kind !== "nat_rec")
+            ) {
+              return;
+            }
+            runCommand({
+              type: "set_element_type",
+              id,
+              before: element.properties.type,
+              after: type,
+            });
+          }}
+          onApplyTypesChange={(
+            id,
+            parameterType: CoreType,
+            resultType: CoreType,
+          ) => {
+            const element = document.geometry.elements.find(
+              (candidate) => candidate.id === id,
+            );
+            if (!element || element.kind !== "apply") return;
+            runCommand({
+              type: "set_apply_types",
+              id,
+              before: {
+                parameterType: element.properties.parameterType,
+                resultType: element.properties.resultType,
+              },
+              after: { parameterType, resultType },
+            });
+          }}
+          canDelete={selectionCanBeDeleted(selection)}
+          onDelete={removeSelected}
           onError={setInspectorError}
         />
         <ExecutionPanel

@@ -8,14 +8,9 @@ interface ToolbarProps {
   onOpenExample: () => void;
   onOpenFile: (file: File) => void;
   onExport: () => void;
-  onAddNat: () => void;
-  onAddSucc: () => void;
-  onAddResult: () => void;
   onDelete: () => void;
   onUndo: () => void;
   onRedo: () => void;
-  onFitView: () => void;
-  onResetView: () => void;
   onRun: () => void;
   onCancel: () => void;
   running: boolean;
@@ -31,14 +26,9 @@ export function Toolbar({
   onOpenExample,
   onOpenFile,
   onExport,
-  onAddNat,
-  onAddSucc,
-  onAddResult,
   onDelete,
   onUndo,
   onRedo,
-  onFitView,
-  onResetView,
   onRun,
   onCancel,
   running,
@@ -78,21 +68,10 @@ export function Toolbar({
           Export JSON
         </button>
       </div>
-      <div className="toolbar-group" aria-label="Add elements">
-        <button type="button" onClick={onAddNat}>
-          + Nat
-        </button>
-        <button type="button" onClick={onAddSucc}>
-          + Succ
-        </button>
-        <button type="button" onClick={onAddResult}>
-          + Result
-        </button>
+      <div className="toolbar-group" aria-label="Edit project">
         <button type="button" onClick={onDelete} disabled={!canDelete}>
           Delete selected
         </button>
-      </div>
-      <div className="toolbar-group" aria-label="Edit history">
         <button
           type="button"
           onClick={onUndo}
@@ -113,20 +92,11 @@ export function Toolbar({
       <div className="view-controls" aria-label="Canvas view">
         <button
           type="button"
+          className={running ? "run-button is-running" : "run-button"}
           onClick={running ? onCancel : onRun}
           aria-label={running ? "Cancel execution" : "Run"}
         >
           {running ? "Cancel" : "Run"}
-        </button>
-        <button type="button" onClick={onFitView}>
-          Fit view
-        </button>
-        <button
-          type="button"
-          className="view-button"
-          onClick={onResetView}
-        >
-          Reset view
         </button>
       </div>
     </header>

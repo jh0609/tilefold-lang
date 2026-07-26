@@ -98,33 +98,41 @@ state library, or UI framework.
 
 The first version borrows only a restrained subset of three familiar tools:
 
-- Node-RED contributes the compact developer-tool shell, canvas-first density,
-  and right Inspector.
+- Node-RED contributes the compact developer-tool shell, searchable categorized
+  node library, canvas-first density, and right Inspector.
 - diagrams.net contributes the bright line grid, rounded flow shapes, generous
   workspace, and unmistakable selection outline.
 - Blender Geometry Nodes contributes visible left/input and right/output ports,
-  limited port colors, and an emphasized literal value.
+  type-colored ports, compact node signatures, and an emphasized literal value.
 
-It intentionally does not copy Blueprint-style chrome or add a palette,
-minimap, automatic routing, resize handles, search, dark mode, glow,
-or elaborate transitions. Result is represented by the orange result boundary
-defined by project JSON v1 rather than inventing a Result element kind.
+It intentionally does not copy Blueprint-style chrome or add a minimap,
+automatic routing, resize handles, dark mode, or elaborate transitions. A
+persistent left palette exposes the implemented Core node kinds by category,
+searches names, signatures, descriptions, and keywords, and keeps Function
+visible but disabled with its missing template-authoring dependency explained.
+Result is represented by the orange result boundary defined by project JSON v1
+rather than inventing a Result element kind.
 
 Styles are split by responsibility under `src/styles/`: tokens, shell/layout,
-canvas/nodes, and Inspector. `tokens.css` centralizes the neutral backgrounds,
-grid and panel borders, text, selection/error colors, restrained kind colors,
-spacing, and radius.
+palette, canvas/nodes, and Inspector. `tokens.css` centralizes the neutral
+backgrounds, grid and panel borders, text, selection/error colors, restrained
+kind and port-type colors, spacing, and radius.
 
 ## Screen layout
 
-- The top toolbar opens the shared example or a local JSON file, exports the
-  current document, adds Nat/Succ/Result data, blocks unsafe deletion, provides
-  undo/redo, fits all rendered geometry, and resets the camera.
+- The top toolbar is limited to project I/O, deletion, undo/redo, and the
+  primary Run/Cancel action.
+- The persistent left palette searches and explains Unit, Nat, Succ, Drop,
+  Copy, Apply, and NatRec creation plus the Result boundary action. Function is
+  shown as unavailable until template authoring exists.
 - The SVG canvas renders containers, relative boundary anchors, elements,
   absolute port anchors, wire polylines, junctions, and explicit outlets. The
   wheel zooms around the pointer and a middle-button drag pans the camera.
-- The Inspector edits element integer bounds and canonical Nat strings and
-  shows read-only information for containers, wires, junctions, and saved view.
+  Floating controls provide Zoom in/out, Fit, and Reset without competing with
+  project commands in the top toolbar.
+- The Inspector edits element integer bounds, canonical Nat strings, and the
+  exposed Core type presets for Drop/Copy/Apply/NatRec. It shows read-only
+  information for containers, boundaries, wires, junctions, and saved view.
 - The status bar distinguishes the editor structure check from the unavailable
   Tilefold semantic validation.
 
@@ -159,15 +167,22 @@ view. It adds no UI fields. It need not match the OCaml canonical byte layout.
 ## Editing policies
 
 New IDs use the smallest unused positive integer for a stable prefix such as
-`node_nat_1`; array length is never used. Nat and Succ prefer the current
-viewport center with their fixed v1 port schema. If that bounds would overlap
-an existing element or leave less than 12 project units of clearance, the
-editor checks a deterministic 120×80 grid around the center, starting to the
-right and proceeding clockwise. The chosen center is stored in the typed add
-command, so Undo/Redo reuses exactly the same geometry. Wires, junctions, and
-container boundaries are not treated as placement obstacles. Result means a
-container Result boundary, since v1 has no `result` element kind; adding it is
-blocked when the first container already has one.
+`node_nat_1`; array length is never used. Unit, Nat, Succ, Drop, Copy, Apply,
+and NatRec prefer the current viewport center with fixed v1 port schemas.
+Drop, Copy, and NatRec default to `Nat`; Apply defaults to `Nat → Nat`.
+The Inspector can select Unit, Nat, or the four first-order Unit/Nat arrow
+presets. Type edits are blocked while the element has connected wires so a
+valid connection cannot silently become ill-typed.
+
+If new bounds would overlap an existing element or leave less than 12 project
+units of clearance, the editor checks a deterministic 120×80 grid around the
+center, starting to the right and proceeding clockwise. The chosen center is
+stored in the typed add command, so Undo/Redo reuses exactly the same geometry.
+Wires, junctions, and container boundaries are not treated as placement
+obstacles. Result means a container Result boundary, since v1 has no `result`
+element kind; adding it is blocked when the first container already has one.
+Function remains read-only because a valid Function node requires a referenced
+template, declared captures, and dependency management.
 
 Pointer positions are transformed through the SVG current transformation matrix
 and rounded to project integers. Element movement translates its bounds and
@@ -183,14 +198,18 @@ exported geometry remain unchanged. Clicking the visible five-unit port still
 starts a connection, but grabbing the center of a 20×20 literal no longer does.
 Non-compact port labels use a separate row below the element title so input
 names do not collide with operation names; this is presentation-only and does
-not move anchors or change exported geometry.
+not move anchors or change exported geometry. Their bottom row shows a compact
+type/behavior signature instead of repeating the stable ID already available in
+the Inspector. Nat, Unit, and function-valued ports use distinct colors; port
+direction remains encoded spatially by left/input and right/output placement.
 Keyboard focus is drawn as a dashed ring on the visible element body rather
 than around its larger transparent port hit targets. Enter or Space selects the
 focused element without creating a document command.
 
 Canvas navigation is UI-only. Wheel zoom stays anchored under the pointer and
-is clamped to 25–400% of the saved Project view; middle-button dragging pans
-without changing selection. The current percentage is shown in the canvas and
+is clamped to 25–400% of the saved Project view; the floating plus/minus controls
+zoom around the current camera center and middle-button dragging pans without
+changing selection. The current percentage is shown between the controls and
 Fit view frames elements, containers, wire points, junctions, and outlets with
 24 project units of padding while preserving the saved view's aspect ratio.
 It never zooms in beyond 400%, but it can zoom out beyond the wheel's 25% limit
@@ -201,14 +220,25 @@ Escape, `pointercancel`, or lost pointer capture restores a pan's starting
 camera. Wheel navigation is paused during element, connection, reconnection, or
 pan gestures so their coordinate transforms remain stable.
 
+Starting a connection highlights every exact, currently compatible destination
+port and de-emphasizes rejected candidates. Hovering a rejected port surfaces
+the validator's reason in a canvas banner; no approximate, geometric, or
+name-based compatibility is inferred. This connection guidance is ephemeral UI
+state and never enters Project JSON or history.
+
 Containers are selectable but intentionally read-only. Moving a container
 without a fully specified policy for contained elements and wires could change
 Geometry ownership. Container boundary points therefore stay fixed when an
 element connected to one moves.
 
-Deletion is currently supported only for unreferenced elements. A wire hint
-that references an element blocks deletion and reports the wire IDs. No
-cascade deletion is performed.
+Deletion supports elements, wires, junctions, and Result boundaries. Deleting
+an element removes only wires whose endpoint hints exactly reference that
+element ID. Deleting a junction removes wires whose hints exactly reference the
+junction or one of its outlets. Deleting a Result boundary removes wires whose
+boundary hints exactly match both its container and boundary IDs. Geometry,
+DOM order, labels, and string prefixes are never used to infer attachment.
+Each deletion and its dependent wire removals are one command and one Undo
+step. Parameter/capture boundaries and containers remain protected.
 
 Document changes use typed commands and an immutable 100-entry history.
 Undo/redo is available from the toolbar and with Ctrl/Cmd+Z,
@@ -265,7 +295,7 @@ direction, has an invalid polyline, or would create consecutive duplicate
 points rejects the whole move without changing the document. Unrelated invalid
 geometry is not treated as an attachment.
 
-Wire bend points, segments, junctions, and routing are not editable. Element
+Wire bend points, segments, junction creation, and routing are not editable. Element
 movement deliberately does not reroute or translate middle points. Container
 movement remains unsupported.
 
@@ -273,6 +303,8 @@ movement remains unsupported.
 
 The next editor layer can add:
 
+- function-template creation and editing;
+- arbitrary nested Core type editing beyond the current presets;
 - wire bend-point and segment editing;
 - container movement with a specified deterministic group-translation policy;
 - full typed diagnostic presentation;
