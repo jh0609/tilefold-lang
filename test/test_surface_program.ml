@@ -253,16 +253,19 @@ let validate_or_fail functions =
       failwith
         (String.concat "\n" (List.map S.render_validation_error errors))
 
-let lower_or_fail program =
+let lower_with_entry_or_fail entry_function_id program =
   match
     S.lower_to_program_package
-      ~entry_function_id:(function_id "lower-entry")
+      ~entry_function_id:(function_id entry_function_id)
       program
   with
   | Ok package -> package
   | Error errors ->
       failwith
         (String.concat "\n" (List.map S.render_lowering_error errors))
+
+let lower_or_fail program =
+  lower_with_entry_or_fail "lower-entry" program
 
 let test_first_surface_lowering_slice_runs () =
   let package =
@@ -343,10 +346,215 @@ let test_lowering_is_canonical_across_function_order () =
   in
   assert (String.equal left right)
 
-let test_lowering_rejects_multi_argument_functions () =
+let test_multi_argument_currying_runs () =
+  let package =
+    validate_or_fail
+      [
+        first_function;
+        entry_function
+          [
+            argument "left" (S.Nat_literal Nat.zero);
+            argument "right" (S.Nat_literal Nat.one);
+          ];
+      ]
+    |> lower_with_entry_or_fail "entry"
+  in
+  (match P.run package with
+  | P.Completed { value; trace; _ } ->
+      (match Runtime_value.payload value with
+      | Runtime_value.Nat value -> assert (Nat.equal value Nat.zero)
+      | _ -> failwith "curried Surface program returned a non-Nat value");
+      assert (
+        List.fold_left
+          (fun count event ->
+            if event.Rewrite_event.rule = Rewrite_event.ApplyEnter then
+              count + 1
+            else count)
+          0 trace
+        = 2)
+  | _ -> failwith "curried Surface program did not complete");
+  let templates = P.templates package in
+  assert (List.length templates = 3);
+  let outer =
+    List.find
+      (fun template ->
+        CG.Function_template_id.to_string
+          (CG.Function_template.id template)
+        = "first")
+      templates
+  in
+  assert (
+    Core_type.equal
+      (CG.Function_template.signature_type outer)
+      (Core_type.Arrow
+         (Core_type.Nat, Core_type.Arrow (Core_type.Nat, Core_type.Nat))));
+  let body_template =
+    List.find
+      (fun template ->
+        CG.Function_template_id.to_string
+          (CG.Function_template.id template)
+        = "__surface_curried_0001_first")
+      templates
+  in
+  (match CG.Function_template.captures body_template with
+  | [ capture ] ->
+      assert (
+        CG.Port_key.equal capture.key
+          (CG.Port_key.capture "left"));
+      assert (Core_type.equal capture.typ Core_type.Nat)
+  | _ -> failwith "curried body template capture shape is incorrect");
+  assert (
+    CG.Function_template.body body_template
+    |> CG.Validated_graph.nodes
+    |> List.exists (fun (node : CG.node) ->
+           match node.kind with
+           | CG.Drop Core_type.Nat ->
+               CG.Node_id.to_string node.id
+               = "__surface_parameter_drop"
+           | _ -> false))
+
+let test_multi_argument_lowering_uses_declaration_order () =
+  let select : S.function_decl =
+    {
+      id = function_id "select-after-unit";
+      parameters =
+        [ unit_parameter "marker"; nat_parameter "value" ];
+      result = nat_result "selected";
+      body = S.Parameter (name "value");
+    }
+  in
+  let entry : S.function_decl =
+    {
+      id = function_id "ordered-entry";
+      parameters = [];
+      result = nat_result "answer";
+      body =
+        call "select-after-unit"
+          [
+            argument "value" (S.Nat_literal Nat.one);
+            argument "marker" S.Unit_literal;
+          ];
+    }
+  in
+  let package =
+    validate_or_fail [ entry; select ]
+    |> lower_with_entry_or_fail "ordered-entry"
+  in
+  let outer =
+    P.templates package
+    |> List.find (fun template ->
+           CG.Function_template_id.to_string
+             (CG.Function_template.id template)
+           = "select-after-unit")
+  in
+  assert (
+    Core_type.equal
+      (CG.Function_template.signature_type outer)
+      (Core_type.Arrow
+         (Core_type.Unit, Core_type.Arrow (Core_type.Nat, Core_type.Nat))));
+  match P.run package with
+  | P.Completed { value; _ } -> (
+      match Runtime_value.payload value with
+      | Runtime_value.Nat value -> assert (Nat.equal value Nat.one)
+      | _ -> failwith "declaration-order program returned a non-Nat value")
+  | _ -> failwith "declaration-order program did not complete"
+
+let test_three_argument_currying_forwards_captures () =
+  let select : S.function_decl =
+    {
+      id = function_id "select-third";
+      parameters =
+        [
+          unit_parameter "marker";
+          nat_parameter "ignored";
+          nat_parameter "value";
+        ];
+      result = nat_result "selected";
+      body = S.Parameter (name "value");
+    }
+  in
+  let entry : S.function_decl =
+    {
+      id = function_id "three-entry";
+      parameters = [];
+      result = nat_result "answer";
+      body =
+        call "select-third"
+          [
+            argument "value" (S.Nat_literal Nat.one);
+            argument "marker" S.Unit_literal;
+            argument "ignored" (S.Nat_literal Nat.zero);
+          ];
+    }
+  in
+  let package =
+    validate_or_fail [ select; entry ]
+    |> lower_with_entry_or_fail "three-entry"
+  in
+  (match P.run package with
+  | P.Completed { value; trace; _ } ->
+      (match Runtime_value.payload value with
+      | Runtime_value.Nat value -> assert (Nat.equal value Nat.one)
+      | _ -> failwith "three-argument program returned a non-Nat value");
+      assert (
+        List.fold_left
+          (fun count event ->
+            if event.Rewrite_event.rule = Rewrite_event.ApplyEnter then
+              count + 1
+            else count)
+          0 trace
+        = 3)
+  | _ -> failwith "three-argument program did not complete");
+  let middle =
+    P.templates package
+    |> List.find (fun template ->
+           CG.Function_template_id.to_string
+             (CG.Function_template.id template)
+           = "__surface_curried_0001_select-third")
+  in
+  match CG.Function_template.captures middle with
+  | [ capture ] ->
+      assert (
+        CG.Port_key.equal capture.key
+          (CG.Port_key.capture "marker"));
+      assert (Core_type.equal capture.typ Core_type.Unit)
+  | _ -> failwith "middle curried template capture shape is incorrect"
+
+let test_multi_argument_lowering_is_canonical_across_argument_order () =
+  let lower arguments =
+    validate_or_fail [ first_function; entry_function arguments ]
+    |> lower_with_entry_or_fail "entry"
+    |> PS.encode
+  in
+  let left =
+    lower
+      [
+        argument "left" (S.Nat_literal Nat.zero);
+        argument "right" (S.Nat_literal Nat.one);
+      ]
+  in
+  let right =
+    lower
+      [
+        argument "right" (S.Nat_literal Nat.one);
+        argument "left" (S.Nat_literal Nat.zero);
+      ]
+  in
+  assert (String.equal left right)
+
+let test_generated_template_id_collision_is_rejected () =
+  let colliding : S.function_decl =
+    {
+      id = function_id "__surface_curried_0001_first";
+      parameters = [];
+      result = nat_result "answer";
+      body = S.Nat_literal Nat.zero;
+    }
+  in
   let program =
     validate_or_fail
       [
+        colliding;
         first_function;
         entry_function
           [
@@ -364,11 +572,15 @@ let test_lowering_rejects_multi_argument_functions () =
       assert (
         List.exists
           (function
-            | S.Unsupported_parameter_count { function_id = id; actual = 2 } ->
+            | S.Generated_template_id_collision
+                { function_id = id; generated_id } ->
                 S.Function_id.equal id (function_id "first")
+                && CG.Function_template_id.to_string generated_id
+                   = "__surface_curried_0001_first"
             | _ -> false)
           errors)
-  | Ok _ -> failwith "multi-argument Surface lowering unexpectedly succeeded"
+  | Ok _ ->
+      failwith "generated template ID collision unexpectedly lowered"
 
 let test_lowering_inserts_automatic_drop () =
   let constant : S.function_decl =
@@ -475,7 +687,11 @@ let () =
   test_first_surface_lowering_slice_runs ();
   test_unit_surface_lowering_slice_runs ();
   test_lowering_is_canonical_across_function_order ();
-  test_lowering_rejects_multi_argument_functions ();
+  test_multi_argument_currying_runs ();
+  test_multi_argument_lowering_uses_declaration_order ();
+  test_three_argument_currying_forwards_captures ();
+  test_multi_argument_lowering_is_canonical_across_argument_order ();
+  test_generated_template_id_collision_is_rejected ();
   test_lowering_inserts_automatic_drop ();
   test_lowering_counts_multiple_parameter_uses ();
   print_endline "surface program tests passed"

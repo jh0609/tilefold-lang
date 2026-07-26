@@ -12,12 +12,13 @@ The layer boundary is:
 Tilefold_surface.Surface_program.Raw
   -> validation
 Tilefold_surface.Surface_program
-  -> later lowering
+  -> deterministic lowering
 Function_template + Function + Apply Core graphs
 ```
 
-Only the first two steps exist in this checkpoint. `Surface_program` is not
-Project JSON v1 and is not accepted directly by the execution engine.
+`Surface_program` is not Project JSON v1 and is not accepted directly by the
+execution engine. Lowering produces an ordinary validated Core
+`Program_package.t`.
 
 ## Model
 
@@ -36,8 +37,8 @@ Expressions currently include:
 
 Calls bind arguments by parameter name. Therefore the textual or visual order
 of call arguments is not semantic. Function parameter declaration order is
-preserved because the later lowering stage will use it to construct a
-deterministic unary closure and `Apply` chain.
+preserved because lowering uses it to construct a deterministic unary closure
+and `Apply` chain.
 
 For example, this conceptual Surface program:
 
@@ -87,28 +88,48 @@ The canonical form is an S-expression headed by
 This format is initially a deterministic conformance and test view. It is not
 the persisted editor document format, and no decoder is defined yet.
 
-## First lowering slice
+## Executable lowering
 
-`Surface_program.lower_to_program_package` lowers the smallest executable
+`Surface_program.lower_to_program_package` lowers the executable Unit/Nat
 subset to the existing Core and returns a validated `Program_package.t`.
 
 - the entry function has no Surface parameters and becomes a Core `Unit -> A`
   template whose synthetic Unit input is explicitly dropped;
-- a non-entry function may have one `Unit` or `Nat` parameter;
-- a Surface call becomes a capture-free Core `Function` followed by `Apply`;
+- each declared parameter has type `Unit` or `Nat`;
+- parameter declaration order determines a right-associated curried type;
+- a multi-argument function becomes a deterministic chain of unary templates;
+- each inner template captures the parameters accepted by earlier stages;
+- a Surface call creates the capture-free outer `Function` and applies named
+  arguments in declaration order;
 - generated nodes, edges, dependencies, and rewrite order are deterministic;
-- a unary parameter consumed zero times gets an explicit Core `Drop`;
-- a unary parameter consumed once is connected directly.
+- a parameter consumed zero times gets an explicit Core `Drop` in the final
+  body template;
+- a parameter consumed once is connected directly;
+- generated inner template IDs use
+  `__surface_curried_<stage>_<surface-function-id>`, and lowering rejects an
+  explicit Surface function ID that collides with one.
 
-Multiple uses require a balanced `Copy` tree. The current executable Surface
-subset has only unary calls, so it cannot yet produce a valid expression with
-multiple uses: such an expression first needs a multi-argument call to lower.
-Until deterministic currying for those calls is implemented, lowering reports
-`Unsupported_parameter_use_count` rather than inventing an untestable Copy
-layout.
+For example:
 
-Functions with multiple named parameters remain valid Surface values and
-serialize canonically, but this initial lowering slice rejects them explicitly.
+```text
+first(left: Nat, right: Nat) -> Nat
+```
+
+lowers conceptually to:
+
+```text
+first : Nat -> (Nat -> Nat)
+first(left) = Function(inner, capture left)
+inner[capture left](right) = left
+```
+
+The call `first(right = 1, left = 0)` then becomes
+`Apply(Apply(Function(first), 0), 1)`. Call-site argument order remains
+non-semantic.
+
+Multiple uses still require a balanced `Copy` tree. Until that deterministic
+resource pass is implemented, lowering reports
+`Unsupported_parameter_use_count` for any parameter used more than once.
 
 ## Deliberate exclusions
 
@@ -118,7 +139,6 @@ This checkpoint does not define:
 - automatic `Copy` for multiply-used Surface parameters;
 - lexical capture inference;
 - pattern matching or user-defined data types;
-- general multi-argument Surface-to-Core lowering;
 - a writable textual Surface syntax.
 
 Those features must build on the validated model without weakening Core's

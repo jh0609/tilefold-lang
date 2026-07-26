@@ -117,9 +117,9 @@ type lowering_error =
       function_id : Function_id.t;
       actual : int;
     }
-  | Unsupported_parameter_count of {
+  | Generated_template_id_collision of {
       function_id : Function_id.t;
-      actual : int;
+      generated_id : Core_graph.Function_template_id.t;
     }
   | Unsupported_value_type of {
       function_id : Function_id.t;

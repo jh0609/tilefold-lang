@@ -117,9 +117,9 @@ type lowering_error =
       function_id : Function_id.t;
       actual : int;
     }
-  | Unsupported_parameter_count of {
+  | Generated_template_id_collision of {
       function_id : Function_id.t;
-      actual : int;
+      generated_id : Core_graph.Function_template_id.t;
     }
   | Unsupported_value_type of {
       function_id : Function_id.t;
@@ -489,6 +489,16 @@ let core_template_id id =
   | Error message ->
       invalid_arg ("validated Surface function ID is not a Core template ID: " ^ message)
 
+let generated_curried_template_id function_id stage =
+  let value =
+    Printf.sprintf "__surface_curried_%04d_%s" stage
+      (Function_id.to_string function_id)
+  in
+  match CG.Function_template_id.of_string value with
+  | Ok id -> id
+  | Error message ->
+      invalid_arg ("invalid generated curried template ID: " ^ message)
+
 let generated_node_id value =
   match CG.Node_id.of_string value with
   | Ok id -> id
@@ -503,6 +513,12 @@ let parameter_node_id = generated_node_id "__surface_parameter"
 let result_node_id = generated_node_id "__surface_result"
 let unit_drop_node_id = generated_node_id "__surface_unit_drop"
 let parameter_drop_node_id = generated_node_id "__surface_parameter_drop"
+
+let capture_node_id index =
+  generated_node_id (Printf.sprintf "__surface_capture_%04d" index)
+
+let capture_drop_node_id index =
+  generated_node_id (Printf.sprintf "__surface_capture_drop_%04d" index)
 
 let port_ref node_id port_key : CG.port_ref =
   { node_id; port_key }
@@ -522,6 +538,19 @@ let rec parameter_use_count parameter = function
         (fun count (argument : argument) ->
           count + parameter_use_count parameter argument.value)
         0 call.arguments
+
+let rec curried_result_type parameters result_type =
+  match parameters with
+  | [] -> result_type
+  | (parameter : parameter) :: rest ->
+      Core_type.Arrow
+        (parameter.typ, curried_result_type rest result_type)
+
+let capture_of_parameter (parameter : parameter) : CG.capture =
+  {
+    key = CG.Port_key.capture (Name.to_string parameter.name);
+    typ = parameter.typ;
+  }
 
 type graph_build = {
   next_node : int;
@@ -558,22 +587,60 @@ let add_edge source target state =
     edges_rev = { CG.id; source; target } :: state.edges_rev;
   }
 
-let find_built_template built id =
-  built
-  |> List.find_opt (fun (built_id, _) -> Function_id.equal built_id id)
-  |> Option.map snd
+type built_function = {
+  surface_id : Function_id.t;
+  outer_template : CG.Function_template.t;
+  templates : CG.Function_template.t list;
+}
 
-let function_signature template : CG.function_signature =
+let find_built_function built id =
+  built
+  |> List.find_opt (fun built_function ->
+         Function_id.equal built_function.surface_id id)
+
+let find_built_template built id =
+  find_built_function built id
+  |> Option.map (fun built_function -> built_function.outer_template)
+
+let all_built_templates built =
+  List.concat_map (fun built_function -> built_function.templates) built
+
+let function_signature ?(captures = []) template : CG.function_signature =
   {
     template_id = CG.Function_template.id template;
     parameter_type = CG.Function_template.parameter_type template;
     result_type = CG.Function_template.result_type template;
-    captures = [];
+    captures;
   }
 
-let rec compile_expression functions built state expression =
+type parameter_binding = {
+  parameter : parameter;
+  source : CG.port_ref;
+}
+
+let find_parameter_binding bindings name =
+  List.find_opt
+    (fun binding -> Name.equal binding.parameter.name name)
+    bindings
+
+let find_call_argument call (parameter : parameter) =
+  List.find_opt
+    (fun (argument : argument) ->
+      Name.equal argument.parameter parameter.name)
+    call.arguments
+
+let rec compile_expression functions built bindings state expression =
   match expression with
-  | Parameter _ -> Ok (state, output parameter_node_id)
+  | Parameter name -> (
+      match find_parameter_binding bindings name with
+      | Some binding -> Ok (state, binding.source)
+      | None ->
+          Error
+            [
+              Lowering_invariant_violation
+                ("validated parameter binding disappeared: "
+                ^ Name.to_string name);
+            ])
   | Unit_literal ->
       let state, node_id =
         add_expression_node "unit" CG.Unit_literal false state
@@ -594,23 +661,11 @@ let rec compile_expression functions built state expression =
                 ^ Function_id.to_string call.function_id);
             ]
       | Some target -> (
-          let* state, argument_source =
-            match target.parameters with
-            | [] ->
-                let state, unit_id =
-                  add_expression_node "unit_argument" CG.Unit_literal false
-                    state
-                in
-                Ok (state, output unit_id)
-            | [ parameter ] -> (
-                match
-                  List.find_opt
-                    (fun (argument : argument) ->
-                      Name.equal argument.parameter parameter.name)
-                    call.arguments
-                with
-                | Some argument ->
-                    compile_expression functions built state argument.value
+          let* state, argument_sources_rev =
+            List.fold_left
+              (fun result (parameter : parameter) ->
+                let* state, sources_rev = result in
+                match find_call_argument call parameter with
                 | None ->
                     Error
                       [
@@ -618,16 +673,14 @@ let rec compile_expression functions built state expression =
                           ("validated call argument disappeared: "
                           ^ Function_id.to_string call.function_id ^ "."
                           ^ Name.to_string parameter.name);
-                      ])
-            | parameters ->
-                Error
-                  [
-                    Unsupported_parameter_count
-                      {
-                        function_id = target.id;
-                        actual = List.length parameters;
-                      };
-                  ]
+                      ]
+                | Some argument ->
+                    let* state, source =
+                      compile_expression functions built bindings state
+                        argument.value
+                    in
+                    Ok (state, (parameter, source) :: sources_rev))
+              (Ok (state, [])) target.parameters
           in
           match find_built_template built target.id with
           | None ->
@@ -638,70 +691,137 @@ let rec compile_expression functions built state expression =
                     ^ Function_id.to_string target.id);
                 ]
           | Some target_template ->
+              let state, argument_sources =
+                match List.rev argument_sources_rev with
+                | [] ->
+                    let state, unit_id =
+                      add_expression_node "unit_argument" CG.Unit_literal false
+                        state
+                    in
+                    (state, [ (None, output unit_id) ])
+                | sources ->
+                    ( state,
+                      List.map
+                        (fun (parameter, source) ->
+                          (Some parameter, source))
+                        sources )
+              in
               let state, function_node_id =
                 add_expression_node "function"
                   (CG.Function (function_signature target_template))
                   true state
               in
-              let state, apply_node_id =
-                add_expression_node "apply"
-                  (CG.Apply
-                     {
-                       apply_parameter_type =
-                         CG.Function_template.parameter_type target_template;
-                       apply_result_type =
-                         CG.Function_template.result_type target_template;
-                     })
-                  true state
+              let rec apply_arguments state function_source = function
+                | [] -> Ok (state, function_source)
+                | (parameter, argument_source) :: rest ->
+                    let parameter_type, result_type =
+                      match parameter with
+                      | None ->
+                          (Core_type.Unit, target.result.typ)
+                      | Some parameter ->
+                          ( parameter.typ,
+                            curried_result_type
+                              (List.filter_map fst rest)
+                              target.result.typ )
+                    in
+                    let state, apply_node_id =
+                      add_expression_node "apply"
+                        (CG.Apply
+                           {
+                             apply_parameter_type = parameter_type;
+                             apply_result_type = result_type;
+                           })
+                        true state
+                    in
+                    let state =
+                      add_edge function_source
+                        (port_ref apply_node_id CG.Port_key.function_input)
+                        state
+                    in
+                    let state =
+                      add_edge argument_source
+                        (port_ref apply_node_id CG.Port_key.argument)
+                        state
+                    in
+                    apply_arguments state
+                      (port_ref apply_node_id CG.Port_key.result)
+                      rest
               in
-              let state =
-                add_edge (output function_node_id)
-                  (port_ref apply_node_id CG.Port_key.function_input)
-                  state
-              in
-              let state =
-                add_edge argument_source
-                  (port_ref apply_node_id CG.Port_key.argument)
-                  state
-              in
-              Ok
-                ( state,
-                  port_ref apply_node_id CG.Port_key.result )))
+              apply_arguments state (output function_node_id)
+                argument_sources))
 
-let lower_function_decl functions built function_decl =
-  let parameter_type =
-    match function_decl.parameters with
-    | [] -> Core_type.Unit
-    | [ parameter ] -> parameter.typ
-    | _ ->
-        invalid_arg
-          "parameter count must be checked before lowering a Surface function"
-  in
+let base_graph_state ~parameter_type ~result_type captures =
   let parameter_node : CG.node =
     { id = parameter_node_id; kind = CG.Parameter parameter_type }
   in
   let result_node : CG.node =
-    { id = result_node_id; kind = CG.Result function_decl.result.typ }
+    { id = result_node_id; kind = CG.Result result_type }
   in
-  let initial =
-    {
-      next_node = 0;
-      next_edge = 0;
-      nodes_rev = [ result_node; parameter_node ];
-      edges_rev = [];
-      order_rev = [];
-    }
+  let capture_nodes =
+    List.mapi
+      (fun index (capture : CG.capture) : CG.node ->
+        { id = capture_node_id index; kind = CG.Capture capture })
+      captures
   in
-  let parameter_uses =
-    match function_decl.parameters with
-    | [] -> 0
-    | [ parameter ] ->
-        parameter_use_count parameter.name function_decl.body
-    | _ -> assert false
+  let nodes = parameter_node :: capture_nodes @ [ result_node ] in
+  {
+    next_node = 0;
+    next_edge = 0;
+    nodes_rev = List.rev nodes;
+    edges_rev = [];
+    order_rev = [];
+  }
+
+let validate_generated_graph ~function_id ~available_templates state =
+  let raw_graph =
+    CG.Raw_graph.of_lists ~nodes:(List.rev state.nodes_rev)
+      ~edges:(List.rev state.edges_rev)
+      ~default_node_order:(List.rev state.order_rev)
   in
-  let initial, trailing_drop =
-    match function_decl.parameters with
+  match CG.validate_with_templates available_templates raw_graph with
+  | Ok body -> Ok body
+  | Error errors ->
+      Error
+        [
+          Core_graph_validation_errors
+            { function_id; errors };
+        ]
+
+let lower_body_template functions built function_decl =
+  let preceding_parameters, current_parameter, parameter_type, template_id =
+    match List.rev function_decl.parameters with
     | [] ->
+        ([], None, Core_type.Unit, core_template_id function_decl.id)
+    | current :: reversed_preceding ->
+        let preceding = List.rev reversed_preceding in
+        let stage = List.length preceding in
+        let template_id =
+          if stage = 0 then core_template_id function_decl.id
+          else generated_curried_template_id function_decl.id stage
+        in
+        (preceding, Some current, current.typ, template_id)
+  in
+  let captures = List.map capture_of_parameter preceding_parameters in
+  let initial =
+    base_graph_state ~parameter_type
+      ~result_type:function_decl.result.typ captures
+  in
+  let capture_bindings =
+    List.mapi
+      (fun index parameter ->
+        { parameter; source = output (capture_node_id index) })
+      preceding_parameters
+  in
+  let bindings =
+    match current_parameter with
+    | None -> capture_bindings
+    | Some parameter ->
+        capture_bindings
+        @ [ { parameter; source = output parameter_node_id } ]
+  in
+  let initial, drop_ids_rev =
+    match current_parameter with
+    | None ->
         let drop_node : CG.node =
           { id = unit_drop_node_id; kind = CG.Drop Core_type.Unit }
         in
@@ -709,22 +829,34 @@ let lower_function_decl functions built function_decl =
           { initial with nodes_rev = drop_node :: initial.nodes_rev }
           |> add_edge (output parameter_node_id) (input unit_drop_node_id)
         in
-        (state, Some unit_drop_node_id)
-    | [ _ ] when parameter_uses = 0 ->
-        let drop_node : CG.node =
-          { id = parameter_drop_node_id; kind = CG.Drop parameter_type }
-        in
-        let state =
-          { initial with nodes_rev = drop_node :: initial.nodes_rev }
-          |> add_edge (output parameter_node_id)
-               (input parameter_drop_node_id)
-        in
-        (state, Some parameter_drop_node_id)
-    | [ _ ] -> (initial, None)
-    | _ -> assert false
+        (state, [ unit_drop_node_id ])
+    | Some _ ->
+        List.fold_left
+          (fun (state, drop_ids_rev) (index, binding) ->
+            if
+              parameter_use_count binding.parameter.name
+                function_decl.body
+              <> 0
+            then (state, drop_ids_rev)
+            else
+              let node_id =
+                if index = List.length preceding_parameters then
+                  parameter_drop_node_id
+                else capture_drop_node_id index
+              in
+              let drop_node : CG.node =
+                { id = node_id; kind = CG.Drop binding.parameter.typ }
+              in
+              let state =
+                { state with nodes_rev = drop_node :: state.nodes_rev }
+                |> add_edge binding.source (input node_id)
+              in
+              (state, node_id :: drop_ids_rev))
+          (initial, [])
+          (List.mapi (fun index binding -> (index, binding)) bindings)
   in
   let* state, body_source =
-    compile_expression functions built initial function_decl.body
+    compile_expression functions built bindings initial function_decl.body
   in
   let state =
     add_edge body_source
@@ -732,41 +864,130 @@ let lower_function_decl functions built function_decl =
       state
   in
   let state =
-    match trailing_drop with
-    | Some drop_id -> { state with order_rev = drop_id :: state.order_rev }
-    | None -> state
+    List.fold_left
+      (fun state drop_id ->
+        { state with order_rev = drop_id :: state.order_rev })
+      state (List.rev drop_ids_rev)
   in
-  let raw_graph =
-    CG.Raw_graph.of_lists ~nodes:(List.rev state.nodes_rev)
-      ~edges:(List.rev state.edges_rev)
-      ~default_node_order:(List.rev state.order_rev)
+  let* body =
+    validate_generated_graph ~function_id:function_decl.id
+      ~available_templates:(all_built_templates built)
+      state
   in
-  let available_templates = List.map snd built in
-  match CG.validate_with_templates available_templates raw_graph with
-  | Error errors ->
-      Error
-        [
-          Core_graph_validation_errors
-            { function_id = function_decl.id; errors };
-        ]
-  | Ok body ->
-      let dependencies =
-        call_dependencies function_decl
-        |> List.map core_template_id
-      in
-      Ok
-        (CG.Function_template.create ~dependencies
-           ~id:(core_template_id function_decl.id)
-           ~parameter_type ~result_type:function_decl.result.typ ~captures:[]
-           ~body ())
+  let dependencies =
+    call_dependencies function_decl
+    |> List.map core_template_id
+  in
+  Ok
+    (CG.Function_template.create ~dependencies ~id:template_id
+       ~parameter_type ~result_type:function_decl.result.typ ~captures
+       ~body ())
 
-let find_built_pair built id =
-  List.find_opt
-    (fun (built_id, _) -> Function_id.equal built_id id)
-    built
+let lower_wrapper_template built function_decl ~stage ~inner_templates =
+  let inner_template = List.hd inner_templates in
+  let current_parameter = List.nth function_decl.parameters stage in
+  let preceding_parameters =
+    function_decl.parameters
+    |> List.mapi (fun index parameter -> (index, parameter))
+    |> List.filter_map (fun (index, parameter) ->
+           if index < stage then Some parameter else None)
+  in
+  let captures = List.map capture_of_parameter preceding_parameters in
+  let inner_captures =
+    captures @ [ capture_of_parameter current_parameter ]
+  in
+  let result_type = CG.Function_template.signature_type inner_template in
+  let initial =
+    base_graph_state ~parameter_type:current_parameter.typ ~result_type
+      captures
+  in
+  let function_node_id =
+    generated_node_id "__surface_curried_function"
+  in
+  let function_node : CG.node =
+    {
+      id = function_node_id;
+      kind =
+        CG.Function
+          (function_signature ~captures:inner_captures inner_template);
+    }
+  in
+  let state =
+    {
+      initial with
+      nodes_rev = function_node :: initial.nodes_rev;
+      order_rev = [ function_node_id ];
+    }
+  in
+  let state =
+    List.mapi
+      (fun index (capture : CG.capture) ->
+        (output (capture_node_id index), capture.key))
+      captures
+    |> List.fold_left
+         (fun state (source, target_key) ->
+           add_edge source (port_ref function_node_id target_key) state)
+         state
+  in
+  let state =
+    add_edge (output parameter_node_id)
+      (port_ref function_node_id
+         (capture_of_parameter current_parameter).key)
+      state
+  in
+  let state =
+    add_edge (output function_node_id)
+      (port_ref result_node_id CG.Port_key.value)
+      state
+  in
+  let* body =
+    validate_generated_graph ~function_id:function_decl.id
+      ~available_templates:
+        (inner_templates @ all_built_templates built)
+      state
+  in
+  let id =
+    if stage = 0 then core_template_id function_decl.id
+    else generated_curried_template_id function_decl.id stage
+  in
+  Ok
+    (CG.Function_template.create
+       ~dependencies:[ CG.Function_template.id inner_template ]
+       ~id ~parameter_type:current_parameter.typ ~result_type ~captures
+       ~body ())
+
+let lower_function_decl functions built function_decl =
+  let* body_template =
+    lower_body_template functions built function_decl
+  in
+  match List.length function_decl.parameters with
+  | 0 | 1 ->
+      Ok
+        {
+          surface_id = function_decl.id;
+          outer_template = body_template;
+          templates = [ body_template ];
+        }
+  | count ->
+      let rec wrap stage inner_templates =
+        if stage < 0 then
+          Ok
+            {
+              surface_id = function_decl.id;
+              outer_template = List.hd inner_templates;
+              templates = inner_templates;
+            }
+        else
+          let* wrapper =
+            lower_wrapper_template built function_decl ~stage
+              ~inner_templates
+          in
+          wrap (stage - 1) (wrapper :: inner_templates)
+      in
+      wrap (count - 2) [ body_template ]
 
 let rec build_function functions built id =
-  match find_built_pair built id with
+  match find_built_function built id with
   | Some _ -> Ok built
   | None -> (
       match find_function functions id with
@@ -786,10 +1007,56 @@ let rec build_function functions built id =
                 build_function functions built dependency)
               (Ok built) dependencies
           in
-          let* template =
+          let* built_function =
             lower_function_decl functions built function_decl
           in
-          Ok ((id, template) :: built))
+          Ok (built_function :: built))
+
+let generated_template_collision_errors functions =
+  let surface_ids =
+    List.map
+      (fun (function_decl : function_decl) ->
+        core_template_id function_decl.id)
+      functions
+  in
+  let generated =
+    List.concat_map
+      (fun (function_decl : function_decl) ->
+        let rec loop stage generated =
+          if stage >= List.length function_decl.parameters then
+            List.rev generated
+          else
+            loop (stage + 1)
+              (( function_decl.id,
+                 generated_curried_template_id function_decl.id stage )
+              :: generated)
+        in
+        loop 1 [])
+      functions
+  in
+  let generated_ids = List.map snd generated in
+  List.filter_map
+    (fun (function_id, generated_id) ->
+      let collides_with_surface =
+        List.exists
+          (CG.Function_template_id.equal generated_id)
+          surface_ids
+      in
+      let generated_occurrences =
+        List.fold_left
+          (fun count candidate ->
+            if
+              CG.Function_template_id.equal generated_id candidate
+            then count + 1
+            else count)
+          0 generated_ids
+      in
+      if collides_with_surface || generated_occurrences > 1 then
+        Some
+          (Generated_template_id_collision
+             { function_id; generated_id })
+      else None)
+    generated
 
 let lowering_preflight_errors ~entry_function_id functions =
   let entry_errors =
@@ -808,17 +1075,6 @@ let lowering_preflight_errors ~entry_function_id functions =
   let function_errors =
     List.concat_map
       (fun (function_decl : function_decl) ->
-        let parameter_count_errors =
-          if List.length function_decl.parameters > 1 then
-            [
-              Unsupported_parameter_count
-                {
-                  function_id = function_decl.id;
-                  actual = List.length function_decl.parameters;
-                };
-            ]
-          else []
-        in
         let parameter_type_errors =
           function_decl.parameters
           |> List.filter_map (fun (parameter : parameter) ->
@@ -845,28 +1101,26 @@ let lowering_preflight_errors ~entry_function_id functions =
             ]
         in
         let use_errors =
-          match function_decl.parameters with
-          | [ parameter ] ->
+          function_decl.parameters
+          |> List.filter_map (fun parameter ->
               let actual =
                 parameter_use_count parameter.name function_decl.body
               in
-              if actual <= 1 then []
+              if actual <= 1 then None
               else
-                [
-                  Unsupported_parameter_use_count
-                    {
-                      function_id = function_decl.id;
-                      parameter = parameter.name;
-                      actual;
-                    };
-                ]
-          | [] | _ :: _ :: _ -> []
+                Some
+                  (Unsupported_parameter_use_count
+                     {
+                       function_id = function_decl.id;
+                       parameter = parameter.name;
+                       actual;
+                     }))
         in
-        parameter_count_errors @ parameter_type_errors
-        @ result_type_errors @ use_errors)
+        parameter_type_errors @ result_type_errors @ use_errors)
       functions
   in
-  entry_errors @ function_errors
+  entry_errors @ generated_template_collision_errors functions
+  @ function_errors
 
 let lower_to_program_package ~entry_function_id program =
   let functions = program.functions in
@@ -885,7 +1139,7 @@ let lower_to_program_package ~entry_function_id program =
       in
       let templates =
         built
-        |> List.map snd
+        |> all_built_templates
         |> List.sort (fun left right ->
                CG.Function_template_id.compare
                  (CG.Function_template.id left)
@@ -956,17 +1210,17 @@ let render_lowering_error = function
       "Surface lowering entry function must have no parameters: "
       ^ render_function_id function_id ^ " has "
       ^ string_of_int actual
-  | Unsupported_parameter_count { function_id; actual } ->
-      "Surface lowering currently supports at most one parameter: "
-      ^ render_function_id function_id ^ " has "
-      ^ string_of_int actual
+  | Generated_template_id_collision { function_id; generated_id } ->
+      "Surface lowering generated a Core template ID collision for "
+      ^ render_function_id function_id ^ ": "
+      ^ CG.Function_template_id.to_string generated_id
   | Unsupported_value_type { function_id; binding; typ } ->
       "Surface lowering currently supports only Unit and Nat values: "
       ^ render_function_id function_id ^ "."
       ^ render_name binding ^ " has type "
       ^ Core_type.to_string typ
   | Unsupported_parameter_use_count { function_id; parameter; actual } ->
-      "Surface lowering currently supports a unary parameter used at most once: "
+      "Surface lowering currently supports each parameter used at most once: "
       ^ render_function_id function_id ^ "."
       ^ render_name parameter ^ " is used "
       ^ string_of_int actual ^ " times"

@@ -34,17 +34,17 @@ serialization.
 
 Function declarations are canonicalized by ID. Call arguments are
 canonicalized by parameter name because their input order is non-semantic.
-Parameter declaration order remains semantic input to the future deterministic
+Parameter declaration order remains semantic input to the deterministic
 currying/lowering algorithm.
 
 ## Consequences
 
 - Core and Project JSON v1 remain unchanged.
 - The editor and a future textual syntax can share one typed authoring model.
-- Invalid name resolution or multi-argument calls cannot enter lowering.
+- Invalid name resolution cannot enter lowering.
 - General recursive Surface functions remain forbidden.
-- The next vertical slice can lower validated Unit/Nat functions to existing
-  immutable templates, closures, and unary `Apply` nodes.
+- Validated Unit/Nat functions lower to existing immutable templates, closures,
+  and unary `Apply` nodes.
 
 At this model checkpoint, local bindings, capture inference, automatic resource
 operations, decoding, and lowering were intentionally deferred.
@@ -63,3 +63,29 @@ shape before the deterministic resource-usage pass is specified. Multiple uses
 cannot occur in the currently lowerable unary expression subset; they require
 multi-argument call lowering first. General multi-argument lowering and
 balanced `Copy` insertion therefore remain deferred together.
+
+## Follow-up: deterministic multi-argument currying
+
+Multi-argument Unit/Nat functions lower without changing Core. Declaration
+order defines a right-associated function type. For parameters `a`, `b`, and
+`c`, the outer template has type:
+
+```text
+A -> (B -> (C -> Result))
+```
+
+The outer template accepts `a` and returns a closure for the next generated
+template. That template captures `a`, accepts `b`, and returns another closure.
+The final template captures `a` and `b`, accepts `c`, and evaluates the Surface
+body. Calls compile their named arguments in declaration order and emit one
+Core `Apply` per parameter.
+
+Generated inner templates have deterministic IDs of the form
+`__surface_curried_<stage>_<surface-function-id>`. Lowering rejects collisions
+with explicit Surface function IDs instead of silently renaming semantic
+objects. Capture lists follow declaration order.
+
+Unused captures or the final parameter receive explicit `Drop` nodes in the
+body template. Parameters used once remain directly connected. Parameters used
+more than once are still rejected until the balanced deterministic `Copy` pass
+is specified and implemented.
