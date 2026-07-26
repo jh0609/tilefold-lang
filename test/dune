@@ -7,10 +7,11 @@
   test_program_package
   test_canonical_trace
   test_program_package_serialization
+  test_surface_program
   test_surface_symbolic
   test_surface_geometry
   test_project_document
   test_project_execution
   test_linear_v0)
  (deps ../examples/nat-succ.tilefold.json)
- (libraries tilefold zarith yojson))
+ (libraries tilefold tilefold.surface zarith yojson))
