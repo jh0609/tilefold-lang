@@ -308,6 +308,18 @@ export function App() {
               (candidate) => candidate.id === id,
             );
             if (!element) return;
+            if (
+              bounds.width === element.bounds.width &&
+              bounds.height === element.bounds.height
+            ) {
+              runCommand({
+                type: "move_element",
+                id,
+                from: { x: element.bounds.x, y: element.bounds.y },
+                to: { x: bounds.x, y: bounds.y },
+              });
+              return;
+            }
             runCommand({
               type: "resize_or_move_element",
               id,

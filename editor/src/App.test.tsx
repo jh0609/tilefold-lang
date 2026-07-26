@@ -67,6 +67,28 @@ describe("Tilefold editor UI", () => {
     expect(screen.getByText("42")).toHaveClass("element-primary-value");
   });
 
+  it("moves an element and its hinted wire endpoint from the Inspector as one command", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByTestId("element-node_nat_2"));
+    const xInput = screen.getByLabelText("X");
+    await user.clear(xInput);
+    await user.type(xInput, "90");
+    await user.tab();
+
+    expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
+      "points",
+      "110,70 120,70",
+    );
+    expect(screen.getByText("1 undo · 0 redo")).toBeInTheDocument();
+
+    await user.keyboard("{Control>}z{/Control}");
+    expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
+      "points",
+      "80,70 120,70",
+    );
+  });
+
   it("undoes one coalesced Nat edit while the input has focus", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -138,8 +160,8 @@ describe("Tilefold editor UI", () => {
 
     expect(kind).toHaveAttribute("y", "124");
     expect(Array.from(labels, (label) => label.getAttribute("y"))).toEqual([
-      "135",
-      "135",
+      "137",
+      "137",
     ]);
     expect(
       Array.from(anchors, (anchor) => [

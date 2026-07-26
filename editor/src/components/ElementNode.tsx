@@ -159,7 +159,7 @@ export function ElementNode({
               <text
                 className="port-label"
                 x={anchor.x + (output ? -9 : 9)}
-                y={anchor.y + 5}
+                y={anchor.y + 7}
                 textAnchor={output ? "end" : "start"}
               >
                 {anchor.port}
