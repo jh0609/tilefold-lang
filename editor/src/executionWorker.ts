@@ -11,10 +11,7 @@ interface RunnerScope extends DedicatedWorkerGlobalScope {
 const workerScope = self as RunnerScope;
 
 try {
-  const runnerUrl = new URL(
-    `${import.meta.env.BASE_URL}tilefold_runner.js`,
-    workerScope.location.href,
-  );
+  const runnerUrl = new URL("../tilefold_runner.js", workerScope.location.href);
   workerScope.importScripts(runnerUrl.href);
 } catch (error) {
   workerScope.postMessage({
@@ -44,5 +41,3 @@ workerScope.onmessage = (
     });
   }
 };
-
-export {};

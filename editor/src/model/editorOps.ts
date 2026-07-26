@@ -22,16 +22,35 @@ import {
 export type AddableElementKind = Exclude<ElementKind, "function">;
 export type PrimitiveCoreType = Extract<CoreType, "unit" | "nat">;
 
+export interface FunctionCaptureDraft {
+  key: string;
+  type: PrimitiveCoreType;
+}
+
 export interface FunctionTemplateDraft {
   templateId: string;
   parameterType: PrimitiveCoreType;
   resultType: PrimitiveCoreType;
+  captures?: FunctionCaptureDraft[];
 }
 
 export interface AddFunctionTemplateResult {
   document: ProjectDocument;
   container: ProjectContainer;
   element: Extract<ProjectElement, { kind: "function" }>;
+}
+
+export interface CallableFunctionTemplate {
+  templateId: string;
+  parameterType: PrimitiveCoreType;
+  resultType: CoreType;
+  captures: FunctionCaptureDraft[];
+}
+
+export interface AddFunctionCallResult {
+  document: ProjectDocument;
+  functionElement: Extract<ProjectElement, { kind: "function" }>;
+  applyElement: Extract<ProjectElement, { kind: "apply" }>;
 }
 
 const NEW_ELEMENT_SIZE: Record<
@@ -219,11 +238,91 @@ function validProjectId(value: string): boolean {
   return /^[A-Za-z0-9_.-]{1,128}$/.test(value);
 }
 
+function primitiveCoreType(type: CoreType): type is PrimitiveCoreType {
+  return type === "unit" || type === "nat";
+}
+
+function templateCaptures(
+  container: ProjectContainer,
+): FunctionCaptureDraft[] | null {
+  const captures: FunctionCaptureDraft[] = [];
+  for (const boundary of container.boundaryPorts) {
+    if (boundary.role !== "capture") continue;
+    if (!primitiveCoreType(boundary.type)) return null;
+    captures.push({ key: boundary.captureKey, type: boundary.type });
+  }
+  return captures;
+}
+
+function dependencyReaches(
+  document: ProjectDocument,
+  fromTemplateId: string,
+  targetTemplateId: string,
+  visited = new Set<string>(),
+): boolean {
+  if (fromTemplateId === targetTemplateId) return true;
+  if (visited.has(fromTemplateId)) return false;
+  visited.add(fromTemplateId);
+  const container = document.geometry.containers.find(
+    (candidate) => candidate.kind.templateId === fromTemplateId,
+  );
+  return (
+    container?.kind.dependencies.some((dependency) =>
+      dependencyReaches(document, dependency, targetTemplateId, visited),
+    ) ?? false
+  );
+}
+
+export function callableFunctionTemplates(
+  document: ProjectDocument,
+  hostContainerId: string,
+): CallableFunctionTemplate[] {
+  const host = document.geometry.containers.find(
+    (container) => container.id === hostContainerId,
+  );
+  if (!host) return [];
+  return document.geometry.containers
+    .filter(
+      (
+        container,
+      ): container is ProjectContainer & {
+        kind: Extract<ProjectContainer["kind"], { kind: "template" }>;
+      } => container.kind.kind === "template",
+    )
+    .flatMap((container) => {
+      if (!primitiveCoreType(container.kind.parameterType)) return [];
+      if (
+        dependencyReaches(
+          document,
+          container.kind.templateId,
+          host.kind.templateId,
+        )
+      ) {
+        return [];
+      }
+      const captures = templateCaptures(container);
+      return captures
+        ? [
+            {
+              templateId: container.kind.templateId,
+              parameterType: container.kind.parameterType,
+              resultType: container.kind.resultType,
+              captures,
+            },
+          ]
+        : [];
+    })
+    .sort((left, right) => left.templateId.localeCompare(right.templateId));
+}
+
 export function addFunctionTemplate(
   document: ProjectDocument,
   hostContainerId: string,
   draft: FunctionTemplateDraft,
 ): AddFunctionTemplateResult | { error: string } {
+  const captures = [...(draft.captures ?? [])].sort((left, right) =>
+    left.key.localeCompare(right.key),
+  );
   if (!validProjectId(draft.templateId)) {
     return {
       error:
@@ -236,6 +335,28 @@ export function addFunctionTemplate(
     )
   ) {
     return { error: `Template ID ${draft.templateId} already exists.` };
+  }
+  const invalidCapture = captures.find(
+    (capture) => !validProjectId(capture.key),
+  );
+  if (invalidCapture) {
+    return {
+      error:
+        "Capture keys must use 1–128 ASCII letters, digits, underscores, hyphens, or periods.",
+    };
+  }
+  const duplicateCapture = captures.find(
+    (capture, index) =>
+      captures.findIndex((candidate) => candidate.key === capture.key) !==
+      index,
+  );
+  if (duplicateCapture) {
+    return { error: `Capture key ${duplicateCapture.key} is duplicated.` };
+  }
+  if (captures.some((capture) => capture.key === "value")) {
+    return {
+      error: "Capture key value is reserved for the Function output port.",
+    };
   }
   const host = document.geometry.containers.find(
     (container) => container.id === hostContainerId,
@@ -261,21 +382,24 @@ export function addFunctionTemplate(
   const resultBoundaryId = allocate("boundary_result_");
 
   const hostExtensionTop = host.bounds.y + host.bounds.height;
+  const functionHeight = Math.max(72, captures.length * 64);
   const functionBounds: Bounds = {
-    x: host.bounds.x + 40,
+    x: host.bounds.x + (captures.length > 0 ? 108 : 40),
     y: hostExtensionTop + 24,
     width: 128,
-    height: 72,
+    height: functionHeight,
   };
   const hostDropBounds: Bounds = {
     x: host.bounds.x + 100,
-    y: hostExtensionTop + 120,
+    y: functionBounds.y + functionBounds.height + 24,
     width: 88,
     height: 56,
   };
+  const hostExtensionHeight =
+    hostDropBounds.y + hostDropBounds.height + 24 - hostExtensionTop;
   const expandedHostBounds: Bounds = {
     ...host.bounds,
-    height: host.bounds.height + 200,
+    height: host.bounds.height + hostExtensionHeight,
   };
   const parent = containerParent(document.geometry.containers, host);
   if (parent && !boundsInside(expandedHostBounds, parent.bounds)) {
@@ -305,9 +429,14 @@ export function addFunctionTemplate(
       templateId: draft.templateId,
       parameterType: draft.parameterType,
       resultType: draft.resultType,
-      captures: [],
+      captures,
     },
     portAnchors: [
+      ...captures.map((capture, index) => ({
+        port: capture.key,
+        x: functionBounds.x,
+        y: functionBounds.y + 28 + index * 64,
+      })),
       {
         port: "value",
         x: functionBounds.x + functionBounds.width,
@@ -315,6 +444,66 @@ export function addFunctionTemplate(
       },
     ],
   };
+  const hostCaptureElements: ProjectElement[] = [];
+  const hostCaptureWires: ProjectWire[] = [];
+  captures.forEach((capture, index) => {
+    const literalBounds: Bounds = {
+      x: host.bounds.x + 4,
+      y: functionBounds.y + index * 64,
+      width: capture.type === "nat" ? 96 : 88,
+      height: 56,
+    };
+    const literal: ProjectElement =
+      capture.type === "nat"
+        ? {
+            id: allocate("node_nat_"),
+            kind: "nat_literal",
+            bounds: literalBounds,
+            properties: { value: "0" },
+            portAnchors: [
+              {
+                port: "value",
+                x: literalBounds.x + literalBounds.width,
+                y: literalBounds.y + literalBounds.height / 2,
+              },
+            ],
+          }
+        : {
+            id: allocate("node_unit_"),
+            kind: "unit_literal",
+            bounds: literalBounds,
+            properties: {},
+            portAnchors: [
+              {
+                port: "value",
+                x: literalBounds.x + literalBounds.width,
+                y: literalBounds.y + literalBounds.height / 2,
+              },
+            ],
+          };
+    const source = literal.portAnchors[0]!;
+    const target = functionElement.portAnchors.find(
+      (anchor) => anchor.port === capture.key,
+    )!;
+    hostCaptureElements.push(literal);
+    hostCaptureWires.push({
+      id: allocate("wire_"),
+      points: [
+        { x: source.x, y: source.y },
+        { x: target.x, y: target.y },
+      ],
+      sourceHint: {
+        kind: "element_port",
+        elementId: literal.id,
+        port: "value",
+      },
+      targetHint: {
+        kind: "element_port",
+        elementId: functionElement.id,
+        port: capture.key,
+      },
+    });
+  });
   const functionType: CoreType = {
     arrow: [draft.parameterType, draft.resultType],
   };
@@ -331,14 +520,18 @@ export function addFunctionTemplate(
       },
     ],
   };
-  const functionAnchor = functionElement.portAnchors[0]!;
+  const functionAnchor = functionElement.portAnchors.find(
+    (anchor) => anchor.port === "value",
+  )!;
   const hostDropAnchor = hostDrop.portAnchors[0]!;
   const hostWire: ProjectWire = {
     id: hostWireId,
     points: [
       { x: functionAnchor.x, y: functionAnchor.y },
-      { x: host.bounds.x + host.bounds.width - 20, y: functionAnchor.y },
-      { x: host.bounds.x + host.bounds.width - 20, y: hostDropAnchor.y },
+      {
+        x: host.bounds.x + host.bounds.width - 4,
+        y: hostDropAnchor.y,
+      },
       { x: hostDropAnchor.x, y: hostDropAnchor.y },
     ],
     sourceHint: {
@@ -362,7 +555,7 @@ export function addFunctionTemplate(
     x: rightmost + 80,
     y: Math.min(...document.geometry.containers.map((container) => container.bounds.y)),
     width: 360,
-    height: 220,
+    height: 220 + captures.length * 64,
   };
   const parameterBoundary: BoundaryPort = {
     id: parameterBoundaryId,
@@ -376,6 +569,13 @@ export function addFunctionTemplate(
     type: draft.resultType,
     anchor: { x: templateBounds.width, y: 60 },
   };
+  const captureBoundaries: BoundaryPort[] = captures.map((capture, index) => ({
+    id: allocate("boundary_capture_"),
+    role: "capture",
+    captureKey: capture.key,
+    type: capture.type,
+    anchor: { x: 0, y: 156 + index * 64 },
+  }));
   const templateContainer: ProjectContainer = {
     id: containerId,
     kind: {
@@ -386,7 +586,11 @@ export function addFunctionTemplate(
       dependencies: [],
     },
     bounds: templateBounds,
-    boundaryPorts: [parameterBoundary, resultBoundary],
+    boundaryPorts: [
+      parameterBoundary,
+      resultBoundary,
+      ...captureBoundaries,
+    ],
   };
 
   const templateElements: ProjectElement[] = [];
@@ -400,6 +604,51 @@ export function addFunctionTemplate(
     x: templateBounds.x + resultBoundary.anchor.x,
     y: templateBounds.y + resultBoundary.anchor.y,
   };
+  captureBoundaries.forEach((boundary, index) => {
+    const capture = captures[index]!;
+    const dropBounds: Bounds = {
+      x: templateBounds.x + 80,
+      y: templateBounds.y + 128 + index * 64,
+      width: 88,
+      height: 56,
+    };
+    const drop: ProjectElement = {
+      id: allocate("node_drop_"),
+      kind: "drop",
+      bounds: dropBounds,
+      properties: { type: capture.type },
+      portAnchors: [
+        {
+          port: "input",
+          x: dropBounds.x,
+          y: dropBounds.y + dropBounds.height / 2,
+        },
+      ],
+    };
+    const boundaryPoint = {
+      x: templateBounds.x + boundary.anchor.x,
+      y: templateBounds.y + boundary.anchor.y,
+    };
+    const dropInput = drop.portAnchors[0]!;
+    templateElements.push(drop);
+    templateWires.push({
+      id: allocate("wire_"),
+      points: [
+        boundaryPoint,
+        { x: dropInput.x, y: dropInput.y },
+      ],
+      sourceHint: {
+        kind: "boundary_port",
+        containerId,
+        boundaryId: boundary.id,
+      },
+      targetHint: {
+        kind: "element_port",
+        elementId: drop.id,
+        port: "input",
+      },
+    });
+  });
   if (draft.parameterType === draft.resultType) {
     const copyBounds: Bounds = {
       x: templateBounds.x + 100,
@@ -614,6 +863,7 @@ export function addFunctionTemplate(
         elements: [
           ...document.geometry.elements,
           functionElement,
+          ...hostCaptureElements,
           hostDrop,
           ...templateElements,
         ],
@@ -625,8 +875,380 @@ export function addFunctionTemplate(
         ],
         wires: [
           ...document.geometry.wires,
+          ...hostCaptureWires,
           hostWire,
           ...templateWires,
+        ],
+      },
+    },
+  };
+}
+
+export function addFunctionCall(
+  document: ProjectDocument,
+  hostContainerId: string,
+  templateId: string,
+): AddFunctionCallResult | { error: string } {
+  const host = document.geometry.containers.find(
+    (container) => container.id === hostContainerId,
+  );
+  if (!host) {
+    return { error: `Host container ${hostContainerId} does not exist.` };
+  }
+  const template = document.geometry.containers.find(
+    (container) =>
+      container.kind.kind === "template" &&
+      container.kind.templateId === templateId,
+  );
+  if (!template || template.kind.kind !== "template") {
+    return { error: `Callable template ${templateId} does not exist.` };
+  }
+  if (!primitiveCoreType(template.kind.parameterType)) {
+    return {
+      error:
+        "Call authoring currently supports only Unit or Nat parameters.",
+    };
+  }
+  const captures = templateCaptures(template);
+  if (!captures) {
+    return {
+      error:
+        "Call authoring currently supports only Unit or Nat captures.",
+    };
+  }
+  if (
+    dependencyReaches(
+      document,
+      template.kind.templateId,
+      host.kind.templateId,
+    )
+  ) {
+    return {
+      error: `Calling ${templateId} from ${host.kind.templateId} would create a template dependency cycle.`,
+    };
+  }
+
+  const usedIds = collectStableIds(document);
+  const allocate = (prefix: string) => {
+    let index = 1;
+    while (usedIds.has(`${prefix}${index}`)) index += 1;
+    const id = `${prefix}${index}`;
+    usedIds.add(id);
+    return id;
+  };
+
+  const extensionTop = host.bounds.y + host.bounds.height;
+  const functionHeight = Math.max(72, captures.length * 64);
+  const functionBounds: Bounds = {
+    x: host.bounds.x + (captures.length > 0 ? 108 : 40),
+    y: extensionTop + 24,
+    width: 128,
+    height: functionHeight,
+  };
+  const functionElement: Extract<ProjectElement, { kind: "function" }> = {
+    id: allocate("node_function_"),
+    kind: "function",
+    bounds: functionBounds,
+    properties: {
+      templateId,
+      parameterType: template.kind.parameterType,
+      resultType: template.kind.resultType,
+      captures,
+    },
+    portAnchors: [
+      ...captures.map((capture, index) => ({
+        port: capture.key,
+        x: functionBounds.x,
+        y: functionBounds.y + 28 + index * 64,
+      })),
+      {
+        port: "value",
+        x: functionBounds.x + functionBounds.width,
+        y: functionBounds.y + functionBounds.height / 2,
+      },
+    ],
+  };
+
+  const captureElements: ProjectElement[] = [];
+  const captureWires: ProjectWire[] = [];
+  captures.forEach((capture, index) => {
+    const bounds: Bounds = {
+      x: host.bounds.x + 4,
+      y: functionBounds.y + index * 64,
+      width: capture.type === "nat" ? 96 : 88,
+      height: 56,
+    };
+    const literal: ProjectElement =
+      capture.type === "nat"
+        ? {
+            id: allocate("node_nat_"),
+            kind: "nat_literal",
+            bounds,
+            properties: { value: "0" },
+            portAnchors: [
+              {
+                port: "value",
+                x: bounds.x + bounds.width,
+                y: bounds.y + bounds.height / 2,
+              },
+            ],
+          }
+        : {
+            id: allocate("node_unit_"),
+            kind: "unit_literal",
+            bounds,
+            properties: {},
+            portAnchors: [
+              {
+                port: "value",
+                x: bounds.x + bounds.width,
+                y: bounds.y + bounds.height / 2,
+              },
+            ],
+          };
+    const source = literal.portAnchors[0]!;
+    const target = functionElement.portAnchors.find(
+      (anchor) => anchor.port === capture.key,
+    )!;
+    captureElements.push(literal);
+    captureWires.push({
+      id: allocate("wire_"),
+      points: [
+        { x: source.x, y: source.y },
+        { x: target.x, y: target.y },
+      ],
+      sourceHint: {
+        kind: "element_port",
+        elementId: literal.id,
+        port: "value",
+      },
+      targetHint: {
+        kind: "element_port",
+        elementId: functionElement.id,
+        port: capture.key,
+      },
+    });
+  });
+
+  const applyTop = functionBounds.y + functionBounds.height + 24;
+  const applyBounds: Bounds = {
+    x: host.bounds.x + 108,
+    y: applyTop,
+    width: 120,
+    height: 90,
+  };
+  const applyElement: Extract<ProjectElement, { kind: "apply" }> = {
+    id: allocate("node_apply_"),
+    kind: "apply",
+    bounds: applyBounds,
+    properties: {
+      parameterType: template.kind.parameterType,
+      resultType: template.kind.resultType,
+    },
+    portAnchors: [
+      {
+        port: "function",
+        x: applyBounds.x,
+        y: applyBounds.y + applyBounds.height / 3,
+      },
+      {
+        port: "argument",
+        x: applyBounds.x,
+        y: applyBounds.y + (applyBounds.height * 2) / 3,
+      },
+      {
+        port: "result",
+        x: applyBounds.x + applyBounds.width,
+        y: applyBounds.y + applyBounds.height / 2,
+      },
+    ],
+  };
+
+  const argumentBounds: Bounds = {
+    x: host.bounds.x + 4,
+    y: applyBounds.y + 32,
+    width: template.kind.parameterType === "nat" ? 96 : 88,
+    height: 56,
+  };
+  const argument: ProjectElement =
+    template.kind.parameterType === "nat"
+      ? {
+          id: allocate("node_nat_"),
+          kind: "nat_literal",
+          bounds: argumentBounds,
+          properties: { value: "0" },
+          portAnchors: [
+            {
+              port: "value",
+              x: argumentBounds.x + argumentBounds.width,
+              y: argumentBounds.y + argumentBounds.height / 2,
+            },
+          ],
+        }
+      : {
+          id: allocate("node_unit_"),
+          kind: "unit_literal",
+          bounds: argumentBounds,
+          properties: {},
+          portAnchors: [
+            {
+              port: "value",
+              x: argumentBounds.x + argumentBounds.width,
+              y: argumentBounds.y + argumentBounds.height / 2,
+            },
+          ],
+        };
+
+  const resultDropBounds: Bounds = {
+    x: host.bounds.x + 100,
+    y: argumentBounds.y + argumentBounds.height + 24,
+    width: 88,
+    height: 56,
+  };
+  const resultDrop: ProjectElement = {
+    id: allocate("node_drop_"),
+    kind: "drop",
+    bounds: resultDropBounds,
+    properties: { type: template.kind.resultType },
+    portAnchors: [
+      {
+        port: "input",
+        x: resultDropBounds.x,
+        y: resultDropBounds.y + resultDropBounds.height / 2,
+      },
+    ],
+  };
+  const expandedHostBounds: Bounds = {
+    ...host.bounds,
+    height:
+      resultDropBounds.y +
+      resultDropBounds.height +
+      24 -
+      host.bounds.y,
+  };
+  const overlappingContainer = document.geometry.containers.find(
+    (container) =>
+      container.id !== host.id &&
+      containerBoundsOverlap(expandedHostBounds, container.bounds),
+  );
+  if (overlappingContainer) {
+    return {
+      error: `Cannot extend ${host.id} without overlapping ${overlappingContainer.id}. Move the containers apart first.`,
+    };
+  }
+
+  const functionOutput = functionElement.portAnchors.find(
+    (anchor) => anchor.port === "value",
+  )!;
+  const applyFunction = applyElement.portAnchors.find(
+    (anchor) => anchor.port === "function",
+  )!;
+  const argumentOutput = argument.portAnchors[0]!;
+  const applyArgument = applyElement.portAnchors.find(
+    (anchor) => anchor.port === "argument",
+  )!;
+  const applyResult = applyElement.portAnchors.find(
+    (anchor) => anchor.port === "result",
+  )!;
+  const resultDropInput = resultDrop.portAnchors[0]!;
+  const callWires: ProjectWire[] = [
+    {
+      id: allocate("wire_"),
+      points: [
+        { x: functionOutput.x, y: functionOutput.y },
+        {
+          x: host.bounds.x + host.bounds.width - 4,
+          y: applyFunction.y,
+        },
+        { x: applyFunction.x, y: applyFunction.y },
+      ],
+      sourceHint: {
+        kind: "element_port",
+        elementId: functionElement.id,
+        port: "value",
+      },
+      targetHint: {
+        kind: "element_port",
+        elementId: applyElement.id,
+        port: "function",
+      },
+    },
+    {
+      id: allocate("wire_"),
+      points: [
+        { x: argumentOutput.x, y: argumentOutput.y },
+        { x: applyArgument.x, y: applyArgument.y },
+      ],
+      sourceHint: {
+        kind: "element_port",
+        elementId: argument.id,
+        port: "value",
+      },
+      targetHint: {
+        kind: "element_port",
+        elementId: applyElement.id,
+        port: "argument",
+      },
+    },
+    {
+      id: allocate("wire_"),
+      points: [
+        { x: applyResult.x, y: applyResult.y },
+        {
+          x: host.bounds.x + host.bounds.width - 4,
+          y: applyResult.y,
+        },
+        {
+          x: host.bounds.x + host.bounds.width - 4,
+          y: resultDropInput.y,
+        },
+        { x: resultDropInput.x, y: resultDropInput.y },
+      ],
+      sourceHint: {
+        kind: "element_port",
+        elementId: applyElement.id,
+        port: "result",
+      },
+      targetHint: {
+        kind: "element_port",
+        elementId: resultDrop.id,
+        port: "input",
+      },
+    },
+  ];
+
+  const updatedHost: ProjectContainer = {
+    ...host,
+    bounds: expandedHostBounds,
+    kind: {
+      ...host.kind,
+      dependencies: host.kind.dependencies.includes(templateId)
+        ? host.kind.dependencies
+        : [...host.kind.dependencies, templateId],
+    },
+  };
+  return {
+    functionElement,
+    applyElement,
+    document: {
+      ...document,
+      geometry: {
+        ...document.geometry,
+        elements: [
+          ...document.geometry.elements,
+          functionElement,
+          ...captureElements,
+          applyElement,
+          argument,
+          resultDrop,
+        ],
+        containers: document.geometry.containers.map((container) =>
+          container.id === host.id ? updatedHost : container,
+        ),
+        wires: [
+          ...document.geometry.wires,
+          ...captureWires,
+          ...callWires,
         ],
       },
     },

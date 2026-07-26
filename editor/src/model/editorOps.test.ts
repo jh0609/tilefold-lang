@@ -2,6 +2,7 @@ import exampleJson from "../../../examples/nat-succ.tilefold.json?raw";
 import { describe, expect, it } from "vitest";
 import {
   addElement,
+  addFunctionCall,
   addFunctionTemplate,
   addWire,
   deleteSelection,
@@ -10,6 +11,7 @@ import {
   moveElement,
   nextStableId,
   nextFunctionTemplateId,
+  callableFunctionTemplates,
   updateApplyTypes,
   updateElementType,
   type AddableElementKind,
@@ -144,6 +146,212 @@ describe("editor operations", () => {
         );
       }),
     ).toHaveLength(2);
+  });
+
+  it("authors named captures with total host and template placeholders", () => {
+    const project = parseProjectJson(exampleJson);
+    const result = addFunctionTemplate(project, "entry", {
+      templateId: "add_offset",
+      parameterType: "nat",
+      resultType: "nat",
+      captures: [
+        { key: "offset", type: "nat" },
+        { key: "marker", type: "unit" },
+      ],
+    });
+    if ("error" in result) throw new Error(result.error);
+
+    expect(result.element.properties.captures).toEqual([
+      { key: "marker", type: "unit" },
+      { key: "offset", type: "nat" },
+    ]);
+    expect(result.element.portAnchors.map((anchor) => anchor.port)).toEqual([
+      "marker",
+      "offset",
+      "value",
+    ]);
+    expect(
+      result.container.boundaryPorts.filter(
+        (boundary) => boundary.role === "capture",
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        role: "capture",
+        captureKey: "marker",
+        type: "unit",
+      }),
+      expect.objectContaining({
+        role: "capture",
+        captureKey: "offset",
+        type: "nat",
+      }),
+    ]);
+
+    const captureInputs = result.document.geometry.wires.filter(
+      (wire) =>
+        wire.targetHint?.kind === "element_port" &&
+        wire.targetHint.elementId === result.element.id &&
+        ["offset", "marker"].includes(wire.targetHint.port),
+    );
+    expect(captureInputs).toHaveLength(2);
+    const closureWire = result.document.geometry.wires.find(
+      (wire) =>
+        wire.sourceHint?.kind === "element_port" &&
+        wire.sourceHint.elementId === result.element.id &&
+        wire.sourceHint.port === "value",
+    );
+    const closureAnchor = result.element.portAnchors.find(
+      (anchor) => anchor.port === "value",
+    )!;
+    expect(closureWire?.points[0]).toEqual({
+      x: closureAnchor.x,
+      y: closureAnchor.y,
+    });
+    const captureDrops = result.document.geometry.wires.filter(
+      (wire) =>
+        wire.sourceHint?.kind === "boundary_port" &&
+        wire.sourceHint.containerId === result.container.id &&
+        result.container.boundaryPorts.some(
+          (boundary) =>
+            boundary.role === "capture" &&
+            boundary.id ===
+              (wire.sourceHint?.kind === "boundary_port"
+                ? wire.sourceHint.boundaryId
+                : ""),
+        ),
+    );
+    expect(captureDrops).toHaveLength(2);
+    expect(() =>
+      parseProjectJson(exportProjectJson(result.document)),
+    ).not.toThrow();
+  });
+
+  it("rejects duplicate, invalid, and reserved capture keys atomically", () => {
+    const project = parseProjectJson(exampleJson);
+    expect(
+      addFunctionTemplate(project, "entry", {
+        templateId: "duplicate_capture",
+        parameterType: "unit",
+        resultType: "unit",
+        captures: [
+          { key: "n", type: "nat" },
+          { key: "n", type: "unit" },
+        ],
+      }),
+    ).toEqual({ error: "Capture key n is duplicated." });
+    expect(
+      addFunctionTemplate(project, "entry", {
+        templateId: "invalid_capture",
+        parameterType: "unit",
+        resultType: "unit",
+        captures: [{ key: "not allowed!", type: "nat" }],
+      }),
+    ).toEqual({
+      error:
+        "Capture keys must use 1–128 ASCII letters, digits, underscores, hyphens, or periods.",
+    });
+    expect(
+      addFunctionTemplate(project, "entry", {
+        templateId: "reserved_capture",
+        parameterType: "unit",
+        resultType: "unit",
+        captures: [{ key: "value", type: "nat" }],
+      }),
+    ).toEqual({
+      error: "Capture key value is reserved for the Function output port.",
+    });
+  });
+
+  it("creates a complete existing-template call with capture and argument defaults", () => {
+    const project = parseProjectJson(exampleJson);
+    const authored = addFunctionTemplate(project, "entry", {
+      templateId: "add_offset",
+      parameterType: "nat",
+      resultType: "nat",
+      captures: [{ key: "offset", type: "nat" }],
+    });
+    if ("error" in authored) throw new Error(authored.error);
+
+    expect(callableFunctionTemplates(authored.document, "entry")).toEqual([
+      {
+        templateId: "add_offset",
+        parameterType: "nat",
+        resultType: "nat",
+        captures: [{ key: "offset", type: "nat" }],
+      },
+    ]);
+    const result = addFunctionCall(
+      authored.document,
+      "entry",
+      "add_offset",
+    );
+    if ("error" in result) throw new Error(result.error);
+
+    expect(result.functionElement.properties).toEqual({
+      templateId: "add_offset",
+      parameterType: "nat",
+      resultType: "nat",
+      captures: [{ key: "offset", type: "nat" }],
+    });
+    expect(result.applyElement.properties).toEqual({
+      parameterType: "nat",
+      resultType: "nat",
+    });
+    expect(
+      result.document.geometry.containers.find(
+        (container) => container.id === "entry",
+      )?.kind.dependencies,
+    ).toEqual(["add_offset"]);
+    expect(
+      result.document.geometry.wires.filter(
+        (wire) =>
+          wire.targetHint?.kind === "element_port" &&
+          wire.targetHint.elementId === result.applyElement.id,
+      ),
+    ).toHaveLength(2);
+    expect(
+      result.document.geometry.wires.some(
+        (wire) =>
+          wire.sourceHint?.kind === "element_port" &&
+          wire.sourceHint.elementId === result.applyElement.id &&
+          wire.targetHint?.kind === "element_port",
+      ),
+    ).toBe(true);
+    expect(() =>
+      parseProjectJson(exportProjectJson(result.document)),
+    ).not.toThrow();
+  });
+
+  it("excludes calls that would create a template dependency cycle", () => {
+    const project = parseProjectJson(exampleJson);
+    const first = addFunctionTemplate(project, "entry", {
+      templateId: "outer",
+      parameterType: "unit",
+      resultType: "unit",
+    });
+    if ("error" in first) throw new Error(first.error);
+    const second = addFunctionTemplate(
+      first.document,
+      first.container.id,
+      {
+        templateId: "inner",
+        parameterType: "unit",
+        resultType: "unit",
+      },
+    );
+    if ("error" in second) throw new Error(second.error);
+
+    expect(
+      callableFunctionTemplates(second.document, second.container.id).map(
+        (template) => template.templateId,
+      ),
+    ).not.toContain("outer");
+    expect(
+      addFunctionCall(second.document, second.container.id, "outer"),
+    ).toEqual({
+      error:
+        "Calling outer from inner would create a template dependency cycle.",
+    });
   });
 
   it("rejects duplicate template IDs and unsafe host expansion atomically", () => {

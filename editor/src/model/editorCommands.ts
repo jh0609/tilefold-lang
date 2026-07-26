@@ -1,5 +1,6 @@
 import {
   addElement,
+  addFunctionCall,
   addFunctionTemplate,
   addResultBoundary,
   addWire,
@@ -37,6 +38,11 @@ export type EditorCommand =
       type: "add_function_template";
       hostContainerId: string;
       draft: FunctionTemplateDraft;
+    }
+  | {
+      type: "add_function_call";
+      hostContainerId: string;
+      templateId: string;
     }
   | { type: "add_result_boundary" }
   | { type: "add_wire"; source: ConnectablePort; target: ConnectablePort }
@@ -112,6 +118,27 @@ export function applyEditorCommand(
             error instanceof Error
               ? `New function failed the editor structure check: ${error.message}`
               : "New function failed the editor structure check.",
+        };
+      }
+    }
+    case "add_function_call": {
+      const result = addFunctionCall(
+        document,
+        command.hostContainerId,
+        command.templateId,
+      );
+      if ("error" in result) return { document, error: result.error };
+      try {
+        return {
+          document: parseProjectJson(exportProjectJson(result.document)),
+        };
+      } catch (error) {
+        return {
+          document,
+          error:
+            error instanceof Error
+              ? `New call failed the editor structure check: ${error.message}`
+              : "New call failed the editor structure check.",
         };
       }
     }
@@ -216,6 +243,8 @@ export function editorCommandLabel(command: EditorCommand): string {
       return `Add ${ELEMENT_LABELS[command.kind]}`;
     case "add_function_template":
       return `Add Function ${command.draft.templateId}`;
+    case "add_function_call":
+      return `Call ${command.templateId}`;
     case "add_result_boundary":
       return "Add Result";
     case "add_wire":

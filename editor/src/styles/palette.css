@@ -206,6 +206,49 @@
   font-weight: 800;
 }
 
+.function-captures {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 8px;
+}
+
+.function-captures-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #475467;
+  font-size: 9px;
+}
+
+.function-captures-heading button {
+  min-height: 24px;
+  border-color: color-mix(in srgb, var(--call) 30%, var(--border));
+  padding: 3px 7px;
+  color: var(--call);
+  background: white;
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.function-capture-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 68px 24px;
+  align-items: center;
+  gap: 5px;
+}
+
+.function-capture-row > button {
+  min-width: 24px;
+  min-height: 28px;
+  border-color: var(--border);
+  padding: 0;
+  color: var(--danger);
+  background: white;
+  font-size: 15px;
+}
+
 .function-authoring .function-create {
   border-color: var(--call);
   color: white;

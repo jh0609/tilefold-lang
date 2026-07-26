@@ -13,6 +13,8 @@ describe("NodePalette", () => {
       suggestedFunctionTemplateId: "template_1",
       functionHostLabel: "entry",
       onAddFunction: vi.fn(() => true),
+      callableTemplates: [],
+      onAddCall: vi.fn(() => true),
       ...overrides,
     };
     render(<NodePalette {...props} />);
@@ -91,9 +93,59 @@ describe("NodePalette", () => {
       templateId: "template_4",
       parameterType: "nat",
       resultType: "unit",
+      captures: [],
     });
     expect(
       screen.queryByRole("form", { name: "Create function template" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("authors named primitive captures and can remove a draft capture", async () => {
+    const user = userEvent.setup();
+    const onAddFunction = vi.fn(() => true);
+    renderPalette({ onAddFunction });
+
+    await user.click(screen.getByRole("button", { name: "Add Function" }));
+    await user.click(screen.getByRole("button", { name: "Add capture" }));
+    await user.clear(screen.getByLabelText("Capture 1 key"));
+    await user.type(screen.getByLabelText("Capture 1 key"), "offset");
+    await user.selectOptions(screen.getByLabelText("Capture 1 type"), "nat");
+    await user.click(
+      screen.getByRole("button", { name: "Create total function" }),
+    );
+
+    expect(onAddFunction).toHaveBeenCalledWith({
+      templateId: "template_1",
+      parameterType: "unit",
+      resultType: "unit",
+      captures: [{ key: "offset", type: "nat" }],
+    });
+  });
+
+  it("authors a complete call from a compatible template choice", async () => {
+    const user = userEvent.setup();
+    const onAddCall = vi.fn(() => true);
+    renderPalette({
+      callableTemplates: [
+        {
+          templateId: "add_offset",
+          parameterType: "nat",
+          resultType: "nat",
+          captures: [{ key: "offset", type: "nat" }],
+        },
+      ],
+      onAddCall,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Add Call" }));
+    expect(
+      screen.getByRole("form", { name: "Create function call" }),
+    ).toHaveTextContent("add_offset · Nat → Nat · 1 capture(s)");
+    await user.click(screen.getByRole("button", { name: "Create call" }));
+
+    expect(onAddCall).toHaveBeenCalledWith("add_offset");
+    expect(
+      screen.queryByRole("form", { name: "Create function call" }),
     ).not.toBeInTheDocument();
   });
 });

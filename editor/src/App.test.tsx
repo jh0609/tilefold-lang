@@ -82,6 +82,27 @@ describe("Tilefold editor UI", () => {
     expect(screen.queryByTestId("element-node_function_1")).not.toBeInTheDocument();
   });
 
+  it("authors a complete call to an existing Function template", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(screen.getByRole("button", { name: "Add Call" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Add Function" }));
+    await user.selectOptions(screen.getByLabelText("Parameter"), "nat");
+    await user.selectOptions(screen.getByLabelText("Result"), "nat");
+    await user.click(
+      screen.getByRole("button", { name: "Create total function" }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Add Call" }));
+    expect(screen.getByLabelText("Template to call")).toHaveValue("template_1");
+    await user.click(screen.getByRole("button", { name: "Create call" }));
+
+    expect(screen.getByText(/Created a call to template_1/)).toBeInTheDocument();
+    expect(screen.getByTestId("element-node_apply_1")).toBeInTheDocument();
+    expect(screen.getByText(/2 undo · 0 redo/)).toBeInTheDocument();
+  });
+
   it("shows the OCaml execution result and minimal rewrite trace", async () => {
     const user = userEvent.setup();
     const postMessage = vi.fn(

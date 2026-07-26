@@ -1,14 +1,17 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   AddableElementKind,
+  CallableFunctionTemplate,
   FunctionTemplateDraft,
   PrimitiveCoreType,
 } from "../model/editorOps";
+import type { CoreType } from "../model/project";
 
 type PaletteAction =
   | { kind: "element"; elementKind: AddableElementKind }
   | { kind: "result" }
-  | { kind: "function" };
+  | { kind: "function" }
+  | { kind: "call" };
 
 interface PaletteItem {
   name: string;
@@ -23,6 +26,12 @@ interface PaletteItem {
 interface PaletteGroup {
   name: string;
   items: PaletteItem[];
+}
+
+interface FunctionCaptureRow {
+  draftId: number;
+  key: string;
+  type: PrimitiveCoreType;
 }
 
 const PALETTE_GROUPS: PaletteGroup[] = [
@@ -116,6 +125,15 @@ const PALETTE_GROUPS: PaletteGroup[] = [
         tone: "call",
         action: { kind: "function" },
       },
+      {
+        name: "Call",
+        symbol: "↳",
+        signature: "template · argument → result",
+        description: "Create a complete call to an existing template.",
+        keywords: "invoke apply function template argument",
+        tone: "call",
+        action: { kind: "call" },
+      },
     ],
   },
   {
@@ -134,18 +152,28 @@ const PALETTE_GROUPS: PaletteGroup[] = [
   },
 ];
 
+function coreTypeLabel(type: CoreType): string {
+  if (type === "unit") return "Unit";
+  if (type === "nat") return "Nat";
+  return `${coreTypeLabel(type.arrow[0])} → ${coreTypeLabel(type.arrow[1])}`;
+}
+
 export function NodePalette({
   onAddElement,
   onAddResult,
   suggestedFunctionTemplateId,
   functionHostLabel,
   onAddFunction,
+  callableTemplates,
+  onAddCall,
 }: {
   onAddElement: (kind: AddableElementKind) => void;
   onAddResult: () => void;
   suggestedFunctionTemplateId: string;
   functionHostLabel: string;
   onAddFunction: (draft: FunctionTemplateDraft) => boolean;
+  callableTemplates: CallableFunctionTemplate[];
+  onAddCall: (templateId: string) => boolean;
 }) {
   const [query, setQuery] = useState("");
   const [authoringFunction, setAuthoringFunction] = useState(false);
@@ -153,6 +181,24 @@ export function NodePalette({
   const [parameterType, setParameterType] =
     useState<PrimitiveCoreType>("unit");
   const [resultType, setResultType] = useState<PrimitiveCoreType>("unit");
+  const nextCaptureDraftId = useRef(1);
+  const [captures, setCaptures] = useState<FunctionCaptureRow[]>([]);
+  const [authoringCall, setAuthoringCall] = useState(false);
+  const [callTemplateId, setCallTemplateId] = useState(
+    callableTemplates[0]?.templateId ?? "",
+  );
+  const functionFormRef = useRef<HTMLFormElement>(null);
+  const callFormRef = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (authoringFunction) {
+      functionFormRef.current?.scrollIntoView?.({ block: "nearest" });
+    }
+  }, [authoringFunction, captures.length]);
+  useEffect(() => {
+    if (authoringCall) {
+      callFormRef.current?.scrollIntoView?.({ block: "nearest" });
+    }
+  }, [authoringCall]);
   const normalizedQuery = query.trim().toLowerCase();
   const visibleGroups = PALETTE_GROUPS.map((group) => ({
     ...group,
@@ -168,7 +214,12 @@ export function NodePalette({
     if (action.kind === "result") onAddResult();
     if (action.kind === "function") {
       setTemplateId(suggestedFunctionTemplateId);
+      setCaptures([]);
       setAuthoringFunction(true);
+    }
+    if (action.kind === "call" && callableTemplates.length > 0) {
+      setCallTemplateId(callableTemplates[0]!.templateId);
+      setAuthoringCall(true);
     }
   }
 
@@ -179,7 +230,7 @@ export function NodePalette({
           <span className="panel-eyebrow">Build</span>
           <h2>Nodes</h2>
         </div>
-        <span className="palette-count">9 available</span>
+        <span className="palette-count">10 available</span>
       </div>
       <div className="palette-search">
         <label className="visually-hidden" htmlFor="node-palette-search">
@@ -213,16 +264,26 @@ export function NodePalette({
             <h3>{group.name}</h3>
             <div className="palette-items">
               {group.items.map((item) => {
+                const callUnavailable =
+                  item.action.kind === "call" &&
+                  callableTemplates.length === 0;
                 return (
                   <div key={item.name}>
                     <button
                       type="button"
                       className={`palette-item tone-${item.tone}`}
+                      disabled={callUnavailable}
                       aria-label={`Add ${item.name}`}
-                      title={`Add ${item.name}`}
+                      title={
+                        callUnavailable
+                          ? "Create a compatible function template first."
+                          : `Add ${item.name}`
+                      }
                       aria-expanded={
                         item.action.kind === "function"
                           ? authoringFunction
+                          : item.action.kind === "call"
+                            ? authoringCall
                           : undefined
                       }
                       onClick={() => runAction(item.action)}
@@ -241,6 +302,7 @@ export function NodePalette({
                     {item.action.kind === "function" &&
                       authoringFunction && (
                         <form
+                          ref={functionFormRef}
                           className="function-authoring"
                           aria-label="Create function template"
                           onSubmit={(event) => {
@@ -250,6 +312,9 @@ export function NodePalette({
                                 templateId,
                                 parameterType,
                                 resultType,
+                                captures: captures.map(
+                                  ({ key, type }) => ({ key, type }),
+                                ),
                               })
                             ) {
                               setAuthoringFunction(false);
@@ -311,12 +376,165 @@ export function NodePalette({
                               </select>
                             </label>
                           </div>
+                          <div className="function-captures">
+                            <div className="function-captures-heading">
+                              <strong>Captures</strong>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setCaptures((current) => [
+                                    ...current,
+                                    {
+                                      draftId: nextCaptureDraftId.current++,
+                                      key: `capture_${current.length + 1}`,
+                                      type: "nat",
+                                    },
+                                  ])
+                                }
+                              >
+                                Add capture
+                              </button>
+                            </div>
+                            {captures.length === 0 ? (
+                              <p>No values are remembered by this closure.</p>
+                            ) : (
+                              captures.map((capture, index) => (
+                                <div
+                                  className="function-capture-row"
+                                  key={capture.draftId}
+                                >
+                                  <label>
+                                    <span className="visually-hidden">
+                                      Capture {index + 1} key
+                                    </span>
+                                    <input
+                                      aria-label={`Capture ${index + 1} key`}
+                                      value={capture.key}
+                                      pattern={"[A-Za-z0-9_.\\-]{1,128}"}
+                                      required
+                                      onChange={(event) =>
+                                        setCaptures((current) =>
+                                          current.map((candidate, candidateIndex) =>
+                                            candidateIndex === index
+                                              ? {
+                                                  ...candidate,
+                                                  key: event.target.value,
+                                                }
+                                              : candidate,
+                                          ),
+                                        )
+                                      }
+                                    />
+                                  </label>
+                                  <label>
+                                    <span className="visually-hidden">
+                                      Capture {index + 1} type
+                                    </span>
+                                    <select
+                                      aria-label={`Capture ${index + 1} type`}
+                                      value={capture.type}
+                                      onChange={(event) =>
+                                        setCaptures((current) =>
+                                          current.map((candidate, candidateIndex) =>
+                                            candidateIndex === index
+                                              ? {
+                                                  ...candidate,
+                                                  type: event.target
+                                                    .value as PrimitiveCoreType,
+                                                }
+                                              : candidate,
+                                          ),
+                                        )
+                                      }
+                                    >
+                                      <option value="unit">Unit</option>
+                                      <option value="nat">Nat</option>
+                                    </select>
+                                  </label>
+                                  <button
+                                    type="button"
+                                    aria-label={`Remove capture ${index + 1}`}
+                                    onClick={() =>
+                                      setCaptures((current) =>
+                                        current.filter(
+                                          (_, candidateIndex) =>
+                                            candidateIndex !== index,
+                                        ),
+                                      )
+                                    }
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                              ))
+                            )}
+                          </div>
                           <p className="function-authoring-note">
                             The generated closure is connected to an explicit
-                            Drop. Rewire it when ready.
+                            Drop. Capture inputs receive temporary literals;
+                            rewire them when ready.
                           </p>
                           <button type="submit" className="function-create">
                             Create total function
+                          </button>
+                        </form>
+                      )}
+                    {item.action.kind === "call" &&
+                      authoringCall && (
+                        <form
+                          ref={callFormRef}
+                          className="function-authoring"
+                          aria-label="Create function call"
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            if (onAddCall(callTemplateId)) {
+                              setAuthoringCall(false);
+                            }
+                          }}
+                        >
+                          <div className="function-authoring-heading">
+                            <strong>Call existing template</strong>
+                            <button
+                              type="button"
+                              aria-label="Cancel function call"
+                              onClick={() => setAuthoringCall(false)}
+                            >
+                              ×
+                            </button>
+                          </div>
+                          <p>
+                            Call host: <code>{functionHostLabel}</code>
+                          </p>
+                          <label>
+                            Template to call
+                            <select
+                              value={callTemplateId}
+                              onChange={(event) =>
+                                setCallTemplateId(event.target.value)
+                              }
+                            >
+                              {callableTemplates.map((template) => (
+                                <option
+                                  key={template.templateId}
+                                  value={template.templateId}
+                                >
+                                  {template.templateId} ·{" "}
+                                  {coreTypeLabel(template.parameterType)} →{" "}
+                                  {coreTypeLabel(template.resultType)}
+                                  {template.captures.length > 0
+                                    ? ` · ${template.captures.length} capture(s)`
+                                    : ""}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <p className="function-authoring-note">
+                            The editor adds Function, Apply, temporary inputs,
+                            a result Drop, and the template dependency as one
+                            undoable action.
+                          </p>
+                          <button type="submit" className="function-create">
+                            Create call
                           </button>
                         </form>
                       )}

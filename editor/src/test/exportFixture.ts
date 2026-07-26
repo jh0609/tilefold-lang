@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { exportProjectJson, parseProjectJson } from "../model/importProject";
 import {
   addElement,
+  addFunctionCall,
   addFunctionTemplate,
   addWire,
   moveElement,
@@ -253,4 +254,30 @@ for (const [name, parameterType, resultType] of [
     "utf8",
   );
 }
+
+const capturedFunction = addFunctionTemplate(
+  parseProjectJson(await readFile(source, "utf8")),
+  "entry",
+  {
+    templateId: "fixture_captured_call",
+    parameterType: "nat",
+    resultType: "nat",
+    captures: [
+      { key: "offset", type: "nat" },
+      { key: "marker", type: "unit" },
+    ],
+  },
+);
+if ("error" in capturedFunction) throw new Error(capturedFunction.error);
+const capturedCall = addFunctionCall(
+  capturedFunction.document,
+  "entry",
+  "fixture_captured_call",
+);
+if ("error" in capturedCall) throw new Error(capturedCall.error);
+await writeFile(
+  resolve(".tmp/exported-function-captured-call.tilefold.json"),
+  exportProjectJson(capturedCall.document),
+  "utf8",
+);
 console.log(target);

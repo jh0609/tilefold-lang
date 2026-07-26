@@ -30,6 +30,7 @@ import {
 } from "./model/editorHistory";
 import { exportProjectJson, parseProjectJson } from "./model/importProject";
 import {
+  callableFunctionTemplates,
   findElementOwnerContainer,
   findOpenElementCenter,
   nextFunctionTemplateId,
@@ -156,6 +157,13 @@ export function App() {
       ) ?? document.geometry.containers[0]
     );
   }, [document, selection]);
+  const callableTemplates = useMemo(
+    () =>
+      functionHost
+        ? callableFunctionTemplates(document, functionHost.id)
+        : [],
+    [document, functionHost],
+  );
 
   function resetDocument(next: ProjectDocument) {
     invalidateExecution();
@@ -395,6 +403,34 @@ export function App() {
     return true;
   }
 
+  function addCall(templateId: string): boolean {
+    if (!functionHost) {
+      setInspectorError("Call creation requires a host container.");
+      return false;
+    }
+    const previousApplyIds = new Set(
+      document.geometry.elements
+        .filter((element) => element.kind === "apply")
+        .map((element) => element.id),
+    );
+    const nextDocument = runCommand({
+      type: "add_function_call",
+      hostContainerId: functionHost.id,
+      templateId,
+    });
+    if (!nextDocument) return false;
+    const apply = nextDocument.geometry.elements.find(
+      (element) =>
+        element.kind === "apply" && !previousApplyIds.has(element.id),
+    );
+    if (apply) setSelection({ type: "element", id: apply.id });
+    setConnectionMessage(
+      `Created a call to ${templateId} with temporary inputs and a result Drop.`,
+    );
+    fitViewToDocument(nextDocument);
+    return true;
+  }
+
   function connectPorts(source: ConnectablePort, target: ConnectablePort) {
     const nextDocument = runCommand({ type: "add_wire", source, target });
     if (!nextDocument) return;
@@ -487,6 +523,8 @@ export function App() {
           suggestedFunctionTemplateId={nextFunctionTemplateId(document)}
           functionHostLabel={functionHost?.id ?? "No container"}
           onAddFunction={addFunction}
+          callableTemplates={callableTemplates}
+          onAddCall={addCall}
         />
         <Canvas
           document={document}
