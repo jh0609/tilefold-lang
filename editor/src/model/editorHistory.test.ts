@@ -121,13 +121,13 @@ describe("editor command history", () => {
     ).toBe(result.history.present);
   });
 
-  it("does not record unsupported container deletion", () => {
+  it("does not record protected entry-container deletion", () => {
     const initial = parseProjectJson(exampleJson);
     const result = executeEditorCommand(createEditorHistory(initial), {
       type: "delete_selection",
       selection: { type: "container", id: "entry" },
     });
-    expect(result.error).toBe("Deleting containers is not supported.");
+    expect(result.error).toBe("The entry container cannot be deleted.");
     expect(result.history.present).toBe(initial);
     expect(result.history.past).toEqual([]);
   });

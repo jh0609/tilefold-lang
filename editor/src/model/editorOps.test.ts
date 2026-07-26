@@ -12,6 +12,7 @@ import {
   nextStableId,
   nextFunctionTemplateId,
   callableFunctionTemplates,
+  templateFunctionReferences,
   updateApplyTypes,
   updateElementType,
   type AddableElementKind,
@@ -544,6 +545,87 @@ describe("editor operations", () => {
       "wire_parameter",
       "wire_result",
     ]);
+  });
+
+  it("blocks referenced template deletion then removes its owned graph atomically", () => {
+    const project = parseProjectJson(exampleJson);
+    const authored = addFunctionTemplate(project, "entry", {
+      templateId: "template_1",
+      parameterType: "nat",
+      resultType: "nat",
+      captures: [{ key: "offset", type: "nat" }],
+    });
+    if ("error" in authored) throw new Error(authored.error);
+
+    expect(
+      templateFunctionReferences(
+        authored.document,
+        "template_1",
+        authored.container.id,
+      ),
+    ).toEqual([authored.element.id]);
+
+    const blocked = deleteSelection(authored.document, {
+      type: "container",
+      id: authored.container.id,
+    });
+    expect(blocked.document).toBe(authored.document);
+    expect(blocked.error).toBe(
+      "Delete Function references before deleting template_1: node_function_1",
+    );
+
+    const withoutFunction = deleteSelection(authored.document, {
+      type: "element",
+      id: authored.element.id,
+    }).document;
+    const ownedElementIds = withoutFunction.geometry.elements
+      .filter((element) => {
+        const center = {
+          x: element.bounds.x + element.bounds.width / 2,
+          y: element.bounds.y + element.bounds.height / 2,
+        };
+        const bounds = authored.container.bounds;
+        return (
+          center.x > bounds.x &&
+          center.x < bounds.x + bounds.width &&
+          center.y > bounds.y &&
+          center.y < bounds.y + bounds.height
+        );
+      })
+      .map((element) => element.id);
+    expect(ownedElementIds.length).toBeGreaterThan(0);
+
+    const deleted = deleteSelection(withoutFunction, {
+      type: "container",
+      id: authored.container.id,
+    });
+    expect(deleted.error).toBeUndefined();
+    expect(
+      deleted.document.geometry.containers.some(
+        (container) => container.id === authored.container.id,
+      ),
+    ).toBe(false);
+    expect(
+      deleted.document.geometry.elements.some((element) =>
+        ownedElementIds.includes(element.id),
+      ),
+    ).toBe(false);
+    expect(
+      deleted.document.geometry.containers[0]!.kind.dependencies,
+    ).not.toContain("template_1");
+    expect(() =>
+      parseProjectJson(exportProjectJson(deleted.document)),
+    ).not.toThrow();
+  });
+
+  it("protects the entry container from deletion", () => {
+    const project = parseProjectJson(exampleJson);
+    const result = deleteSelection(project, {
+      type: "container",
+      id: "entry",
+    });
+    expect(result.document).toBe(project);
+    expect(result.error).toBe("The entry container cannot be deleted.");
   });
 
   it("deletes wires, Result boundaries, and junction references by exact ID", () => {

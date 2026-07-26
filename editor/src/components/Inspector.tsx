@@ -6,6 +6,7 @@ import type {
   ProjectElement,
   Selection,
 } from "../model/project";
+import { templateFunctionReferences } from "../model/editorOps";
 import { wireEndpointAvailability } from "../model/portConnections";
 
 interface InspectorProps {
@@ -22,6 +23,7 @@ interface InspectorProps {
   ) => void;
   canDelete: boolean;
   onDelete: () => void;
+  onFocusTemplate: (templateId: string) => void;
   onError: (error: string | null) => void;
 }
 
@@ -108,6 +110,7 @@ function ElementInspector({
   onNatValueChange,
   onElementTypeChange,
   onApplyTypesChange,
+  onFocusTemplate,
   onError,
 }: {
   element: ProjectElement;
@@ -120,6 +123,7 @@ function ElementInspector({
     parameterType: CoreType,
     resultType: CoreType,
   ) => void;
+  onFocusTemplate: (templateId: string) => void;
   onError: (error: string | null) => void;
 }) {
   const natValue =
@@ -228,6 +232,14 @@ function ElementInspector({
             The signature is owned by the template container and is read only
             on this closure.
           </p>
+          <button
+            type="button"
+            onClick={() =>
+              onFocusTemplate(element.properties.templateId)
+            }
+          >
+            Open template {element.properties.templateId}
+          </button>
         </section>
       )}
       <section className="readout">
@@ -268,6 +280,7 @@ export function Inspector({
   onApplyTypesChange,
   canDelete,
   onDelete,
+  onFocusTemplate,
   onError,
 }: InspectorProps) {
   let content = (
@@ -303,6 +316,7 @@ export function Inspector({
           onNatValueChange={onNatValueChange}
           onElementTypeChange={onElementTypeChange}
           onApplyTypesChange={onApplyTypesChange}
+          onFocusTemplate={onFocusTemplate}
           onError={onError}
         />
       );
@@ -341,6 +355,11 @@ export function Inspector({
       (candidate) => candidate.id === selection.id,
     );
     if (container) {
+      const functionReferences = templateFunctionReferences(
+        document,
+        container.kind.templateId,
+        container.id,
+      );
       content = (
         <>
           <div className="inspector-heading">
@@ -360,6 +379,38 @@ export function Inspector({
               ? "No template dependencies"
               : `Dependencies: ${container.kind.dependencies.join(", ")}`}
           </span>
+          {container.kind.dependencies.length > 0 && (
+            <section className="readout">
+              <h3>Open dependency</h3>
+              {container.kind.dependencies.map((dependency) => (
+                <button
+                  key={dependency}
+                  type="button"
+                  onClick={() => onFocusTemplate(dependency)}
+                >
+                  {dependency}
+                </button>
+              ))}
+            </section>
+          )}
+          {container.kind.kind === "template" && (
+            <section className="readout">
+              <h3>Template deletion</h3>
+              {functionReferences.length === 0 ? (
+                <span>
+                  No external Function references. This template can be
+                  deleted with its contents.
+                </span>
+              ) : (
+                <>
+                  <span>Delete these Function references first:</span>
+                  {functionReferences.map((reference) => (
+                    <code key={reference}>{reference}</code>
+                  ))}
+                </>
+              )}
+            </section>
+          )}
           <code>
             {container.bounds.x}, {container.bounds.y} ·{" "}
             {container.bounds.width}×{container.bounds.height}

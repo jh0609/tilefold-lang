@@ -1777,13 +1777,161 @@ export function elementReferences(
     .map((wire) => wire.id);
 }
 
+function pointInsideBounds(
+  point: Point,
+  bounds: Bounds,
+  inclusive = false,
+): boolean {
+  return inclusive
+    ? point.x >= bounds.x &&
+        point.x <= bounds.x + bounds.width &&
+        point.y >= bounds.y &&
+        point.y <= bounds.y + bounds.height
+    : point.x > bounds.x &&
+        point.x < bounds.x + bounds.width &&
+        point.y > bounds.y &&
+        point.y < bounds.y + bounds.height;
+}
+
+function elementInsideBounds(
+  element: ProjectElement,
+  bounds: Bounds,
+): boolean {
+  return pointInsideBounds(
+    {
+      x: element.bounds.x + element.bounds.width / 2,
+      y: element.bounds.y + element.bounds.height / 2,
+    },
+    bounds,
+  );
+}
+
+export function templateFunctionReferences(
+  document: ProjectDocument,
+  templateId: string,
+  excludingContainerId?: string,
+): string[] {
+  const excludedBounds = excludingContainerId
+    ? document.geometry.containers.find(
+        (container) => container.id === excludingContainerId,
+      )?.bounds
+    : undefined;
+  return document.geometry.elements
+    .filter(
+      (element) =>
+        element.kind === "function" &&
+        element.properties.templateId === templateId &&
+        (!excludedBounds || !elementInsideBounds(element, excludedBounds)),
+    )
+    .map((element) => element.id)
+    .sort((left, right) => left.localeCompare(right));
+}
+
 export function deleteSelection(
   document: ProjectDocument,
   selection: Selection | null,
 ): { document: ProjectDocument; error?: string } {
   if (!selection) return { document };
   if (selection.type === "container") {
-    return { document, error: "Deleting containers is not supported." };
+    const container = document.geometry.containers.find(
+      (candidate) => candidate.id === selection.id,
+    );
+    if (!container) {
+      return {
+        document,
+        error: `Container ${selection.id} does not exist.`,
+      };
+    }
+    if (container.kind.kind === "entry") {
+      return { document, error: "The entry container cannot be deleted." };
+    }
+    const references = templateFunctionReferences(
+      document,
+      container.kind.templateId,
+      container.id,
+    );
+    if (references.length > 0) {
+      return {
+        document,
+        error: `Delete Function references before deleting ${container.kind.templateId}: ${references.join(", ")}`,
+      };
+    }
+
+    const elementIds = new Set(
+      document.geometry.elements
+        .filter((element) =>
+          elementInsideBounds(element, container.bounds),
+        )
+        .map((element) => element.id),
+    );
+    const boundaryIds = new Set(
+      container.boundaryPorts.map((boundary) => boundary.id),
+    );
+    const junctionIds = new Set(
+      document.geometry.junctions
+        .filter((junction) =>
+          pointInsideBounds(junction.anchor, container.bounds),
+        )
+        .map((junction) => junction.id),
+    );
+    const referencesOwnedEndpoint = (
+      hint: ProjectWire["sourceHint"],
+    ): boolean => {
+      if (!hint) return false;
+      if (hint.kind === "element_port") {
+        return elementIds.has(hint.elementId);
+      }
+      if (hint.kind === "boundary_port") {
+        return (
+          hint.containerId === container.id &&
+          boundaryIds.has(hint.boundaryId)
+        );
+      }
+      return junctionIds.has(hint.junctionId);
+    };
+    const wireBelongsToContainer = (wire: ProjectWire): boolean => {
+      if (
+        referencesOwnedEndpoint(wire.sourceHint) ||
+        referencesOwnedEndpoint(wire.targetHint)
+      ) {
+        return true;
+      }
+      const first = wire.points[0];
+      const last = wire.points.at(-1);
+      return Boolean(
+        (first && pointInsideBounds(first, container.bounds, true)) ||
+          (last && pointInsideBounds(last, container.bounds, true)),
+      );
+    };
+    return {
+      document: {
+        ...document,
+        geometry: {
+          ...document.geometry,
+          elements: document.geometry.elements.filter(
+            (element) => !elementIds.has(element.id),
+          ),
+          containers: document.geometry.containers
+            .filter((candidate) => candidate.id !== container.id)
+            .map((candidate) => ({
+              ...candidate,
+              kind: {
+                ...candidate.kind,
+                dependencies: candidate.kind.dependencies.filter(
+                  (dependency) =>
+                    dependency !== container.kind.templateId,
+                ),
+              },
+            })),
+          wires: document.geometry.wires.filter(
+            (wire) => !wireBelongsToContainer(wire),
+          ),
+          junctions: document.geometry.junctions.filter(
+            (junction) => !junctionIds.has(junction.id),
+          ),
+        },
+      },
+    };
   }
   if (selection.type === "wire") {
     if (

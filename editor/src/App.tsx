@@ -34,6 +34,7 @@ import {
   findElementOwnerContainer,
   findOpenElementCenter,
   nextFunctionTemplateId,
+  templateFunctionReferences,
   type AddableElementKind,
   type FunctionTemplateDraft,
 } from "./model/editorOps";
@@ -335,7 +336,21 @@ export function App() {
   }
 
   function selectionCanBeDeleted(current: Selection | null): boolean {
-    if (!current || current.type === "container") return false;
+    if (!current) return false;
+    if (current.type === "container") {
+      const container = document.geometry.containers.find(
+        (candidate) => candidate.id === current.id,
+      );
+      return Boolean(
+        container &&
+          container.kind.kind === "template" &&
+          templateFunctionReferences(
+            document,
+            container.kind.templateId,
+            container.id,
+          ).length === 0,
+      );
+    }
     if (current.type !== "boundary") return true;
     return document.geometry.containers
       .find((container) => container.id === current.containerId)
@@ -377,6 +392,24 @@ export function App() {
     const reference = parseViewBox(referenceViewBox);
     if (!contentBounds || !reference) return;
     setViewBox(formatViewBox(fitViewBoxToBounds(contentBounds, reference)));
+  }
+
+  function focusTemplate(templateId: string) {
+    const container = document.geometry.containers.find(
+      (candidate) =>
+        candidate.kind.kind === "template" &&
+        candidate.kind.templateId === templateId,
+    );
+    const reference = parseViewBox(referenceViewBox);
+    if (!container || !reference) {
+      setInspectorError(`Template ${templateId} is not available.`);
+      return;
+    }
+    setSelection({ type: "container", id: container.id });
+    setInspectorError(null);
+    setViewBox(
+      formatViewBox(fitViewBoxToBounds(container.bounds, reference)),
+    );
   }
 
   function addFunction(draft: FunctionTemplateDraft): boolean {
@@ -636,6 +669,7 @@ export function App() {
           }}
           canDelete={selectionCanBeDeleted(selection)}
           onDelete={removeSelected}
+          onFocusTemplate={focusTemplate}
           onError={setInspectorError}
         />
         <ExecutionPanel

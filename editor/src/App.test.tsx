@@ -103,6 +103,51 @@ describe("Tilefold editor UI", () => {
     expect(screen.getByText(/2 undo · 0 redo/)).toBeInTheDocument();
   });
 
+  it("opens a Function template and only deletes it after references are removed", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Add Function" }));
+    await user.selectOptions(screen.getByLabelText("Parameter"), "nat");
+    await user.selectOptions(screen.getByLabelText("Result"), "nat");
+    await user.click(
+      screen.getByRole("button", { name: "Create total function" }),
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Open template template_1" }),
+    );
+    expect(
+      screen.getByRole("heading", { name: "container_template_1" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Delete these Function references first:"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Delete selected" }),
+    ).toBeDisabled();
+
+    await user.click(screen.getByTestId("element-node_function_1"));
+    await user.click(
+      screen.getByRole("button", { name: "Delete selected" }),
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: "template container container_template_1",
+      }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Delete selected" }),
+    ).toBeEnabled();
+    await user.click(
+      screen.getByRole("button", { name: "Delete selected" }),
+    );
+    expect(screen.getByText(/1 containers/)).toBeInTheDocument();
+
+    await user.click(screen.getByTitle("Undo Delete container_template_1"));
+    expect(screen.getByText(/2 containers/)).toBeInTheDocument();
+  });
+
   it("shows the OCaml execution result and minimal rewrite trace", async () => {
     const user = userEvent.setup();
     const postMessage = vi.fn(

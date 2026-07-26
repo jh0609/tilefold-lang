@@ -214,7 +214,7 @@ containers. Generated stable IDs use the normal smallest-unused policy.
 Authoring refuses to expand the host container when doing so would overlap
 another container. The current form intentionally supports only Unit and Nat
 parameters, results, and captures; inferred captures, nested arrow authoring,
-renaming, and template deletion/editing remain future work.
+renaming, and signature editing remain future work.
 
 Pointer positions are transformed through the SVG current transformation matrix
 and rounded to project integers. Element movement translates its bounds and
@@ -258,19 +258,28 @@ the validator's reason in a canvas banner; no approximate, geometric, or
 name-based compatibility is inferred. This connection guidance is ephemeral UI
 state and never enters Project JSON or history.
 
-Containers are selectable but intentionally read-only. Moving a container
+Containers are selectable but cannot be moved. Moving a container
 without a fully specified policy for contained elements and wires could change
 Geometry ownership. Container boundary points therefore stay fixed when an
-element connected to one moves.
+element connected to one moves. Function elements and dependency lists in the
+Inspector provide direct navigation to their referenced templates.
 
-Deletion supports elements, wires, junctions, and Result boundaries. Deleting
+Deletion supports elements, wires, junctions, Result boundaries, and unreferenced
+template containers. The entry container remains protected. A template cannot
+be deleted while a Function outside that template references its template ID.
+After those references are removed, deleting the template removes the container,
+its boundary ports, elements and junctions whose centers are strictly inside its
+bounds, wires attached to that owned geometry, and dependency-list references
+as one Undoable command.
+
+Deleting
 an element removes only wires whose endpoint hints exactly reference that
 element ID. Deleting a junction removes wires whose hints exactly reference the
 junction or one of its outlets. Deleting a Result boundary removes wires whose
 boundary hints exactly match both its container and boundary IDs. Geometry,
 DOM order, labels, and string prefixes are never used to infer attachment.
 Each deletion and its dependent wire removals are one command and one Undo
-step. Parameter/capture boundaries and containers remain protected.
+step. Parameter/capture boundaries remain protected.
 
 Document changes use typed commands and an immutable 100-entry history.
 Undo/redo is available from the toolbar and with Ctrl/Cmd+Z,
