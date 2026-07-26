@@ -13,6 +13,9 @@
   --result: #dd751d;
   --structure: #64748b;
   --container: #6750a4;
+  --port-nat: #18866b;
+  --port-unit: #64748b;
+  --port-arrow: #7856b8;
   --radius: 8px;
   --space: 8px;
   color: var(--text);

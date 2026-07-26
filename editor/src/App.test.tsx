@@ -689,7 +689,7 @@ describe("Tilefold editor UI", () => {
   it("places non-compact port labels below the element title row", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: "+ Succ" }));
+    await user.click(screen.getByRole("button", { name: "Add Succ" }));
     const element = screen.getByTestId("element-node_succ_1");
     const kind = element.querySelector(".element-kind");
     const labels = element.querySelectorAll(".port-label");
@@ -714,7 +714,7 @@ describe("Tilefold editor UI", () => {
   it("adds the smallest available Nat ID and selects it", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: "+ Nat" }));
+    await user.click(screen.getByRole("button", { name: "Add Nat" }));
     expect(
       screen.getByRole("heading", { name: "node_nat_1" }),
     ).toBeInTheDocument();
@@ -723,8 +723,8 @@ describe("Tilefold editor UI", () => {
   it("places consecutive additions in deterministic open slots and redoes exactly", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: "+ Nat" }));
-    await user.click(screen.getByRole("button", { name: "+ Succ" }));
+    await user.click(screen.getByRole("button", { name: "Add Nat" }));
+    await user.click(screen.getByRole("button", { name: "Add Succ" }));
     const natRect = screen
       .getByTestId("element-node_nat_1")
       .querySelector(":scope > rect");
@@ -749,7 +749,7 @@ describe("Tilefold editor UI", () => {
   it("undoes and redoes an added element from the toolbar", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: "+ Nat" }));
+    await user.click(screen.getByRole("button", { name: "Add Nat" }));
     expect(screen.getByTestId("element-node_nat_1")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Undo" }));
     expect(screen.queryByTestId("element-node_nat_1")).not.toBeInTheDocument();
@@ -760,7 +760,7 @@ describe("Tilefold editor UI", () => {
   it("starts a fresh history when reopening the example", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: "+ Nat" }));
+    await user.click(screen.getByRole("button", { name: "Add Nat" }));
     expect(screen.getByRole("button", { name: "Undo" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Open example" }));
     expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
@@ -770,7 +770,7 @@ describe("Tilefold editor UI", () => {
   it("supports undo and redo keyboard shortcuts", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: "+ Succ" }));
+    await user.click(screen.getByRole("button", { name: "Add Succ" }));
     expect(screen.getByTestId("element-node_succ_1")).toBeInTheDocument();
     await user.keyboard("{Control>}z{/Control}");
     expect(screen.queryByTestId("element-node_succ_1")).not.toBeInTheDocument();
@@ -858,14 +858,14 @@ describe("Tilefold editor UI", () => {
     render(<App />);
     const canvas = screen.getByTestId("project-canvas");
     const addLabels = [
-      "+ Nat",
-      "+ Succ",
-      "+ Nat",
-      "+ Succ",
-      "+ Nat",
-      "+ Succ",
-      "+ Nat",
-      "+ Succ",
+      "Add Nat",
+      "Add Succ",
+      "Add Nat",
+      "Add Succ",
+      "Add Nat",
+      "Add Succ",
+      "Add Nat",
+      "Add Succ",
     ];
     for (const label of addLabels) {
       await user.click(screen.getByRole("button", { name: label }));
@@ -1027,8 +1027,7 @@ describe("Tilefold editor UI", () => {
   it("adds every exposed Core node kind with selectable ports", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByText("More nodes"));
-    for (const label of ["+ Unit", "+ Drop", "+ Copy", "+ Apply", "+ NatRec"]) {
+    for (const label of ["Add Unit", "Add Drop", "Add Copy", "Add Apply", "Add NatRec"]) {
       await user.click(screen.getByRole("button", { name: label }));
     }
     expect(screen.getByTestId("element-node_unit_1")).toBeInTheDocument();
@@ -1051,8 +1050,7 @@ describe("Tilefold editor UI", () => {
   it("edits new node type presets in the Inspector without document side state", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByText("More nodes"));
-    await user.click(screen.getByRole("button", { name: "+ Drop" }));
+    await user.click(screen.getByRole("button", { name: "Add Drop" }));
     const type = screen.getByLabelText("Value type");
     expect(type).toHaveValue('"nat"');
     await user.selectOptions(type, '{"arrow":["nat","nat"]}');
@@ -1183,8 +1181,8 @@ describe("Tilefold editor UI", () => {
   it("previews, creates, selects, undoes, and redoes a port connection", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: "+ Nat" }));
-    await user.click(screen.getByRole("button", { name: "+ Succ" }));
+    await user.click(screen.getByRole("button", { name: "Add Nat" }));
+    await user.click(screen.getByRole("button", { name: "Add Succ" }));
     const source = screen.getByTestId("port-element:node_nat_1:value");
     const target = screen.getByTestId("port-element:node_succ_1:input");
     expect(source).toHaveAccessibleName(/output port value/);
@@ -1197,6 +1195,8 @@ describe("Tilefold editor UI", () => {
       clientY: 130,
     });
     expect(screen.getByTestId("wire-preview")).toBeInTheDocument();
+    expect(target.parentElement).toHaveClass("connection-compatible");
+    expect(screen.getByRole("status")).toHaveTextContent("Choose a highlighted input port");
     fireEvent.pointerMove(screen.getByTestId("project-canvas"), {
       pointerId: 21,
       clientX: 276,
@@ -1218,7 +1218,7 @@ describe("Tilefold editor UI", () => {
   it("cancels connection preview on empty drop, Escape, and pointercancel", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: "+ Nat" }));
+    await user.click(screen.getByRole("button", { name: "Add Nat" }));
     const source = screen.getByTestId("port-element:node_nat_1:value");
     const canvas = screen.getByTestId("project-canvas");
 
@@ -1250,7 +1250,7 @@ describe("Tilefold editor UI", () => {
     expect(
       screen.getByTestId("wire-wire_nat_succ-target-handle"),
     ).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "+ Nat" }));
+    await user.click(screen.getByRole("button", { name: "Add Nat" }));
     await user.click(screen.getByTestId("wire-wire_nat_succ"));
 
     fireEvent.pointerDown(
@@ -1289,7 +1289,7 @@ describe("Tilefold editor UI", () => {
       "248,130 120,70",
     );
 
-    await user.click(screen.getByRole("button", { name: "+ Succ" }));
+    await user.click(screen.getByRole("button", { name: "Add Succ" }));
     await user.click(screen.getByTestId("wire-wire_nat_succ"));
     fireEvent.pointerDown(
       screen.getByTestId("wire-wire_nat_succ-target-handle"),

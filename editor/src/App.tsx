@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import exampleJson from "../../examples/nat-succ.tilefold.json?raw";
 import { Canvas } from "./components/Canvas";
 import { Inspector } from "./components/Inspector";
+import { NodePalette } from "./components/NodePalette";
 import { StatusBar } from "./components/StatusBar";
 import { Toolbar } from "./components/Toolbar";
 import {
@@ -418,18 +419,15 @@ export function App() {
         onOpenExample={openExample}
         onOpenFile={openFile}
         onExport={() => downloadProject(document)}
-        onAddElement={add}
-        onAddResult={addResult}
         onDelete={removeSelected}
         onUndo={undo}
         onRedo={redo}
-        onFitView={fitView}
-        onResetView={() => setViewBox(savedViewBox(document.view))}
         onRun={runProject}
         onCancel={cancelExecution}
         running={executionState.status === "running"}
       />
       <div className="workspace">
+        <NodePalette onAddElement={add} onAddResult={addResult} />
         <Canvas
           document={document}
           selection={selection}
@@ -438,6 +436,8 @@ export function App() {
           referenceViewBox={referenceViewBox}
           zoomPercent={zoomPercent}
           onViewBoxChange={setViewBox}
+          onFitView={fitView}
+          onResetView={() => setViewBox(savedViewBox(document.view))}
           onSelect={(next) => {
             setSelection(next);
             setInspectorError(null);

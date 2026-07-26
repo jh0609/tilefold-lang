@@ -98,34 +98,38 @@ state library, or UI framework.
 
 The first version borrows only a restrained subset of three familiar tools:
 
-- Node-RED contributes the compact developer-tool shell, canvas-first density,
-  and right Inspector.
+- Node-RED contributes the compact developer-tool shell, searchable categorized
+  node library, canvas-first density, and right Inspector.
 - diagrams.net contributes the bright line grid, rounded flow shapes, generous
   workspace, and unmistakable selection outline.
 - Blender Geometry Nodes contributes visible left/input and right/output ports,
-  limited port colors, and an emphasized literal value.
+  type-colored ports, compact node signatures, and an emphasized literal value.
 
 It intentionally does not copy Blueprint-style chrome or add a minimap,
-automatic routing, resize handles, search, dark mode, glow, or elaborate
-transitions. A compact palette exposes the implemented Core node kinds that can
-be created without a function-template authoring workflow. Result is represented
-by the orange result boundary defined by project JSON v1 rather than inventing
-a Result element kind.
+automatic routing, resize handles, dark mode, or elaborate transitions. A
+persistent left palette exposes the implemented Core node kinds by category,
+searches names, signatures, descriptions, and keywords, and keeps Function
+visible but disabled with its missing template-authoring dependency explained.
+Result is represented by the orange result boundary defined by project JSON v1
+rather than inventing a Result element kind.
 
 Styles are split by responsibility under `src/styles/`: tokens, shell/layout,
-canvas/nodes, and Inspector. `tokens.css` centralizes the neutral backgrounds,
-grid and panel borders, text, selection/error colors, restrained kind colors,
-spacing, and radius.
+palette, canvas/nodes, and Inspector. `tokens.css` centralizes the neutral
+backgrounds, grid and panel borders, text, selection/error colors, restrained
+kind and port-type colors, spacing, and radius.
 
 ## Screen layout
 
-- The top toolbar opens the shared example or a local JSON file, exports the
-  current document, adds Unit/Nat/Succ/Drop/Copy/Apply/NatRec nodes and Result
-  boundaries, deletes supported selections, provides undo/redo, fits all
-  rendered geometry, and resets the camera.
+- The top toolbar is limited to project I/O, deletion, undo/redo, and the
+  primary Run/Cancel action.
+- The persistent left palette searches and explains Unit, Nat, Succ, Drop,
+  Copy, Apply, and NatRec creation plus the Result boundary action. Function is
+  shown as unavailable until template authoring exists.
 - The SVG canvas renders containers, relative boundary anchors, elements,
   absolute port anchors, wire polylines, junctions, and explicit outlets. The
   wheel zooms around the pointer and a middle-button drag pans the camera.
+  Floating controls provide Zoom in/out, Fit, and Reset without competing with
+  project commands in the top toolbar.
 - The Inspector edits element integer bounds, canonical Nat strings, and the
   exposed Core type presets for Drop/Copy/Apply/NatRec. It shows read-only
   information for containers, boundaries, wires, junctions, and saved view.
@@ -194,14 +198,18 @@ exported geometry remain unchanged. Clicking the visible five-unit port still
 starts a connection, but grabbing the center of a 20×20 literal no longer does.
 Non-compact port labels use a separate row below the element title so input
 names do not collide with operation names; this is presentation-only and does
-not move anchors or change exported geometry.
+not move anchors or change exported geometry. Their bottom row shows a compact
+type/behavior signature instead of repeating the stable ID already available in
+the Inspector. Nat, Unit, and function-valued ports use distinct colors; port
+direction remains encoded spatially by left/input and right/output placement.
 Keyboard focus is drawn as a dashed ring on the visible element body rather
 than around its larger transparent port hit targets. Enter or Space selects the
 focused element without creating a document command.
 
 Canvas navigation is UI-only. Wheel zoom stays anchored under the pointer and
-is clamped to 25–400% of the saved Project view; middle-button dragging pans
-without changing selection. The current percentage is shown in the canvas and
+is clamped to 25–400% of the saved Project view; the floating plus/minus controls
+zoom around the current camera center and middle-button dragging pans without
+changing selection. The current percentage is shown between the controls and
 Fit view frames elements, containers, wire points, junctions, and outlets with
 24 project units of padding while preserving the saved view's aspect ratio.
 It never zooms in beyond 400%, but it can zoom out beyond the wheel's 25% limit
@@ -211,6 +219,12 @@ Navigation never creates a document command, history entry, or exported field.
 Escape, `pointercancel`, or lost pointer capture restores a pan's starting
 camera. Wheel navigation is paused during element, connection, reconnection, or
 pan gestures so their coordinate transforms remain stable.
+
+Starting a connection highlights every exact, currently compatible destination
+port and de-emphasizes rejected candidates. Hovering a rejected port surfaces
+the validator's reason in a canvas banner; no approximate, geometric, or
+name-based compatibility is inferred. This connection guidance is ephemeral UI
+state and never enters Project JSON or history.
 
 Containers are selectable but intentionally read-only. Moving a container
 without a fully specified policy for contained elements and wires could change

@@ -257,7 +257,9 @@ export function Inspector({
         ↖
       </div>
       <h2>No selection</h2>
-      <p>Select an element, container, wire, or junction on the canvas.</p>
+      <p>
+        Select an element, container, boundary, wire, or junction on the canvas.
+      </p>
     </div>
   );
   if (selection?.type === "element") {
