@@ -28,6 +28,35 @@ describe("editor command history", () => {
     expect(redone.present.geometry.elements.at(-1)).toEqual(added);
   });
 
+  it("undoes and redoes the whole Function authoring transaction once", () => {
+    const initial = parseProjectJson(exampleJson);
+    const executed = executeEditorCommand(createEditorHistory(initial), {
+      type: "add_function_template",
+      hostContainerId: "entry",
+      draft: {
+        templateId: "identity_nat",
+        parameterType: "nat",
+        resultType: "nat",
+      },
+    });
+    expect(executed.error).toBeUndefined();
+    expect(executed.history.past).toHaveLength(1);
+    expect(executed.history.present.geometry.containers).toHaveLength(2);
+    expect(
+      executed.history.present.geometry.elements.some(
+        (element) => element.kind === "function",
+      ),
+    ).toBe(true);
+
+    const undone = undoEditorCommand(executed.history);
+    expect(undone.present).toBe(initial);
+    const redone = redoEditorCommand(undone);
+    expect(redone.present).toBe(executed.history.present);
+    expect(redone.present.geometry.containers[0]!.kind.dependencies).toEqual([
+      "identity_nat",
+    ]);
+  });
+
   it("clears redo history after a new command", () => {
     const initial = parseProjectJson(exampleJson);
     const added = executeEditorCommand(createEditorHistory(initial), {

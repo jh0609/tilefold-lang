@@ -108,8 +108,8 @@ The first version borrows only a restrained subset of three familiar tools:
 It intentionally does not copy Blueprint-style chrome or add a minimap,
 automatic routing, resize handles, dark mode, or elaborate transitions. A
 persistent left palette exposes the implemented Core node kinds by category,
-searches names, signatures, descriptions, and keywords, and keeps Function
-visible but disabled with its missing template-authoring dependency explained.
+searches names, signatures, descriptions, and keywords, and includes a compact
+Function template authoring form.
 Result is represented by the orange result boundary defined by project JSON v1
 rather than inventing a Result element kind.
 
@@ -123,8 +123,9 @@ kind and port-type colors, spacing, and radius.
 - The top toolbar is limited to project I/O, deletion, undo/redo, and the
   primary Run/Cancel action.
 - The persistent left palette searches and explains Unit, Nat, Succ, Drop,
-  Copy, Apply, and NatRec creation plus the Result boundary action. Function is
-  shown as unavailable until template authoring exists.
+  Copy, Function, Apply, and NatRec creation plus the Result boundary action.
+  Function asks for a stable template ID and a Unit/Nat parameter and result
+  type before creating the template.
 - The SVG canvas renders containers, relative boundary anchors, elements,
   absolute port anchors, wire polylines, junctions, and explicit outlets. The
   wheel zooms around the pointer and a middle-button drag pans the camera.
@@ -181,8 +182,24 @@ stored in the typed add command, so Undo/Redo reuses exactly the same geometry.
 Wires, junctions, and container boundaries are not treated as placement
 obstacles. Result means a container Result boundary, since v1 has no `result`
 element kind; adding it is blocked when the first container already has one.
-Function remains read-only because a valid Function node requires a referenced
-template, declared captures, and dependency management.
+
+Function authoring creates a referenced template container, Parameter and
+Result boundaries, a total starter body, a closure element in the selected
+container (or the entry container by default), and the exact template
+dependency. Equal Unit/Nat signatures use explicit Copy and Drop nodes to form
+an identity body; cross-type signatures explicitly Drop the parameter and
+produce `Unit` or `Nat(0)`. The new closure is connected to an arrow-typed Drop
+so adding it does not invalidate an otherwise executable program. Users can
+remove that safety connection when wiring the closure to Apply. All generated
+containers, elements, boundaries, dependencies, and wires are one typed command
+and one Undo/Redo step.
+
+Template IDs use the v1 identifier alphabet and must be unique among
+containers. Generated stable IDs use the normal smallest-unused policy.
+Authoring refuses to expand the host container when doing so would overlap
+another container. The current form intentionally supports only Unit and Nat
+signatures; captures, nested arrow signatures, renaming, and template
+deletion/editing remain future work.
 
 Pointer positions are transformed through the SVG current transformation matrix
 and rounded to project integers. Element movement translates its bounds and
@@ -303,7 +320,7 @@ movement remains unsupported.
 
 The next editor layer can add:
 
-- function-template creation and editing;
+- function captures, nested signatures, and template editing/deletion;
 - arbitrary nested Core type editing beyond the current presets;
 - wire bend-point and segment editing;
 - container movement with a specified deterministic group-translation policy;

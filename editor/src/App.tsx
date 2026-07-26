@@ -31,7 +31,9 @@ import {
 import { exportProjectJson, parseProjectJson } from "./model/importProject";
 import {
   findOpenElementCenter,
+  nextFunctionTemplateId,
   type AddableElementKind,
+  type FunctionTemplateDraft,
 } from "./model/editorOps";
 import type {
   CoreType,
@@ -130,6 +132,42 @@ export function App() {
     () => exactTraceElementId(document, selectedTraceEvent),
     [document, selectedTraceEvent],
   );
+  const functionHost = useMemo(() => {
+    if (selection?.type === "container") {
+      return document.geometry.containers.find(
+        (container) => container.id === selection.id,
+      );
+    }
+    if (selection?.type === "boundary") {
+      return document.geometry.containers.find(
+        (container) => container.id === selection.containerId,
+      );
+    }
+    if (selection?.type === "element") {
+      const element = document.geometry.elements.find(
+        (candidate) => candidate.id === selection.id,
+      );
+      if (element) {
+        const center = {
+          x: element.bounds.x + element.bounds.width / 2,
+          y: element.bounds.y + element.bounds.height / 2,
+        };
+        const containing = document.geometry.containers.filter(
+          (container) =>
+            center.x > container.bounds.x &&
+            center.x < container.bounds.x + container.bounds.width &&
+            center.y > container.bounds.y &&
+            center.y < container.bounds.y + container.bounds.height,
+        );
+        if (containing.length === 1) return containing[0];
+      }
+    }
+    return (
+      document.geometry.containers.find(
+        (container) => container.kind.kind === "entry",
+      ) ?? document.geometry.containers[0]
+    );
+  }, [document, selection]);
 
   function resetDocument(next: ProjectDocument) {
     invalidateExecution();
@@ -335,10 +373,38 @@ export function App() {
   }
 
   function fitView() {
-    const contentBounds = projectContentBounds(document);
+    fitViewToDocument(document);
+  }
+
+  function fitViewToDocument(target: ProjectDocument) {
+    const contentBounds = projectContentBounds(target);
     const reference = parseViewBox(referenceViewBox);
     if (!contentBounds || !reference) return;
     setViewBox(formatViewBox(fitViewBoxToBounds(contentBounds, reference)));
+  }
+
+  function addFunction(draft: FunctionTemplateDraft): boolean {
+    if (!functionHost) {
+      setInspectorError("Function creation requires a host container.");
+      return false;
+    }
+    const nextDocument = runCommand({
+      type: "add_function_template",
+      hostContainerId: functionHost.id,
+      draft,
+    });
+    if (!nextDocument) return false;
+    const element = nextDocument.geometry.elements.find(
+      (candidate) =>
+        candidate.kind === "function" &&
+        candidate.properties.templateId === draft.templateId,
+    );
+    if (element) setSelection({ type: "element", id: element.id });
+    setConnectionMessage(
+      `Created ${draft.templateId}; its closure is safely connected to Drop until rewired.`,
+    );
+    fitViewToDocument(nextDocument);
+    return true;
   }
 
   function connectPorts(source: ConnectablePort, target: ConnectablePort) {
@@ -427,7 +493,13 @@ export function App() {
         running={executionState.status === "running"}
       />
       <div className="workspace">
-        <NodePalette onAddElement={add} onAddResult={addResult} />
+        <NodePalette
+          onAddElement={add}
+          onAddResult={addResult}
+          suggestedFunctionTemplateId={nextFunctionTemplateId(document)}
+          functionHostLabel={functionHost?.id ?? "No container"}
+          onAddFunction={addFunction}
+        />
         <Canvas
           document={document}
           selection={selection}

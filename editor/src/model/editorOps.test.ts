@@ -2,11 +2,13 @@ import exampleJson from "../../../examples/nat-succ.tilefold.json?raw";
 import { describe, expect, it } from "vitest";
 import {
   addElement,
+  addFunctionTemplate,
   addWire,
   deleteSelection,
   findOpenElementCenter,
   moveElement,
   nextStableId,
+  nextFunctionTemplateId,
   updateApplyTypes,
   updateElementType,
   type AddableElementKind,
@@ -55,6 +57,146 @@ describe("editor operations", () => {
     expect(result.element.id).toBe("node_nat_1");
     expect(result.element.properties).toEqual({ value: "0" });
     expect(result.element.bounds.x).toBe(452);
+  });
+
+  it("creates a complete identity template, closure dependency, and safe Drop", () => {
+    const project = parseProjectJson(exampleJson);
+    expect(nextFunctionTemplateId(project)).toBe("template_1");
+    const result = addFunctionTemplate(project, "entry", {
+      templateId: "template_1",
+      parameterType: "nat",
+      resultType: "nat",
+    });
+    if ("error" in result) throw new Error(result.error);
+
+    expect(result.container.kind).toEqual({
+      kind: "template",
+      templateId: "template_1",
+      parameterType: "nat",
+      resultType: "nat",
+      dependencies: [],
+    });
+    expect(result.container.boundaryPorts.map((port) => port.role)).toEqual([
+      "parameter",
+      "result",
+    ]);
+    expect(
+      result.document.geometry.containers[0]!.kind.dependencies,
+    ).toEqual(["template_1"]);
+    expect(result.element.properties).toEqual({
+      templateId: "template_1",
+      parameterType: "nat",
+      resultType: "nat",
+      captures: [],
+    });
+    const hostDrop = result.document.geometry.elements.find(
+      (element) => element.id === "node_drop_1",
+    );
+    expect(hostDrop?.properties).toEqual({
+      type: { arrow: ["nat", "nat"] },
+    });
+    expect(
+      result.document.geometry.wires.filter(
+        (wire) =>
+          wire.sourceHint?.kind === "boundary_port" &&
+          wire.sourceHint.containerId === result.container.id,
+      ),
+    ).toHaveLength(1);
+    expect(() =>
+      parseProjectJson(exportProjectJson(result.document)),
+    ).not.toThrow();
+  });
+
+  it("creates a total cross-type template with explicit Drop and default result", () => {
+    const project = parseProjectJson(exampleJson);
+    const result = addFunctionTemplate(project, "entry", {
+      templateId: "unit_to_nat",
+      parameterType: "unit",
+      resultType: "nat",
+    });
+    if ("error" in result) throw new Error(result.error);
+
+    const bodyElements = result.document.geometry.elements.filter(
+      (element) =>
+        element.bounds.x > result.container.bounds.x &&
+        element.bounds.x <
+          result.container.bounds.x + result.container.bounds.width,
+    );
+    expect(bodyElements.map((element) => element.kind).sort()).toEqual([
+      "drop",
+      "nat_literal",
+    ]);
+    expect(
+      bodyElements.find((element) => element.kind === "drop")?.properties,
+    ).toEqual({ type: "unit" });
+    expect(
+      bodyElements.find((element) => element.kind === "nat_literal")
+        ?.properties,
+    ).toEqual({ value: "0" });
+    expect(
+      result.document.geometry.wires.filter((wire) => {
+        const hints = [wire.sourceHint, wire.targetHint];
+        return hints.some(
+          (hint) =>
+            hint?.kind === "boundary_port" &&
+            hint.containerId === result.container.id,
+        );
+      }),
+    ).toHaveLength(2);
+  });
+
+  it("rejects duplicate template IDs and unsafe host expansion atomically", () => {
+    const project = parseProjectJson(exampleJson);
+    expect(
+      addFunctionTemplate(project, "entry", {
+        templateId: "not allowed!",
+        parameterType: "unit",
+        resultType: "unit",
+      }),
+    ).toEqual({
+      error:
+        "Template ID must use 1–128 ASCII letters, digits, underscores, hyphens, or periods.",
+    });
+    expect(
+      addFunctionTemplate(project, "entry", {
+        templateId: "entry_template",
+        parameterType: "unit",
+        resultType: "unit",
+      }),
+    ).toEqual({ error: "Template ID entry_template already exists." });
+
+    const blocked = {
+      ...project,
+      geometry: {
+        ...project.geometry,
+        containers: [
+          ...project.geometry.containers,
+          {
+            ...project.geometry.containers[0]!,
+            id: "blocking_container",
+            kind: {
+              kind: "template" as const,
+              templateId: "blocking_template",
+              parameterType: "unit" as const,
+              resultType: "unit" as const,
+              dependencies: [],
+            },
+            bounds: { x: 0, y: 150, width: 240, height: 120 },
+            boundaryPorts: [],
+          },
+        ],
+      },
+    };
+    const result = addFunctionTemplate(blocked, "entry", {
+      templateId: "new_template",
+      parameterType: "unit",
+      resultType: "unit",
+    });
+    expect(result).toEqual({
+      error:
+        "Cannot extend entry without overlapping blocking_container. Move the containers apart first.",
+    });
+    expect(blocked.geometry.elements).toBe(project.geometry.elements);
   });
 
   it.each([

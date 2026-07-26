@@ -4,6 +4,7 @@ import type {
   CoreType,
   ElementKind,
   Point,
+  ProjectContainer,
   ProjectDocument,
   ProjectElement,
   ProjectWire,
@@ -19,6 +20,19 @@ import {
 } from "./portConnections";
 
 export type AddableElementKind = Exclude<ElementKind, "function">;
+export type PrimitiveCoreType = Extract<CoreType, "unit" | "nat">;
+
+export interface FunctionTemplateDraft {
+  templateId: string;
+  parameterType: PrimitiveCoreType;
+  resultType: PrimitiveCoreType;
+}
+
+export interface AddFunctionTemplateResult {
+  document: ProjectDocument;
+  container: ProjectContainer;
+  element: Extract<ProjectElement, { kind: "function" }>;
+}
 
 const NEW_ELEMENT_SIZE: Record<
   AddableElementKind,
@@ -132,6 +146,433 @@ export function collectStableIds(document: ProjectDocument): Set<string> {
     junction.outlets.forEach((outlet) => ids.add(outlet.id));
   });
   return ids;
+}
+
+export function nextFunctionTemplateId(document: ProjectDocument): string {
+  const templateIds = new Set(
+    document.geometry.containers.map((container) => container.kind.templateId),
+  );
+  let index = 1;
+  while (templateIds.has(`template_${index}`)) index += 1;
+  return `template_${index}`;
+}
+
+function containerBoundsOverlap(left: Bounds, right: Bounds): boolean {
+  return (
+    left.x < right.x + right.width &&
+    left.x + left.width > right.x &&
+    left.y < right.y + right.height &&
+    left.y + left.height > right.y
+  );
+}
+
+function validProjectId(value: string): boolean {
+  return /^[A-Za-z0-9_.-]{1,128}$/.test(value);
+}
+
+export function addFunctionTemplate(
+  document: ProjectDocument,
+  hostContainerId: string,
+  draft: FunctionTemplateDraft,
+): AddFunctionTemplateResult | { error: string } {
+  if (!validProjectId(draft.templateId)) {
+    return {
+      error:
+        "Template ID must use 1–128 ASCII letters, digits, underscores, hyphens, or periods.",
+    };
+  }
+  if (
+    document.geometry.containers.some(
+      (container) => container.kind.templateId === draft.templateId,
+    )
+  ) {
+    return { error: `Template ID ${draft.templateId} already exists.` };
+  }
+  const host = document.geometry.containers.find(
+    (container) => container.id === hostContainerId,
+  );
+  if (!host) {
+    return { error: `Host container ${hostContainerId} does not exist.` };
+  }
+
+  const usedIds = collectStableIds(document);
+  const allocate = (prefix: string) => {
+    let index = 1;
+    while (usedIds.has(`${prefix}${index}`)) index += 1;
+    const id = `${prefix}${index}`;
+    usedIds.add(id);
+    return id;
+  };
+
+  const functionId = allocate("node_function_");
+  const hostDropId = allocate("node_drop_");
+  const hostWireId = allocate("wire_");
+  const containerId = allocate("container_template_");
+  const parameterBoundaryId = allocate("boundary_parameter_");
+  const resultBoundaryId = allocate("boundary_result_");
+
+  const hostExtensionTop = host.bounds.y + host.bounds.height;
+  const functionBounds: Bounds = {
+    x: host.bounds.x + 40,
+    y: hostExtensionTop + 24,
+    width: 128,
+    height: 72,
+  };
+  const hostDropBounds: Bounds = {
+    x: host.bounds.x + 100,
+    y: hostExtensionTop + 120,
+    width: 88,
+    height: 56,
+  };
+  const expandedHostBounds: Bounds = {
+    ...host.bounds,
+    height: host.bounds.height + 200,
+  };
+  const overlappingContainer = document.geometry.containers.find(
+    (container) =>
+      container.id !== host.id &&
+      containerBoundsOverlap(expandedHostBounds, container.bounds),
+  );
+  if (overlappingContainer) {
+    return {
+      error: `Cannot extend ${host.id} without overlapping ${overlappingContainer.id}. Move the containers apart first.`,
+    };
+  }
+
+  const functionElement: Extract<ProjectElement, { kind: "function" }> = {
+    id: functionId,
+    kind: "function",
+    bounds: functionBounds,
+    properties: {
+      templateId: draft.templateId,
+      parameterType: draft.parameterType,
+      resultType: draft.resultType,
+      captures: [],
+    },
+    portAnchors: [
+      {
+        port: "value",
+        x: functionBounds.x + functionBounds.width,
+        y: functionBounds.y + functionBounds.height / 2,
+      },
+    ],
+  };
+  const functionType: CoreType = {
+    arrow: [draft.parameterType, draft.resultType],
+  };
+  const hostDrop: ProjectElement = {
+    id: hostDropId,
+    kind: "drop",
+    bounds: hostDropBounds,
+    properties: { type: functionType },
+    portAnchors: [
+      {
+        port: "input",
+        x: hostDropBounds.x,
+        y: hostDropBounds.y + hostDropBounds.height / 2,
+      },
+    ],
+  };
+  const functionAnchor = functionElement.portAnchors[0]!;
+  const hostDropAnchor = hostDrop.portAnchors[0]!;
+  const hostWire: ProjectWire = {
+    id: hostWireId,
+    points: [
+      { x: functionAnchor.x, y: functionAnchor.y },
+      { x: host.bounds.x + host.bounds.width - 20, y: functionAnchor.y },
+      { x: host.bounds.x + host.bounds.width - 20, y: hostDropAnchor.y },
+      { x: hostDropAnchor.x, y: hostDropAnchor.y },
+    ],
+    sourceHint: {
+      kind: "element_port",
+      elementId: functionElement.id,
+      port: "value",
+    },
+    targetHint: {
+      kind: "element_port",
+      elementId: hostDrop.id,
+      port: "input",
+    },
+  };
+
+  const rightmost = Math.max(
+    ...document.geometry.containers.map(
+      (container) => container.bounds.x + container.bounds.width,
+    ),
+  );
+  const templateBounds: Bounds = {
+    x: rightmost + 80,
+    y: Math.min(...document.geometry.containers.map((container) => container.bounds.y)),
+    width: 360,
+    height: 220,
+  };
+  const parameterBoundary: BoundaryPort = {
+    id: parameterBoundaryId,
+    role: "parameter",
+    type: draft.parameterType,
+    anchor: { x: 0, y: 60 },
+  };
+  const resultBoundary: BoundaryPort = {
+    id: resultBoundaryId,
+    role: "result",
+    type: draft.resultType,
+    anchor: { x: templateBounds.width, y: 60 },
+  };
+  const templateContainer: ProjectContainer = {
+    id: containerId,
+    kind: {
+      kind: "template",
+      templateId: draft.templateId,
+      parameterType: draft.parameterType,
+      resultType: draft.resultType,
+      dependencies: [],
+    },
+    bounds: templateBounds,
+    boundaryPorts: [parameterBoundary, resultBoundary],
+  };
+
+  const templateElements: ProjectElement[] = [];
+  const templateWires: ProjectWire[] = [];
+  const pointOf = (point: Point) => ({ x: point.x, y: point.y });
+  const parameterPoint = {
+    x: templateBounds.x + parameterBoundary.anchor.x,
+    y: templateBounds.y + parameterBoundary.anchor.y,
+  };
+  const resultPoint = {
+    x: templateBounds.x + resultBoundary.anchor.x,
+    y: templateBounds.y + resultBoundary.anchor.y,
+  };
+  if (draft.parameterType === draft.resultType) {
+    const copyBounds: Bounds = {
+      x: templateBounds.x + 100,
+      y: templateBounds.y + 24,
+      width: 104,
+      height: 72,
+    };
+    const copy: ProjectElement = {
+      id: allocate("node_copy_"),
+      kind: "copy",
+      bounds: copyBounds,
+      properties: { type: draft.parameterType },
+      portAnchors: [
+        {
+          port: "input",
+          x: copyBounds.x,
+          y: copyBounds.y + copyBounds.height / 2,
+        },
+        {
+          port: "left",
+          x: copyBounds.x + copyBounds.width,
+          y: copyBounds.y + copyBounds.height / 3,
+        },
+        {
+          port: "right",
+          x: copyBounds.x + copyBounds.width,
+          y: copyBounds.y + (copyBounds.height * 2) / 3,
+        },
+      ],
+    };
+    const identityDropBounds: Bounds = {
+      x: templateBounds.x + 250,
+      y: templateBounds.y + 100,
+      width: 88,
+      height: 56,
+    };
+    const identityDrop: ProjectElement = {
+      id: allocate("node_drop_"),
+      kind: "drop",
+      bounds: identityDropBounds,
+      properties: { type: draft.parameterType },
+      portAnchors: [
+        {
+          port: "input",
+          x: identityDropBounds.x,
+          y: identityDropBounds.y + identityDropBounds.height / 2,
+        },
+      ],
+    };
+    const copyInput = pointOf(copy.portAnchors[0]!);
+    const copyLeft = pointOf(copy.portAnchors[1]!);
+    const copyRight = pointOf(copy.portAnchors[2]!);
+    const identityDropInput = pointOf(identityDrop.portAnchors[0]!);
+    templateElements.push(copy, identityDrop);
+    templateWires.push(
+      {
+        id: allocate("wire_"),
+        points: [parameterPoint, copyInput],
+        sourceHint: {
+          kind: "boundary_port",
+          containerId,
+          boundaryId: parameterBoundaryId,
+        },
+        targetHint: {
+          kind: "element_port",
+          elementId: copy.id,
+          port: "input",
+        },
+      },
+      {
+        id: allocate("wire_"),
+        points: [
+          copyLeft,
+          { x: templateBounds.x + 280, y: copyLeft.y },
+          { x: templateBounds.x + 280, y: resultPoint.y },
+          resultPoint,
+        ],
+        sourceHint: {
+          kind: "element_port",
+          elementId: copy.id,
+          port: "left",
+        },
+        targetHint: {
+          kind: "boundary_port",
+          containerId,
+          boundaryId: resultBoundaryId,
+        },
+      },
+      {
+        id: allocate("wire_"),
+        points: [
+          copyRight,
+          { x: templateBounds.x + 230, y: copyRight.y },
+          { x: templateBounds.x + 230, y: identityDropInput.y },
+          identityDropInput,
+        ],
+        sourceHint: {
+          kind: "element_port",
+          elementId: copy.id,
+          port: "right",
+        },
+        targetHint: {
+          kind: "element_port",
+          elementId: identityDrop.id,
+          port: "input",
+        },
+      },
+    );
+  } else {
+    const bodyDropId = allocate("node_drop_");
+    const bodyDropBounds: Bounds = {
+      x: templateBounds.x + 80,
+      y: templateBounds.y + 32,
+      width: 88,
+      height: 56,
+    };
+    const bodyDrop: ProjectElement = {
+      id: bodyDropId,
+      kind: "drop",
+      bounds: bodyDropBounds,
+      properties: { type: draft.parameterType },
+      portAnchors: [
+        {
+          port: "input",
+          x: bodyDropBounds.x,
+          y: bodyDropBounds.y + bodyDropBounds.height / 2,
+        },
+      ],
+    };
+    const literalBounds: Bounds = {
+      x: templateBounds.x + 220,
+      y: templateBounds.y + 32,
+      width: draft.resultType === "nat" ? 96 : 88,
+      height: 56,
+    };
+    const literal: ProjectElement =
+      draft.resultType === "nat"
+        ? {
+            id: allocate("node_nat_"),
+            kind: "nat_literal",
+            bounds: literalBounds,
+            properties: { value: "0" },
+            portAnchors: [
+              {
+                port: "value",
+                x: literalBounds.x + literalBounds.width,
+                y: literalBounds.y + literalBounds.height / 2,
+              },
+            ],
+          }
+        : {
+            id: allocate("node_unit_"),
+            kind: "unit_literal",
+            bounds: literalBounds,
+            properties: {},
+            portAnchors: [
+              {
+                port: "value",
+                x: literalBounds.x + literalBounds.width,
+                y: literalBounds.y + literalBounds.height / 2,
+              },
+            ],
+          };
+    templateElements.push(bodyDrop, literal);
+    templateWires.push(
+      {
+        id: allocate("wire_"),
+        points: [parameterPoint, pointOf(bodyDrop.portAnchors[0]!)],
+        sourceHint: {
+          kind: "boundary_port",
+          containerId,
+          boundaryId: parameterBoundaryId,
+        },
+        targetHint: {
+          kind: "element_port",
+          elementId: bodyDrop.id,
+          port: "input",
+        },
+      },
+      {
+        id: allocate("wire_"),
+        points: [pointOf(literal.portAnchors[0]!), resultPoint],
+        sourceHint: {
+          kind: "element_port",
+          elementId: literal.id,
+          port: "value",
+        },
+        targetHint: {
+          kind: "boundary_port",
+          containerId,
+          boundaryId: resultBoundaryId,
+        },
+      },
+    );
+  }
+
+  const updatedHost: ProjectContainer = {
+    ...host,
+    bounds: expandedHostBounds,
+    kind: {
+      ...host.kind,
+      dependencies: [...host.kind.dependencies, draft.templateId],
+    },
+  };
+  return {
+    container: templateContainer,
+    element: functionElement,
+    document: {
+      ...document,
+      geometry: {
+        ...document.geometry,
+        elements: [
+          ...document.geometry.elements,
+          functionElement,
+          hostDrop,
+          ...templateElements,
+        ],
+        containers: [
+          ...document.geometry.containers.map((container) =>
+            container.id === host.id ? updatedHost : container,
+          ),
+          templateContainer,
+        ],
+        wires: [
+          ...document.geometry.wires,
+          hostWire,
+          ...templateWires,
+        ],
+      },
+    },
+  };
 }
 
 export function addElement(
