@@ -21,7 +21,7 @@ export function ExecutionPanel({
         </p>
       )}
       {!running && !error && !execution && (
-        <p>Run the current Project JSON through the local reference engine.</p>
+        <p>Run the current Project JSON in the browser OCaml worker.</p>
       )}
       {execution?.status === "error" && (
         <div className="execution-error" role="alert">

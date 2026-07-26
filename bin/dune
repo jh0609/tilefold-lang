@@ -6,3 +6,10 @@
 (executable
  (name project_runner)
  (libraries tilefold yojson))
+
+(executable
+ (name browser_runner)
+ (modes js)
+ (libraries tilefold js_of_ocaml zarith_stubs_js)
+ (preprocess
+  (pps js_of_ocaml-ppx)))

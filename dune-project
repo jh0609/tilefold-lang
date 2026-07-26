@@ -21,4 +21,7 @@
  (depends
   (ocaml (>= 5.1))
   zarith
-  yojson))
+  yojson
+  js_of_ocaml
+  js_of_ocaml-ppx
+  zarith_stubs_js))

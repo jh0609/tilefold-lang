@@ -32,7 +32,8 @@ import type {
   WireEndpoint,
 } from "./model/portConnections";
 import {
-  executeProject,
+  createBrowserExecutionBackend,
+  type ExecutionBackend,
   type ExecutionResponse,
 } from "./model/executionApi";
 
@@ -83,6 +84,7 @@ export function App() {
   const [executionError, setExecutionError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const executionRequest = useRef(0);
+  const executionBackend = useRef<ExecutionBackend | null>(null);
   const [viewBox, setViewBox] = useState(savedViewBox(initialDocument.view));
   const referenceViewBox = savedViewBox(document.view);
 
@@ -101,7 +103,7 @@ export function App() {
   }, [referenceViewBox, viewBox]);
 
   function resetDocument(next: ProjectDocument) {
-    executionRequest.current += 1;
+    cancelExecution();
     setHistory(createEditorHistory(next));
     setSelection(null);
     setInspectorError(null);
@@ -111,13 +113,22 @@ export function App() {
     setRunning(false);
   }
 
+  function cancelExecution() {
+    executionRequest.current += 1;
+    executionBackend.current?.dispose();
+    executionBackend.current = null;
+    setRunning(false);
+  }
+
   async function runProject() {
     const request = executionRequest.current + 1;
     executionRequest.current = request;
     setRunning(true);
     setExecutionError(null);
     try {
-      const response = await executeProject(document);
+      executionBackend.current ??= createBrowserExecutionBackend();
+      const projectJson = exportProjectJson(document);
+      const response = await executionBackend.current.run(projectJson);
       if (executionRequest.current !== request) return;
       setExecution(response);
     } catch (error) {
@@ -139,6 +150,7 @@ export function App() {
     }
     setHistory(result.history);
     setInspectorError(null);
+    cancelExecution();
     setExecution(null);
     setExecutionError(null);
     return result.history === history ? null : result.history.present;
@@ -164,6 +176,7 @@ export function App() {
     setHistory(next);
     if (!selectionExists(next.present, selection)) setSelection(null);
     setInspectorError(null);
+    cancelExecution();
     setExecution(null);
     setExecutionError(null);
   }
@@ -174,6 +187,7 @@ export function App() {
     setHistory(next);
     if (!selectionExists(next.present, selection)) setSelection(null);
     setInspectorError(null);
+    cancelExecution();
     setExecution(null);
     setExecutionError(null);
   }
@@ -291,7 +305,8 @@ export function App() {
 
   useEffect(
     () => () => {
-      executionRequest.current += 1;
+      executionBackend.current?.dispose();
+      executionBackend.current = null;
     },
     [],
   );

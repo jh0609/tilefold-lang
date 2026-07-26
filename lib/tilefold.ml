@@ -7,6 +7,7 @@ module Nat = Nat
 module Program_package = Program_package
 module Program_package_serialization = Program_package_serialization
 module Project_document = Project_document
+module Project_execution = Project_execution
 module Rewrite_event = Rewrite_event
 module Runtime_value = Runtime_value
 module Surface_geometry = Surface_geometry

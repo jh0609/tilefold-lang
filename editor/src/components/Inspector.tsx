@@ -292,8 +292,7 @@ export function Inspector({
           </div>
           <p className="structure-pass">Editor structure check passed</p>
           <p className="limitation">
-            Semantic validation runs on demand through the local OCaml Run
-            service.
+            Semantic validation runs on demand in the browser OCaml worker.
           </p>
         </section>
       )}

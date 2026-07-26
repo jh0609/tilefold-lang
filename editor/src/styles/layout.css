@@ -101,6 +101,7 @@
   color: var(--text-muted);
   background: var(--bg-panel);
   font-size: 11px;
+  overflow-wrap: anywhere;
 }
 
 .execution-panel h2 {

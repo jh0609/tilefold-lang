@@ -13,7 +13,7 @@ export function StatusBar({
   return (
     <footer className="status-bar">
       <span className="status-ok">Editor structure check: passed</span>
-      <span>Semantic validation: local OCaml Run service</span>
+      <span>Semantic validation: browser OCaml worker</span>
       <span>
         {document.format} · v{document.version}
       </span>
