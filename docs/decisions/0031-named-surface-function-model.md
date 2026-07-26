@@ -52,11 +52,14 @@ operations, decoding, and lowering were intentionally deferred.
 ## Follow-up: minimal executable slice
 
 A minimal lowering slice accepts only nullary entry functions and at most one
-`Unit` or `Nat` parameter per callee. A unary parameter must be used exactly
-once. Calls lower to capture-free `Function` and `Apply` nodes; nullary Core
-templates receive and explicitly drop a synthetic Unit parameter.
+`Unit` or `Nat` parameter per callee. Calls lower to capture-free `Function` and
+`Apply` nodes; nullary Core templates receive and explicitly drop a synthetic
+Unit parameter. A unary parameter used zero times now receives an explicit
+Core `Drop`, while one use is connected directly.
 
 This preserves the original resource decision: the first executable slice does
 not pretend multi-use values are free, and it does not choose a `Copy` tree
-shape before the deterministic resource-usage pass is specified. General
-multi-argument lowering remains deferred.
+shape before the deterministic resource-usage pass is specified. Multiple uses
+cannot occur in the currently lowerable unary expression subset; they require
+multi-argument call lowering first. General multi-argument lowering and
+balanced `Copy` insertion therefore remain deferred together.

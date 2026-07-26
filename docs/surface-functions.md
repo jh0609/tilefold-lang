@@ -97,12 +97,15 @@ subset to the existing Core and returns a validated `Program_package.t`.
 - a non-entry function may have one `Unit` or `Nat` parameter;
 - a Surface call becomes a capture-free Core `Function` followed by `Apply`;
 - generated nodes, edges, dependencies, and rewrite order are deterministic;
-- a unary parameter must currently be consumed exactly once.
+- a unary parameter consumed zero times gets an explicit Core `Drop`;
+- a unary parameter consumed once is connected directly.
 
-The last restriction is intentional. Zero or multiple uses require the
-separate resource-usage pass that inserts `Drop` or a balanced `Copy` tree.
-Until that pass exists, lowering reports `Unsupported_parameter_use_count`
-instead of silently changing Core resource semantics.
+Multiple uses require a balanced `Copy` tree. The current executable Surface
+subset has only unary calls, so it cannot yet produce a valid expression with
+multiple uses: such an expression first needs a multi-argument call to lower.
+Until deterministic currying for those calls is implemented, lowering reports
+`Unsupported_parameter_use_count` rather than inventing an untestable Copy
+layout.
 
 Functions with multiple named parameters remain valid Surface values and
 serialize canonically, but this initial lowering slice rejects them explicitly.
@@ -112,7 +115,7 @@ serialize canonically, but this initial lowering slice rejects them explicitly.
 This checkpoint does not define:
 
 - local `let` bindings;
-- automatic `Copy` or `Drop` for Surface parameters;
+- automatic `Copy` for multiply-used Surface parameters;
 - lexical capture inference;
 - pattern matching or user-defined data types;
 - general multi-argument Surface-to-Core lowering;

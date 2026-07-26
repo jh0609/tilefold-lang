@@ -502,6 +502,7 @@ let generated_edge_id value =
 let parameter_node_id = generated_node_id "__surface_parameter"
 let result_node_id = generated_node_id "__surface_result"
 let unit_drop_node_id = generated_node_id "__surface_unit_drop"
+let parameter_drop_node_id = generated_node_id "__surface_parameter_drop"
 
 let port_ref node_id port_key : CG.port_ref =
   { node_id; port_key }
@@ -691,7 +692,14 @@ let lower_function_decl functions built function_decl =
       order_rev = [];
     }
   in
-  let initial, synthetic_drop =
+  let parameter_uses =
+    match function_decl.parameters with
+    | [] -> 0
+    | [ parameter ] ->
+        parameter_use_count parameter.name function_decl.body
+    | _ -> assert false
+  in
+  let initial, trailing_drop =
     match function_decl.parameters with
     | [] ->
         let drop_node : CG.node =
@@ -702,6 +710,16 @@ let lower_function_decl functions built function_decl =
           |> add_edge (output parameter_node_id) (input unit_drop_node_id)
         in
         (state, Some unit_drop_node_id)
+    | [ _ ] when parameter_uses = 0 ->
+        let drop_node : CG.node =
+          { id = parameter_drop_node_id; kind = CG.Drop parameter_type }
+        in
+        let state =
+          { initial with nodes_rev = drop_node :: initial.nodes_rev }
+          |> add_edge (output parameter_node_id)
+               (input parameter_drop_node_id)
+        in
+        (state, Some parameter_drop_node_id)
     | [ _ ] -> (initial, None)
     | _ -> assert false
   in
@@ -714,7 +732,7 @@ let lower_function_decl functions built function_decl =
       state
   in
   let state =
-    match synthetic_drop with
+    match trailing_drop with
     | Some drop_id -> { state with order_rev = drop_id :: state.order_rev }
     | None -> state
   in
@@ -832,7 +850,7 @@ let lowering_preflight_errors ~entry_function_id functions =
               let actual =
                 parameter_use_count parameter.name function_decl.body
               in
-              if actual = 1 then []
+              if actual <= 1 then []
               else
                 [
                   Unsupported_parameter_use_count
@@ -948,7 +966,7 @@ let render_lowering_error = function
       ^ render_name binding ^ " has type "
       ^ Core_type.to_string typ
   | Unsupported_parameter_use_count { function_id; parameter; actual } ->
-      "Surface lowering currently requires a unary parameter to be used exactly once: "
+      "Surface lowering currently supports a unary parameter used at most once: "
       ^ render_function_id function_id ^ "."
       ^ render_name parameter ^ " is used "
       ^ string_of_int actual ^ " times"

@@ -370,7 +370,7 @@ let test_lowering_rejects_multi_argument_functions () =
           errors)
   | Ok _ -> failwith "multi-argument Surface lowering unexpectedly succeeded"
 
-let test_lowering_defers_automatic_drop () =
+let test_lowering_inserts_automatic_drop () =
   let constant : S.function_decl =
     {
       id = function_id "constant";
@@ -387,7 +387,64 @@ let test_lowering_defers_automatic_drop () =
           [ argument "unused" (S.Nat_literal Nat.one) ];
     }
   in
-  let program = validate_or_fail [ constant; entry ] in
+  let package =
+    validate_or_fail [ constant; entry ]
+    |> lower_or_fail
+  in
+  (match P.run package with
+  | P.Completed { value; _ } -> (
+      match Runtime_value.payload value with
+      | Runtime_value.Nat value -> assert (Nat.equal value Nat.zero)
+      | _ -> failwith "constant Surface program returned a non-Nat value")
+  | _ -> failwith "constant Surface program did not complete");
+  let constant_template =
+    P.templates package
+    |> List.find (fun template ->
+           CG.Function_template_id.equal
+             (CG.Function_template.id template)
+             (match CG.Function_template_id.of_string "constant" with
+             | Ok id -> id
+             | Error message -> failwith message))
+  in
+  let body = CG.Function_template.body constant_template in
+  assert (
+    CG.Validated_graph.default_node_order body
+    |> List.map CG.Node_id.to_string
+    = [ "__surface_parameter_drop" ]);
+  assert (
+    CG.Validated_graph.nodes body
+    |> List.exists (fun (node : CG.node) ->
+           CG.Node_id.to_string node.id = "__surface_parameter_drop"
+           &&
+           match node.kind with
+           | CG.Drop Core_type.Nat -> true
+           | _ -> false))
+
+let test_lowering_counts_multiple_parameter_uses () =
+  let duplicate : S.function_decl =
+    {
+      id = function_id "duplicate";
+      parameters = [ nat_parameter "value" ];
+      result = nat_result "answer";
+      body =
+        call "first"
+          [
+            argument "right" (S.Parameter (name "value"));
+            argument "left" (S.Parameter (name "value"));
+          ];
+    }
+  in
+  let entry : S.function_decl =
+    {
+      lowering_entry_function with
+      body =
+        call "duplicate"
+          [ argument "value" (S.Nat_literal Nat.one) ];
+    }
+  in
+  let program =
+    validate_or_fail [ entry; duplicate; first_function ]
+  in
   match
     S.lower_to_program_package
       ~entry_function_id:(function_id "lower-entry")
@@ -398,13 +455,13 @@ let test_lowering_defers_automatic_drop () =
         List.exists
           (function
             | S.Unsupported_parameter_use_count
-                { function_id = id; parameter; actual = 0 } ->
-                S.Function_id.equal id (function_id "constant")
-                && S.Name.equal parameter (name "unused")
+                { function_id = id; parameter; actual = 2 } ->
+                S.Function_id.equal id (function_id "duplicate")
+                && S.Name.equal parameter (name "value")
             | _ -> false)
           errors)
   | Ok _ ->
-      failwith "unused parameter lowering unexpectedly inserted an implicit Drop"
+      failwith "multiple parameter uses unexpectedly lowered without Copy"
 
 let () =
   test_names_must_not_be_empty ();
@@ -419,5 +476,6 @@ let () =
   test_unit_surface_lowering_slice_runs ();
   test_lowering_is_canonical_across_function_order ();
   test_lowering_rejects_multi_argument_functions ();
-  test_lowering_defers_automatic_drop ();
+  test_lowering_inserts_automatic_drop ();
+  test_lowering_counts_multiple_parameter_uses ();
   print_endline "surface program tests passed"
