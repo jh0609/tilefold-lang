@@ -48,6 +48,23 @@ resumed. Cooperative cancellation, automatic timeouts, and pause/step execution
 are not implemented; large projects remain subject to browser time and memory
 limits.
 
+Completed runs with rewrite events provide a read-only **Trace inspector**.
+The first event is selected initially; Previous, Next, and the event list move
+the selection without changing Project JSON, editor selection, or undo/redo
+history. The selected rule and subject Core node ID are shown in the panel.
+
+Canvas highlighting uses exact stable-ID equality only: a subject highlights an
+element when the current Project document contains an element with precisely
+that ID. Generated entry nodes such as `entry-function` and `entry-apply`, and
+other runtime-only subjects, use a neutral “source element not present”
+fallback. The editor never guesses provenance from prefixes, rule kinds,
+geometry, labels, or trace order. Semantic edits invalidate the completed trace;
+selection and camera-only changes preserve it.
+
+Trace inspection is not step execution or a new trace protocol. Streaming,
+partial traces, autoplay, filtering, search, breakpoints, and resume remain
+unsupported, and the OCaml Engine and Worker protocol are unchanged.
+
 The browser artifact is checked in because static deployment environments may
 provide Node without OCaml. Do not edit `public/tilefold_runner.js` or its
 metadata by hand. Regenerate and verify it from the repository root OCaml

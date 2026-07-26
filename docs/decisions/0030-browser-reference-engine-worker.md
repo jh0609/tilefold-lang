@@ -33,6 +33,14 @@ the Worker; the next Run creates a new generation. Each active request has an
 promise exactly once and late messages cannot become current results.
 Cancellation is a UI lifecycle event, not an Engine result or trace event.
 
+Completed diagnostic traces are exposed through a read-only Trace Inspector.
+Its selected event index and canvas highlight are ephemeral UI state. A trace
+subject highlights a project element only when the projected Core node ID is
+an exact match for that element's stable ID. Generated entry nodes and other
+runtime-only subjects remain visible in the inspector with a neutral unmapped
+state; the editor does not infer provenance from rule names, prefixes, geometry,
+or ordering.
+
 The generated JavaScript is checked in for Node-only static deployment
 environments. A source fingerprint covers the OCaml library and browser
 entrypoint inputs. Production builds fail when the checked-in artifact is
@@ -48,6 +56,8 @@ browser results.
   cannot resume from the interrupted rewrite.
 - Semantic document changes cancel active work and invalidate completed
   results. Selection, focus, and camera-only changes do neither.
+- Trace navigation does not mutate Project JSON, editor selection, or history.
+  It is inspection of a completed diagnostic projection, not step execution.
 - Arbitrary-precision Nat behavior remains the Zarith behavior of the OCaml
   reference implementation.
 - The checked-in generated artifact must not be edited manually.

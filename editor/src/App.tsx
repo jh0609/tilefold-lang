@@ -39,6 +39,11 @@ import {
   isExecutionCanceledError,
   type ExecutionBackend,
 } from "./model/executionApi";
+import {
+  exactTraceElementId,
+  initialTraceIndex,
+  traceEventAt,
+} from "./model/traceInspector";
 
 const initialDocument = parseProjectJson(exampleJson);
 
@@ -105,6 +110,17 @@ export function App() {
     const reference = parseViewBox(referenceViewBox);
     return camera && reference ? cameraZoomPercent(camera, reference) : 100;
   }, [referenceViewBox, viewBox]);
+  const selectedTraceEvent =
+    executionState.status === "completed"
+      ? traceEventAt(
+          executionState.response,
+          executionState.selectedTraceIndex,
+        )
+      : null;
+  const traceHighlightedElementId = useMemo(
+    () => exactTraceElementId(document, selectedTraceEvent),
+    [document, selectedTraceEvent],
+  );
 
   function resetDocument(next: ProjectDocument) {
     invalidateExecution();
@@ -143,7 +159,11 @@ export function App() {
         signal: controller.signal,
       });
       if (executionRequest.current !== request) return;
-      setExecutionState({ status: "completed", response });
+      setExecutionState({
+        status: "completed",
+        response,
+        selectedTraceIndex: initialTraceIndex(response),
+      });
     } catch (error) {
       if (executionRequest.current !== request) return;
       if (isExecutionCanceledError(error)) {
@@ -171,6 +191,21 @@ export function App() {
     setInspectorError(null);
     invalidateExecution();
     return result.history.present;
+  }
+
+  function selectTraceEvent(index: number) {
+    setExecutionState((current) => {
+      if (
+        current.status !== "completed" ||
+        current.response.status !== "completed" ||
+        !Number.isInteger(index) ||
+        index < 0 ||
+        index >= current.response.trace.length
+      ) {
+        return current;
+      }
+      return { ...current, selectedTraceIndex: index };
+    });
   }
 
   function selectionExists(
@@ -355,6 +390,7 @@ export function App() {
         <Canvas
           document={document}
           selection={selection}
+          traceHighlightedElementId={traceHighlightedElementId}
           viewBox={viewBox}
           referenceViewBox={referenceViewBox}
           zoomPercent={zoomPercent}
@@ -423,6 +459,8 @@ export function App() {
         />
         <ExecutionPanel
           state={executionState}
+          traceSourceElementId={traceHighlightedElementId}
+          onTraceSelect={selectTraceEvent}
         />
       </div>
       <StatusBar

@@ -40,6 +40,7 @@ interface DragState {
 interface CanvasProps {
   document: ProjectDocument;
   selection: Selection | null;
+  traceHighlightedElementId: string | null;
   viewBox: string;
   referenceViewBox: string;
   zoomPercent: number;
@@ -127,6 +128,7 @@ function ContainerShape({
 export function Canvas({
   document,
   selection,
+  traceHighlightedElementId,
   viewBox,
   referenceViewBox,
   zoomPercent,
@@ -695,6 +697,7 @@ export function Canvas({
             selected={
               selection?.type === "element" && selection.id === element.id
             }
+            traceHighlighted={traceHighlightedElementId === element.id}
             onSelect={() => {
               selectUnlessSuppressed({ type: "element", id: element.id });
             }}

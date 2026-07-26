@@ -190,14 +190,24 @@
   vector-effect: non-scaling-stroke;
 }
 
-.element-node:hover rect {
+.element-node:hover > .element-body {
   stroke-width: 2.7;
   filter: drop-shadow(0 3px 4px rgba(16, 24, 40, 0.14));
 }
 
-.element-node.selected rect {
+.element-node.selected > .element-body {
   stroke: var(--select);
   stroke-width: 4;
+}
+
+.element-node .trace-highlight-ring {
+  fill: none;
+  stroke: #b54708;
+  stroke-width: 3;
+  stroke-dasharray: 5 3;
+  filter: drop-shadow(0 0 4px rgba(181, 71, 8, 0.42));
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
 }
 
 .element-node:focus-visible {
@@ -210,26 +220,26 @@
   stroke-dasharray: 6 4;
 }
 
-.kind-nat_literal rect {
+.kind-nat_literal > .element-body {
   fill: #eaf8f3;
   stroke: var(--nat);
 }
 
-.kind-succ rect,
-.kind-nat_rec rect {
+.kind-succ > .element-body,
+.kind-nat_rec > .element-body {
   fill: #edf5fd;
   stroke: var(--operation);
 }
 
-.kind-unit_literal rect,
-.kind-drop rect,
-.kind-copy rect {
+.kind-unit_literal > .element-body,
+.kind-drop > .element-body,
+.kind-copy > .element-body {
   fill: #f2f4f7;
   stroke: var(--structure);
 }
 
-.kind-function rect,
-.kind-apply rect {
+.kind-function > .element-body,
+.kind-apply > .element-body {
   fill: #f2edfb;
   stroke: var(--call);
 }

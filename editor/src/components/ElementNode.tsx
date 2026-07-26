@@ -5,6 +5,7 @@ import type { ConnectablePort } from "../model/portConnections";
 interface ElementNodeProps {
   element: ProjectElement;
   selected: boolean;
+  traceHighlighted: boolean;
   onSelect: () => void;
   onPointerDown: (
     event: ReactPointerEvent<SVGGElement>,
@@ -52,6 +53,7 @@ function portHitCenter(
 export function ElementNode({
   element,
   selected,
+  traceHighlighted,
   onSelect,
   onPointerDown,
   ports,
@@ -64,8 +66,9 @@ export function ElementNode({
     element.kind === "nat_literal" ? element.properties.value : undefined;
   return (
     <g
-      className={`element-node kind-${element.kind}${compact ? " compact" : ""}${selected ? " selected" : ""}`}
+      className={`element-node kind-${element.kind}${compact ? " compact" : ""}${selected ? " selected" : ""}${traceHighlighted ? " trace-highlighted" : ""}`}
       data-testid={`element-${element.id}`}
+      data-trace-highlighted={traceHighlighted ? "true" : undefined}
       role="button"
       aria-label={`${KIND_LABELS[element.kind]} element ${element.id}`}
       tabIndex={0}
@@ -89,6 +92,18 @@ export function ElementNode({
         height={height}
         rx={8}
       />
+      {traceHighlighted && (
+        <rect
+          className="trace-highlight-ring"
+          data-testid={`trace-highlight-${element.id}`}
+          x={x - 4}
+          y={y - 4}
+          width={width + 8}
+          height={height + 8}
+          rx={11}
+          aria-hidden="true"
+        />
+      )}
       <text
         className="element-kind"
         x={x + (compact ? 3 : 12)}

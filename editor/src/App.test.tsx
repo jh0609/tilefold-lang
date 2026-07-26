@@ -11,6 +11,15 @@ interface WorkerMockShape {
   terminate: ReturnType<typeof vi.fn>;
 }
 
+function readBlobText(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(blob);
+  });
+}
+
 beforeAll(() => {
   Object.defineProperty(SVGElement.prototype, "setPointerCapture", {
     configurable: true,
@@ -89,9 +98,191 @@ describe("Tilefold editor UI", () => {
       "Result: Nat(3) · 1 rewrites",
     );
     expect(screen.getByRole("list", { name: "Rewrite trace" })).toHaveTextContent(
-      "#0 Succ node_succ",
+      "#0Succ",
     );
+    expect(screen.getByText("Event 1 of 1")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Previous trace event" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Next trace event" }),
+    ).toBeDisabled();
+    expect(screen.getByTestId("trace-highlight-node_succ")).toBeInTheDocument();
     expect(postMessage).toHaveBeenCalledOnce();
+  });
+
+  it("navigates completed trace events and highlights exact element IDs only", async () => {
+    const user = userEvent.setup();
+    class WorkerMock {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+      onmessageerror: ((event: MessageEvent) => void) | null = null;
+      terminate = vi.fn();
+      postMessage = (message: { requestId: number }) =>
+        queueMicrotask(() =>
+          this.onmessage?.({
+            data: {
+              requestId: message.requestId,
+              output: JSON.stringify({
+                status: "completed",
+                result: "Nat(3)",
+                rewriteCount: 5,
+                trace: [
+                  {
+                    index: 0,
+                    rule: "Function",
+                    subject: "entry-function",
+                  },
+                  {
+                    index: 1,
+                    rule: "ApplyEnter",
+                    subject: "entry-apply",
+                  },
+                  { index: 2, rule: "Drop", subject: "drop_unit" },
+                  { index: 3, rule: "Succ", subject: "node_succ" },
+                  {
+                    index: 4,
+                    rule: "ApplyReturn",
+                    subject: "entry-apply",
+                  },
+                ],
+              }),
+            },
+          } as MessageEvent),
+        );
+    }
+    vi.stubGlobal("Worker", WorkerMock);
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "Run" }));
+
+    expect(await screen.findByText("Event 1 of 5")).toBeInTheDocument();
+    expect(screen.getByText("entry-function")).toBeInTheDocument();
+    expect(
+      screen.getByText("Source element not present in this document"),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId(/^trace-highlight-/)).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Previous trace event" }),
+    ).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Event 3: Drop" }));
+    expect(screen.getByText("Event 3 of 5")).toBeInTheDocument();
+    expect(screen.getByText("Element drop_unit")).toBeInTheDocument();
+    expect(screen.getByTestId("trace-highlight-drop_unit")).toBeInTheDocument();
+    expect(screen.getByText("No selection")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Event 3: Drop" }),
+    ).toHaveAttribute("aria-current", "step");
+
+    await user.click(screen.getByTestId("element-node_nat_2"));
+    expect(
+      screen.getByRole("heading", { name: "node_nat_2" }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("trace-highlight-drop_unit")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Next trace event" }));
+    expect(screen.getByText("Event 4 of 5")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("trace-highlight-drop_unit"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("trace-highlight-node_succ")).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Previous trace event" }),
+    );
+    expect(screen.getByTestId("trace-highlight-drop_unit")).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: "Event 5: ApplyReturn" }),
+    );
+    expect(screen.getByText("Event 5 of 5")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Next trace event" }),
+    ).toBeDisabled();
+    expect(screen.getByText("0 undo · 0 redo")).toBeInTheDocument();
+  });
+
+  it("handles an empty completed trace without navigation or highlight", async () => {
+    const user = userEvent.setup();
+    class WorkerMock {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+      onmessageerror: ((event: MessageEvent) => void) | null = null;
+      terminate = vi.fn();
+      postMessage = (message: { requestId: number }) =>
+        queueMicrotask(() =>
+          this.onmessage?.({
+            data: {
+              requestId: message.requestId,
+              output: JSON.stringify({
+                status: "completed",
+                result: "Nat(0)",
+                rewriteCount: 0,
+                trace: [],
+              }),
+            },
+          } as MessageEvent),
+        );
+    }
+    vi.stubGlobal("Worker", WorkerMock);
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "Run" }));
+    expect(await screen.findByText("No rewrite events.")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Next trace event" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId(/^trace-highlight-/)).not.toBeInTheDocument();
+  });
+
+  it("keeps exported Project JSON and history unchanged while navigating trace", async () => {
+    const user = userEvent.setup();
+    class WorkerMock {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+      onmessageerror: ((event: MessageEvent) => void) | null = null;
+      terminate = vi.fn();
+      postMessage = (message: { requestId: number }) =>
+        queueMicrotask(() =>
+          this.onmessage?.({
+            data: {
+              requestId: message.requestId,
+              output: JSON.stringify({
+                status: "completed",
+                result: "Nat(3)",
+                rewriteCount: 2,
+                trace: [
+                  { index: 0, rule: "Drop", subject: "drop_unit" },
+                  { index: 1, rule: "Succ", subject: "node_succ" },
+                ],
+              }),
+            },
+          } as MessageEvent),
+        );
+    }
+    const blobs: Blob[] = [];
+    const NativeURL = URL;
+    class TestURL extends NativeURL {
+      static createObjectURL(blob: Blob) {
+        blobs.push(blob);
+        return "blob:trace-invariant";
+      }
+      static revokeObjectURL() {}
+    }
+    vi.stubGlobal("Worker", WorkerMock);
+    vi.stubGlobal("URL", TestURL);
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Export JSON" }));
+    await user.click(screen.getByRole("button", { name: "Run" }));
+    await user.click(screen.getByRole("button", { name: "Next trace event" }));
+    await user.click(screen.getByRole("button", { name: "Export JSON" }));
+
+    expect(blobs).toHaveLength(2);
+    expect(await readBlobText(blobs[1])).toBe(await readBlobText(blobs[0]));
+    expect(screen.getByText("0 undo · 0 redo")).toBeInTheDocument();
+    click.mockRestore();
   });
 
   it("cancels execution, ignores a late result, and reruns with a new worker", async () => {
@@ -140,6 +331,7 @@ describe("Tilefold editor UI", () => {
       },
     } as MessageEvent);
     expect(screen.queryByText("Nat(99)")).not.toBeInTheDocument();
+    expect(screen.queryByText("Trace inspector")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Run" }));
     expect(workers).toHaveLength(2);
@@ -228,8 +420,10 @@ describe("Tilefold editor UI", () => {
               output: JSON.stringify({
                 status: "completed",
                 result: "Nat(3)",
-                rewriteCount: 0,
-                trace: [],
+                rewriteCount: 1,
+                trace: [
+                  { index: 0, rule: "Succ", subject: "node_succ" },
+                ],
               }),
             },
           } as MessageEvent),
@@ -245,7 +439,99 @@ describe("Tilefold editor UI", () => {
     await user.click(screen.getByRole("button", { name: "Fit view" }));
     await user.click(screen.getByRole("button", { name: "Reset view" }));
     expect(screen.getByText(/Result:/)).toHaveTextContent("Nat(3)");
+    expect(screen.getByText("Event 1 of 1")).toBeInTheDocument();
+    expect(screen.getByTestId("trace-highlight-node_succ")).toBeInTheDocument();
     expect(screen.getByText("0 undo · 0 redo")).toBeInTheDocument();
+  });
+
+  it("removes trace inspection and highlight after a semantic edit", async () => {
+    const user = userEvent.setup();
+    class WorkerMock {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+      onmessageerror: ((event: MessageEvent) => void) | null = null;
+      terminate = vi.fn();
+      postMessage = (message: { requestId: number }) =>
+        queueMicrotask(() =>
+          this.onmessage?.({
+            data: {
+              requestId: message.requestId,
+              output: JSON.stringify({
+                status: "completed",
+                result: "Nat(3)",
+                rewriteCount: 1,
+                trace: [
+                  { index: 0, rule: "Succ", subject: "node_succ" },
+                ],
+              }),
+            },
+          } as MessageEvent),
+        );
+    }
+    vi.stubGlobal("Worker", WorkerMock);
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "Run" }));
+    expect(
+      await screen.findByTestId("trace-highlight-node_succ"),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByTestId("element-node_nat_2"));
+    const input = screen.getByLabelText("Nat value");
+    await user.clear(input);
+    await user.type(input, "4");
+    expect(screen.queryByText("Trace inspector")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("trace-highlight-node_succ"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Result:/)).not.toBeInTheDocument();
+    await user.keyboard("{Control>}z{/Control}");
+    await user.keyboard("{Control>}y{/Control}");
+    expect(screen.queryByText("Trace inspector")).not.toBeInTheDocument();
+  });
+
+  it("clears an old trace on rerun and keeps it cleared on worker failure", async () => {
+    const user = userEvent.setup();
+    let worker:
+      | (WorkerMockShape & {
+          postMessage: ReturnType<typeof vi.fn>;
+        })
+      | undefined;
+    class WorkerMock {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+      onmessageerror: ((event: MessageEvent) => void) | null = null;
+      postMessage = vi.fn();
+      terminate = vi.fn();
+      constructor() {
+        worker = this;
+      }
+    }
+    vi.stubGlobal("Worker", WorkerMock);
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "Run" }));
+    worker?.onmessage?.({
+      data: {
+        requestId: 1,
+        output: JSON.stringify({
+          status: "completed",
+          result: "Nat(3)",
+          rewriteCount: 1,
+          trace: [{ index: 0, rule: "Succ", subject: "node_succ" }],
+        }),
+      },
+    } as MessageEvent);
+    expect(await screen.findByText("Trace inspector")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Run" }));
+    expect(screen.queryByText("Trace inspector")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("trace-highlight-node_succ"),
+    ).not.toBeInTheDocument();
+    worker?.onerror?.({ message: "trace rerun failed" } as ErrorEvent);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "trace rerun failed",
+    );
+    expect(screen.queryByText("Trace inspector")).not.toBeInTheDocument();
   });
 
   it("ignores a worker response after the document changes", async () => {
