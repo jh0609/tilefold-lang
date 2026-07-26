@@ -182,6 +182,22 @@ function containerAt(value: unknown, path: string): void {
     required(kind, "templateId", `${path}.kind`),
     `${path}.kind.templateId`,
   );
+  if (kindName === "template") {
+    coreTypeAt(
+      required(kind, "parameterType", `${path}.kind`),
+      `${path}.kind.parameterType`,
+    );
+  }
+  coreTypeAt(
+    required(kind, "resultType", `${path}.kind`),
+    `${path}.kind.resultType`,
+  );
+  arrayAt(
+    required(kind, "dependencies", `${path}.kind`),
+    `${path}.kind.dependencies`,
+  ).forEach((dependency, index) =>
+    stringAt(dependency, `${path}.kind.dependencies[${index}]`),
+  );
   const boundaries = arrayAt(
     required(container, "boundaryPorts", path),
     `${path}.boundaryPorts`,
@@ -190,6 +206,23 @@ function containerAt(value: unknown, path: string): void {
     const boundaryPath = `${path}.boundaryPorts[${index}]`;
     const record = objectAt(boundary, boundaryPath);
     idAt(record, boundaryPath);
+    const role = stringAt(
+      required(record, "role", boundaryPath),
+      `${boundaryPath}.role`,
+    );
+    if (role !== "parameter" && role !== "result" && role !== "capture") {
+      throw new StructureError(`${boundaryPath}.role`, "unknown boundary role");
+    }
+    if (role === "capture") {
+      stringAt(
+        required(record, "captureKey", boundaryPath),
+        `${boundaryPath}.captureKey`,
+      );
+    }
+    coreTypeAt(
+      required(record, "type", boundaryPath),
+      `${boundaryPath}.type`,
+    );
     pointAt(
       required(record, "anchor", boundaryPath),
       `${boundaryPath}.anchor`,
