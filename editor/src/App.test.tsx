@@ -58,6 +58,30 @@ describe("Tilefold editor UI", () => {
     expect(screen.getByText(/3 elements/)).toBeInTheDocument();
   });
 
+  it("authors a total Function template and undoes it as one action", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Add Function" }));
+    await user.selectOptions(screen.getByLabelText("Parameter"), "nat");
+    await user.selectOptions(screen.getByLabelText("Result"), "unit");
+    await user.click(
+      screen.getByRole("button", { name: "Create total function" }),
+    );
+
+    expect(screen.getByText(/2 containers/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "node_function_1" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("template_1")).toBeInTheDocument();
+    expect(screen.getByText(/safely connected to Drop/)).toBeInTheDocument();
+    expect(screen.getByText(/1 undo · 0 redo/)).toBeInTheDocument();
+
+    await user.click(screen.getByTitle("Undo Add Function template_1"));
+    expect(screen.getByText(/1 containers/)).toBeInTheDocument();
+    expect(screen.queryByTestId("element-node_function_1")).not.toBeInTheDocument();
+  });
+
   it("shows the OCaml execution result and minimal rewrite trace", async () => {
     const user = userEvent.setup();
     const postMessage = vi.fn(

@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { exportProjectJson, parseProjectJson } from "../model/importProject";
 import {
   addElement,
+  addFunctionTemplate,
   addWire,
   moveElement,
   reconnectWireEndpoint,
@@ -229,4 +230,27 @@ await writeFile(
   exportProjectJson(paletteDocument),
   "utf8",
 );
+
+for (const [name, parameterType, resultType] of [
+  ["unit-unit", "unit", "unit"],
+  ["unit-nat", "unit", "nat"],
+  ["nat-unit", "nat", "unit"],
+  ["nat-nat", "nat", "nat"],
+] as const) {
+  const functionResult = addFunctionTemplate(
+    parseProjectJson(await readFile(source, "utf8")),
+    "entry",
+    {
+      templateId: `fixture_${name.replace("-", "_")}`,
+      parameterType,
+      resultType,
+    },
+  );
+  if ("error" in functionResult) throw new Error(functionResult.error);
+  await writeFile(
+    resolve(`.tmp/exported-function-${name}.tilefold.json`),
+    exportProjectJson(functionResult.document),
+    "utf8",
+  );
+}
 console.log(target);

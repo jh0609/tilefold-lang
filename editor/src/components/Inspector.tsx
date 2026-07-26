@@ -211,6 +211,25 @@ function ElementInspector({
           />
         </>
       )}
+      {element.kind === "function" && (
+        <section className="readout">
+          <h3>Function template</h3>
+          <code>{element.properties.templateId}</code>
+          <span>
+            {coreTypeKey(element.properties.parameterType)} →{" "}
+            {coreTypeKey(element.properties.resultType)}
+          </span>
+          <span>
+            {element.properties.captures.length === 0
+              ? "No captures"
+              : `${element.properties.captures.length} capture(s)`}
+          </span>
+          <p className="limitation">
+            The signature is owned by the template container and is read only
+            on this closure.
+          </p>
+        </section>
+      )}
       <section className="readout">
         <h3>Port anchors</h3>
         {element.portAnchors.map((anchor) => (
@@ -329,6 +348,18 @@ export function Inspector({
             <h2>{container.id}</h2>
           </div>
           <p>{container.kind.kind} container</p>
+          <code>template {container.kind.templateId}</code>
+          {container.kind.kind === "template" && (
+            <span>
+              {coreTypeKey(container.kind.parameterType)} →{" "}
+              {coreTypeKey(container.kind.resultType)}
+            </span>
+          )}
+          <span>
+            {container.kind.dependencies.length === 0
+              ? "No template dependencies"
+              : `Dependencies: ${container.kind.dependencies.join(", ")}`}
+          </span>
           <code>
             {container.bounds.x}, {container.bounds.y} ·{" "}
             {container.bounds.width}×{container.bounds.height}
