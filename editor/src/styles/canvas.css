@@ -61,6 +61,11 @@
   vector-effect: non-scaling-stroke;
 }
 
+.boundary-port.selected {
+  stroke: var(--select);
+  stroke-width: 4;
+}
+
 .role-result {
   fill: #ffead5;
   stroke: var(--result);
@@ -172,6 +177,11 @@
   stroke: #fff;
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
+}
+
+.junction-item.selected .junction {
+  stroke: var(--select);
+  stroke-width: 4;
 }
 
 .element-node {

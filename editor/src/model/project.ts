@@ -150,6 +150,7 @@ export interface ProjectDocument {
 
 export type Selection =
   | { type: "element"; id: StableId }
+  | { type: "boundary"; id: StableId; containerId: StableId }
   | { type: "container"; id: StableId }
   | { type: "wire"; id: StableId }
   | { type: "junction"; id: StableId };

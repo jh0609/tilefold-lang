@@ -82,10 +82,12 @@ type ConnectionDrag =
 function ContainerShape({
   container,
   selected,
+  selectedBoundaryId,
   onSelect,
 }: {
   container: ProjectContainer;
   selected: boolean;
+  selectedBoundaryId: string | null;
   onSelect: () => void;
 }) {
   const { x, y, width, height } = container.bounds;
@@ -113,10 +115,11 @@ function ContainerShape({
       {container.boundaryPorts.map((boundary) => (
         <circle
           key={boundary.id}
-          className={`boundary-port role-${boundary.role}`}
+          className={`boundary-port role-${boundary.role}${selectedBoundaryId === boundary.id ? " selected" : ""}`}
           cx={x + boundary.anchor.x}
           cy={y + boundary.anchor.y}
           r={6}
+          aria-hidden="true"
         >
           <title>{`${boundary.role} boundary ${boundary.id}`}</title>
         </circle>
@@ -583,6 +586,12 @@ export function Canvas({
             selected={
               selection?.type === "container" && selection.id === container.id
             }
+            selectedBoundaryId={
+              selection?.type === "boundary" &&
+              selection.containerId === container.id
+                ? selection.id
+                : null
+            }
             onSelect={() =>
               selectUnlessSuppressed({ type: "container", id: container.id })
             }
@@ -656,6 +665,12 @@ export function Canvas({
           {renderedDocument.geometry.junctions.map((junction) => (
             <g
               key={junction.id}
+              className={
+                selection?.type === "junction" &&
+                selection.id === junction.id
+                  ? "junction-item selected"
+                  : "junction-item"
+              }
               role="button"
               tabIndex={0}
               aria-label={`Junction ${junction.id}`}
@@ -720,8 +735,34 @@ export function Canvas({
                 r={11}
                 role="button"
                 tabIndex={0}
-                aria-label={`${port.direction} boundary port ${port.name} on ${port.ownerId}${port.direction === "output" ? ", drag to connect" : ", connection target"}`}
-                onPointerDown={(event) => startConnection(event, port)}
+                aria-label={`${port.direction} boundary port ${port.name} on ${port.ownerId}${port.direction === "output" ? ", drag to connect" : ", select to inspect"}`}
+                onPointerDown={
+                  port.direction === "output"
+                    ? (event) => startConnection(event, port)
+                    : undefined
+                }
+                onClick={(event) => {
+                  if (port.hint.kind !== "boundary_port") return;
+                  event.stopPropagation();
+                  selectUnlessSuppressed({
+                    type: "boundary",
+                    id: port.hint.boundaryId,
+                    containerId: port.hint.containerId,
+                  });
+                }}
+                onKeyDown={(event) => {
+                  if (
+                    port.hint.kind === "boundary_port" &&
+                    (event.key === "Enter" || event.key === " ")
+                  ) {
+                    event.preventDefault();
+                    selectUnlessSuppressed({
+                      type: "boundary",
+                      id: port.hint.boundaryId,
+                      containerId: port.hint.containerId,
+                    });
+                  }
+                }}
               />
             ))}
         </g>
@@ -779,7 +820,8 @@ export function Canvas({
       </svg>
       <div className="canvas-hint">
         Wheel to zoom · Middle-drag to pan · Drag output to input to connect ·
-        Select a wire and drag its S/T handle to reconnect.
+        Select a wire and drag its S/T handle to reconnect · Delete/Backspace
+        removes supported selections.
       </div>
       <div className="canvas-camera-status" aria-live="polite">
         <strong>{zoomPercent}%</strong>

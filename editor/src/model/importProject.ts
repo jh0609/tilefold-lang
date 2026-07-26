@@ -74,6 +74,17 @@ function idAt(object: Record<string, unknown>, path: string): string {
   return stringAt(required(object, "id", path), `${path}.id`);
 }
 
+function coreTypeAt(value: unknown, path: string): void {
+  if (value === "unit" || value === "nat") return;
+  const type = objectAt(value, path);
+  const arrow = arrayAt(required(type, "arrow", path), `${path}.arrow`);
+  if (arrow.length !== 2) {
+    throw new StructureError(`${path}.arrow`, "expected two type entries");
+  }
+  coreTypeAt(arrow[0], `${path}.arrow[0]`);
+  coreTypeAt(arrow[1], `${path}.arrow[1]`);
+}
+
 function elementAt(value: unknown, path: string): ProjectElement {
   const element = objectAt(value, path);
   idAt(element, path);
@@ -86,11 +97,61 @@ function elementAt(value: unknown, path: string): ProjectElement {
     required(element, "properties", path),
     `${path}.properties`,
   );
-  if (kind === "nat_literal") {
-    stringAt(
-      required(properties, "value", `${path}.properties`),
-      `${path}.properties.value`,
-    );
+  switch (kind) {
+    case "nat_literal":
+      stringAt(
+        required(properties, "value", `${path}.properties`),
+        `${path}.properties.value`,
+      );
+      break;
+    case "drop":
+    case "copy":
+    case "nat_rec":
+      coreTypeAt(
+        required(properties, "type", `${path}.properties`),
+        `${path}.properties.type`,
+      );
+      break;
+    case "apply":
+      coreTypeAt(
+        required(properties, "parameterType", `${path}.properties`),
+        `${path}.properties.parameterType`,
+      );
+      coreTypeAt(
+        required(properties, "resultType", `${path}.properties`),
+        `${path}.properties.resultType`,
+      );
+      break;
+    case "function": {
+      stringAt(
+        required(properties, "templateId", `${path}.properties`),
+        `${path}.properties.templateId`,
+      );
+      coreTypeAt(
+        required(properties, "parameterType", `${path}.properties`),
+        `${path}.properties.parameterType`,
+      );
+      coreTypeAt(
+        required(properties, "resultType", `${path}.properties`),
+        `${path}.properties.resultType`,
+      );
+      arrayAt(
+        required(properties, "captures", `${path}.properties`),
+        `${path}.properties.captures`,
+      ).forEach((capture, index) => {
+        const capturePath = `${path}.properties.captures[${index}]`;
+        const record = objectAt(capture, capturePath);
+        stringAt(
+          required(record, "key", capturePath),
+          `${capturePath}.key`,
+        );
+        coreTypeAt(
+          required(record, "type", capturePath),
+          `${capturePath}.type`,
+        );
+      });
+      break;
+    }
   }
   const anchors = arrayAt(
     required(element, "portAnchors", path),

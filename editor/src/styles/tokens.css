@@ -39,7 +39,8 @@ body,
 
 button,
 .button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -63,6 +64,8 @@ button:hover,
 button:focus-visible,
 .button:focus-within,
 input:focus-visible,
+select:focus-visible,
+summary:focus-visible,
 [role="button"]:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--select) 28%, transparent);
   outline-offset: 2px;

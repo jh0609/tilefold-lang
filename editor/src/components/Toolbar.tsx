@@ -1,3 +1,5 @@
+import type { AddableElementKind } from "../model/editorOps";
+
 interface ToolbarProps {
   projectName: string;
   format: string;
@@ -8,8 +10,7 @@ interface ToolbarProps {
   onOpenExample: () => void;
   onOpenFile: (file: File) => void;
   onExport: () => void;
-  onAddNat: () => void;
-  onAddSucc: () => void;
+  onAddElement: (kind: AddableElementKind) => void;
   onAddResult: () => void;
   onDelete: () => void;
   onUndo: () => void;
@@ -31,8 +32,7 @@ export function Toolbar({
   onOpenExample,
   onOpenFile,
   onExport,
-  onAddNat,
-  onAddSucc,
+  onAddElement,
   onAddResult,
   onDelete,
   onUndo,
@@ -79,12 +79,47 @@ export function Toolbar({
         </button>
       </div>
       <div className="toolbar-group" aria-label="Add elements">
-        <button type="button" onClick={onAddNat}>
+        <button type="button" onClick={() => onAddElement("nat_literal")}>
           + Nat
         </button>
-        <button type="button" onClick={onAddSucc}>
+        <button type="button" onClick={() => onAddElement("succ")}>
           + Succ
         </button>
+        <details className="palette-menu">
+          <summary>More nodes</summary>
+          <div className="palette-popover" aria-label="Node palette">
+            <section aria-labelledby="palette-values">
+              <strong id="palette-values">Values</strong>
+              <button
+                type="button"
+                onClick={() => onAddElement("unit_literal")}
+              >
+                + Unit
+              </button>
+            </section>
+            <section aria-labelledby="palette-linear">
+              <strong id="palette-linear">Linear</strong>
+              <button type="button" onClick={() => onAddElement("drop")}>
+                + Drop
+              </button>
+              <button type="button" onClick={() => onAddElement("copy")}>
+                + Copy
+              </button>
+            </section>
+            <section aria-labelledby="palette-functions">
+              <strong id="palette-functions">Functions</strong>
+              <button type="button" onClick={() => onAddElement("apply")}>
+                + Apply
+              </button>
+            </section>
+            <section aria-labelledby="palette-control">
+              <strong id="palette-control">Control</strong>
+              <button type="button" onClick={() => onAddElement("nat_rec")}>
+                + NatRec
+              </button>
+            </section>
+          </div>
+        </details>
         <button type="button" onClick={onAddResult}>
           + Result
         </button>

@@ -105,10 +105,12 @@ The first version borrows only a restrained subset of three familiar tools:
 - Blender Geometry Nodes contributes visible left/input and right/output ports,
   limited port colors, and an emphasized literal value.
 
-It intentionally does not copy Blueprint-style chrome or add a palette,
-minimap, automatic routing, resize handles, search, dark mode, glow,
-or elaborate transitions. Result is represented by the orange result boundary
-defined by project JSON v1 rather than inventing a Result element kind.
+It intentionally does not copy Blueprint-style chrome or add a minimap,
+automatic routing, resize handles, search, dark mode, glow, or elaborate
+transitions. A compact palette exposes the implemented Core node kinds that can
+be created without a function-template authoring workflow. Result is represented
+by the orange result boundary defined by project JSON v1 rather than inventing
+a Result element kind.
 
 Styles are split by responsibility under `src/styles/`: tokens, shell/layout,
 canvas/nodes, and Inspector. `tokens.css` centralizes the neutral backgrounds,
@@ -118,13 +120,15 @@ spacing, and radius.
 ## Screen layout
 
 - The top toolbar opens the shared example or a local JSON file, exports the
-  current document, adds Nat/Succ/Result data, blocks unsafe deletion, provides
-  undo/redo, fits all rendered geometry, and resets the camera.
+  current document, adds Unit/Nat/Succ/Drop/Copy/Apply/NatRec nodes and Result
+  boundaries, deletes supported selections, provides undo/redo, fits all
+  rendered geometry, and resets the camera.
 - The SVG canvas renders containers, relative boundary anchors, elements,
   absolute port anchors, wire polylines, junctions, and explicit outlets. The
   wheel zooms around the pointer and a middle-button drag pans the camera.
-- The Inspector edits element integer bounds and canonical Nat strings and
-  shows read-only information for containers, wires, junctions, and saved view.
+- The Inspector edits element integer bounds, canonical Nat strings, and the
+  exposed Core type presets for Drop/Copy/Apply/NatRec. It shows read-only
+  information for containers, boundaries, wires, junctions, and saved view.
 - The status bar distinguishes the editor structure check from the unavailable
   Tilefold semantic validation.
 
@@ -159,15 +163,22 @@ view. It adds no UI fields. It need not match the OCaml canonical byte layout.
 ## Editing policies
 
 New IDs use the smallest unused positive integer for a stable prefix such as
-`node_nat_1`; array length is never used. Nat and Succ prefer the current
-viewport center with their fixed v1 port schema. If that bounds would overlap
-an existing element or leave less than 12 project units of clearance, the
-editor checks a deterministic 120×80 grid around the center, starting to the
-right and proceeding clockwise. The chosen center is stored in the typed add
-command, so Undo/Redo reuses exactly the same geometry. Wires, junctions, and
-container boundaries are not treated as placement obstacles. Result means a
-container Result boundary, since v1 has no `result` element kind; adding it is
-blocked when the first container already has one.
+`node_nat_1`; array length is never used. Unit, Nat, Succ, Drop, Copy, Apply,
+and NatRec prefer the current viewport center with fixed v1 port schemas.
+Drop, Copy, and NatRec default to `Nat`; Apply defaults to `Nat → Nat`.
+The Inspector can select Unit, Nat, or the four first-order Unit/Nat arrow
+presets. Type edits are blocked while the element has connected wires so a
+valid connection cannot silently become ill-typed.
+
+If new bounds would overlap an existing element or leave less than 12 project
+units of clearance, the editor checks a deterministic 120×80 grid around the
+center, starting to the right and proceeding clockwise. The chosen center is
+stored in the typed add command, so Undo/Redo reuses exactly the same geometry.
+Wires, junctions, and container boundaries are not treated as placement
+obstacles. Result means a container Result boundary, since v1 has no `result`
+element kind; adding it is blocked when the first container already has one.
+Function remains read-only because a valid Function node requires a referenced
+template, declared captures, and dependency management.
 
 Pointer positions are transformed through the SVG current transformation matrix
 and rounded to project integers. Element movement translates its bounds and
@@ -206,9 +217,14 @@ without a fully specified policy for contained elements and wires could change
 Geometry ownership. Container boundary points therefore stay fixed when an
 element connected to one moves.
 
-Deletion is currently supported only for unreferenced elements. A wire hint
-that references an element blocks deletion and reports the wire IDs. No
-cascade deletion is performed.
+Deletion supports elements, wires, junctions, and Result boundaries. Deleting
+an element removes only wires whose endpoint hints exactly reference that
+element ID. Deleting a junction removes wires whose hints exactly reference the
+junction or one of its outlets. Deleting a Result boundary removes wires whose
+boundary hints exactly match both its container and boundary IDs. Geometry,
+DOM order, labels, and string prefixes are never used to infer attachment.
+Each deletion and its dependent wire removals are one command and one Undo
+step. Parameter/capture boundaries and containers remain protected.
 
 Document changes use typed commands and an immutable 100-entry history.
 Undo/redo is available from the toolbar and with Ctrl/Cmd+Z,
@@ -265,7 +281,7 @@ direction, has an invalid polyline, or would create consecutive duplicate
 points rejects the whole move without changing the document. Unrelated invalid
 geometry is not treated as an attachment.
 
-Wire bend points, segments, junctions, and routing are not editable. Element
+Wire bend points, segments, junction creation, and routing are not editable. Element
 movement deliberately does not reroute or translate middle points. Container
 movement remains unsupported.
 
@@ -273,6 +289,8 @@ movement remains unsupported.
 
 The next editor layer can add:
 
+- function-template creation and editing;
+- arbitrary nested Core type editing beyond the current presets;
 - wire bend-point and segment editing;
 - container movement with a specified deterministic group-translation policy;
 - full typed diagnostic presentation;

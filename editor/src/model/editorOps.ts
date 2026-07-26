@@ -1,6 +1,8 @@
 import type {
   BoundaryPort,
   Bounds,
+  CoreType,
+  ElementKind,
   Point,
   ProjectDocument,
   ProjectElement,
@@ -16,14 +18,19 @@ import {
   type WireEndpoint,
 } from "./portConnections";
 
-type AddableElementKind = "nat_literal" | "succ";
+export type AddableElementKind = Exclude<ElementKind, "function">;
 
 const NEW_ELEMENT_SIZE: Record<
   AddableElementKind,
   { width: number; height: number }
 > = {
+  unit_literal: { width: 88, height: 56 },
   nat_literal: { width: 96, height: 56 },
   succ: { width: 88, height: 56 },
+  drop: { width: 88, height: 56 },
+  copy: { width: 104, height: 72 },
+  apply: { width: 120, height: 90 },
+  nat_rec: { width: 128, height: 112 },
 };
 const ELEMENT_PLACEMENT_CLEARANCE = 12;
 const ELEMENT_PLACEMENT_STEP = { x: 120, y: 80 };
@@ -132,19 +139,40 @@ export function addElement(
   kind: AddableElementKind,
   center: Point,
 ): { document: ProjectDocument; element: ProjectElement } {
-  const isNat = kind === "nat_literal";
   const bounds = newElementBounds(kind, center);
   const { x, y, width, height } = bounds;
-  const id = nextStableId(document, isNat ? "node_nat_" : "node_succ_");
-  const element: ProjectElement = isNat
-    ? {
+  const prefixes: Record<AddableElementKind, string> = {
+    unit_literal: "node_unit_",
+    nat_literal: "node_nat_",
+    succ: "node_succ_",
+    drop: "node_drop_",
+    copy: "node_copy_",
+    apply: "node_apply_",
+    nat_rec: "node_nat_rec_",
+  };
+  const id = nextStableId(document, prefixes[kind]);
+  let element: ProjectElement;
+  switch (kind) {
+    case "unit_literal":
+      element = {
+        id,
+        kind,
+        bounds,
+        properties: {},
+        portAnchors: [{ port: "value", x: x + width, y: y + height / 2 }],
+      };
+      break;
+    case "nat_literal":
+      element = {
         id,
         kind,
         bounds,
         properties: { value: "0" },
         portAnchors: [{ port: "value", x: x + width, y: y + height / 2 }],
-      }
-    : {
+      };
+      break;
+    case "succ":
+      element = {
         id,
         kind,
         bounds,
@@ -154,6 +182,57 @@ export function addElement(
           { port: "result", x: x + width, y: y + height / 2 },
         ],
       };
+      break;
+    case "drop":
+      element = {
+        id,
+        kind,
+        bounds,
+        properties: { type: "nat" },
+        portAnchors: [{ port: "input", x, y: y + height / 2 }],
+      };
+      break;
+    case "copy":
+      element = {
+        id,
+        kind,
+        bounds,
+        properties: { type: "nat" },
+        portAnchors: [
+          { port: "input", x, y: y + height / 2 },
+          { port: "left", x: x + width, y: y + height / 3 },
+          { port: "right", x: x + width, y: y + (height * 2) / 3 },
+        ],
+      };
+      break;
+    case "apply":
+      element = {
+        id,
+        kind,
+        bounds,
+        properties: { parameterType: "nat", resultType: "nat" },
+        portAnchors: [
+          { port: "function", x, y: y + height / 3 },
+          { port: "argument", x, y: y + (height * 2) / 3 },
+          { port: "result", x: x + width, y: y + height / 2 },
+        ],
+      };
+      break;
+    case "nat_rec":
+      element = {
+        id,
+        kind,
+        bounds,
+        properties: { type: "nat" },
+        portAnchors: [
+          { port: "base", x, y: y + height / 4 },
+          { port: "step", x, y: y + height / 2 },
+          { port: "count", x, y: y + (height * 3) / 4 },
+          { port: "result", x: x + width, y: y + height / 2 },
+        ],
+      };
+      break;
+  }
   return {
     element,
     document: {
@@ -472,14 +551,96 @@ export function updateNatValue(
   };
 }
 
-function hintReferencesElement(hint: unknown, id: string): boolean {
-  if (typeof hint !== "object" || hint === null) return false;
-  return (
-    "kind" in hint &&
-    hint.kind === "element_port" &&
-    "elementId" in hint &&
-    hint.elementId === id
+export function updateElementType(
+  document: ProjectDocument,
+  id: string,
+  type: CoreType,
+): { document: ProjectDocument; error?: string } {
+  const element = document.geometry.elements.find(
+    (candidate) => candidate.id === id,
   );
+  if (!element) return { document, error: `Element ${id} does not exist.` };
+  if (
+    element.kind !== "drop" &&
+    element.kind !== "copy" &&
+    element.kind !== "nat_rec"
+  ) {
+    return {
+      document,
+      error: `${element.kind} does not have one editable value type.`,
+    };
+  }
+  const references = elementReferences(document, id);
+  if (references.length > 0) {
+    return {
+      document,
+      error: `Disconnect wire(s) before changing ${id} type: ${references.join(", ")}`,
+    };
+  }
+  return {
+    document: {
+      ...document,
+      geometry: {
+        ...document.geometry,
+        elements: document.geometry.elements.map((candidate) => {
+          if (
+            candidate.id !== id ||
+            (candidate.kind !== "drop" &&
+              candidate.kind !== "copy" &&
+              candidate.kind !== "nat_rec")
+          ) {
+            return candidate;
+          }
+          return { ...candidate, properties: { type } };
+        }),
+      },
+    },
+  };
+}
+
+export function updateApplyTypes(
+  document: ProjectDocument,
+  id: string,
+  parameterType: CoreType,
+  resultType: CoreType,
+): { document: ProjectDocument; error?: string } {
+  const element = document.geometry.elements.find(
+    (candidate) => candidate.id === id,
+  );
+  if (!element) return { document, error: `Element ${id} does not exist.` };
+  if (element.kind !== "apply") {
+    return { document, error: `${element.kind} is not an Apply element.` };
+  }
+  const references = elementReferences(document, id);
+  if (references.length > 0) {
+    return {
+      document,
+      error: `Disconnect wire(s) before changing ${id} types: ${references.join(", ")}`,
+    };
+  }
+  return {
+    document: {
+      ...document,
+      geometry: {
+        ...document.geometry,
+        elements: document.geometry.elements.map((candidate) =>
+          candidate.id === id && candidate.kind === "apply"
+            ? {
+                ...candidate,
+                properties: { parameterType, resultType },
+              }
+            : candidate,
+        ),
+      },
+    },
+  };
+}
+
+function hintReferencesElement(
+  hint: ProjectWire["sourceHint"],
+  id: string,
+): boolean {
+  return hint?.kind === "element_port" && hint.elementId === id;
 }
 
 export function elementReferences(
@@ -500,18 +661,112 @@ export function deleteSelection(
   selection: Selection | null,
 ): { document: ProjectDocument; error?: string } {
   if (!selection) return { document };
-  if (selection.type !== "element") {
+  if (selection.type === "container") {
+    return { document, error: "Deleting containers is not supported." };
+  }
+  if (selection.type === "wire") {
+    if (
+      !document.geometry.wires.some((wire) => wire.id === selection.id)
+    ) {
+      return { document, error: `Wire ${selection.id} does not exist.` };
+    }
     return {
-      document,
-      error: `Deleting ${selection.type} items is not supported yet.`,
+      document: {
+        ...document,
+        geometry: {
+          ...document.geometry,
+          wires: document.geometry.wires.filter(
+            (wire) => wire.id !== selection.id,
+          ),
+        },
+      },
     };
   }
-  const references = elementReferences(document, selection.id);
-  if (references.length > 0) {
+  if (selection.type === "boundary") {
+    const container = document.geometry.containers.find(
+      (candidate) => candidate.id === selection.containerId,
+    );
+    const boundary = container?.boundaryPorts.find(
+      (candidate) => candidate.id === selection.id,
+    );
+    if (!container || !boundary) {
+      return {
+        document,
+        error: `Boundary ${selection.id} does not exist in ${selection.containerId}.`,
+      };
+    }
+    if (boundary.role !== "result") {
+      return {
+        document,
+        error: `Only Result boundaries can be deleted directly.`,
+      };
+    }
+    const referencesBoundary = (hint: ProjectWire["sourceHint"]) =>
+      hint?.kind === "boundary_port" &&
+      hint.containerId === selection.containerId &&
+      hint.boundaryId === selection.id;
     return {
-      document,
-      error: `${selection.id} is referenced by wire(s): ${references.join(", ")}`,
+      document: {
+        ...document,
+        geometry: {
+          ...document.geometry,
+          containers: document.geometry.containers.map((candidate) =>
+            candidate.id === selection.containerId
+              ? {
+                  ...candidate,
+                  boundaryPorts: candidate.boundaryPorts.filter(
+                    (item) => item.id !== selection.id,
+                  ),
+                }
+              : candidate,
+          ),
+          wires: document.geometry.wires.filter(
+            (wire) =>
+              !referencesBoundary(wire.sourceHint) &&
+              !referencesBoundary(wire.targetHint),
+          ),
+        },
+      },
     };
+  }
+  if (selection.type === "junction") {
+    if (
+      !document.geometry.junctions.some(
+        (junction) => junction.id === selection.id,
+      )
+    ) {
+      return {
+        document,
+        error: `Junction ${selection.id} does not exist.`,
+      };
+    }
+    const referencesJunction = (hint: ProjectWire["sourceHint"]) =>
+      (hint?.kind === "junction" && hint.junctionId === selection.id) ||
+      (hint?.kind === "junction_outlet" &&
+        hint.junctionId === selection.id);
+    return {
+      document: {
+        ...document,
+        geometry: {
+          ...document.geometry,
+          junctions: document.geometry.junctions.filter(
+            (junction) => junction.id !== selection.id,
+          ),
+          wires: document.geometry.wires.filter(
+            (wire) =>
+              !referencesJunction(wire.sourceHint) &&
+              !referencesJunction(wire.targetHint),
+          ),
+        },
+      },
+    };
+  }
+  if (
+    !document.geometry.elements.some(
+      (element) => element.id === selection.id,
+    )
+  ) {
+    return { document, error: `Element ${selection.id} does not exist.` };
   }
   return {
     document: {
@@ -520,6 +775,11 @@ export function deleteSelection(
         ...document.geometry,
         elements: document.geometry.elements.filter(
           (element) => element.id !== selection.id,
+        ),
+        wires: document.geometry.wires.filter(
+          (wire) =>
+            !hintReferencesElement(wire.sourceHint, selection.id) &&
+            !hintReferencesElement(wire.targetHint, selection.id),
         ),
       },
     },

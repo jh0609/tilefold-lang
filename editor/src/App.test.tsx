@@ -1011,13 +1011,136 @@ describe("Tilefold editor UI", () => {
     expect(screen.getByText(/0 undo · 0 redo/)).toBeInTheDocument();
   });
 
-  it("blocks deletion of a referenced element", async () => {
+  it("deletes a referenced element and its wire, then restores both with Undo", async () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(screen.getByTestId("element-node_nat_2"));
     await user.click(screen.getByRole("button", { name: "Delete selected" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("wire_nat_succ");
+    expect(screen.queryByTestId("element-node_nat_2")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("wire-wire_nat_succ")).not.toBeInTheDocument();
+    expect(screen.getByText("1 undo · 0 redo")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Undo" }));
     expect(screen.getByTestId("element-node_nat_2")).toBeInTheDocument();
+    expect(screen.getByTestId("wire-wire_nat_succ")).toBeInTheDocument();
+  });
+
+  it("adds every exposed Core node kind with selectable ports", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByText("More nodes"));
+    for (const label of ["+ Unit", "+ Drop", "+ Copy", "+ Apply", "+ NatRec"]) {
+      await user.click(screen.getByRole("button", { name: label }));
+    }
+    expect(screen.getByTestId("element-node_unit_1")).toBeInTheDocument();
+    expect(screen.getByTestId("element-node_drop_1")).toBeInTheDocument();
+    expect(screen.getByTestId("element-node_copy_1")).toBeInTheDocument();
+    expect(screen.getByTestId("element-node_apply_1")).toBeInTheDocument();
+    expect(screen.getByTestId("element-node_nat_rec_1")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("port-element:node_copy_1:left"),
+    ).toHaveAccessibleName(/output port left/);
+    expect(
+      screen.getByTestId("port-element:node_apply_1:function"),
+    ).toHaveAccessibleName(/input port function/);
+    expect(
+      screen.getByTestId("port-element:node_nat_rec_1:step"),
+    ).toHaveAccessibleName(/input port step/);
+    expect(screen.getByText("5 undo · 0 redo")).toBeInTheDocument();
+  });
+
+  it("edits new node type presets in the Inspector without document side state", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByText("More nodes"));
+    await user.click(screen.getByRole("button", { name: "+ Drop" }));
+    const type = screen.getByLabelText("Value type");
+    expect(type).toHaveValue('"nat"');
+    await user.selectOptions(type, '{"arrow":["nat","nat"]}');
+    expect(type).toHaveValue('{"arrow":["nat","nat"]}');
+    expect(screen.getByText("2 undo · 0 redo")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(screen.getByLabelText("Value type")).toHaveValue('"nat"');
+  });
+
+  it("deletes a Result boundary and its wire directly, then restores both", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(
+      screen.getByRole("button", {
+        name: "input boundary port result on entry_result, select to inspect",
+      }),
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: "Delete boundary entry_result",
+      }),
+    );
+    expect(
+      screen.queryByRole("button", {
+        name: "input boundary port result on entry_result, select to inspect",
+      }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("wire-wire_result")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(
+      screen.getByRole("button", {
+        name: "input boundary port result on entry_result, select to inspect",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("wire-wire_result")).toBeInTheDocument();
+  });
+
+  it("deletes a selected wire with Delete and restores it with Undo", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByTestId("wire-wire_nat_succ"));
+    await user.keyboard("{Delete}");
+    expect(screen.queryByTestId("wire-wire_nat_succ")).not.toBeInTheDocument();
+    await user.keyboard("{Control>}z{/Control}");
+    expect(screen.getByTestId("wire-wire_nat_succ")).toBeInTheDocument();
+  });
+
+  it("selects and deletes a junction directly, then restores it", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const input = JSON.parse(exampleJson);
+    input.geometry.junctions = [
+      {
+        id: "junction_delete",
+        anchor: { x: 200, y: 110 },
+        outlets: [
+          {
+            id: "junction_delete_left",
+            order: 0,
+            anchor: { x: 190, y: 120 },
+          },
+          {
+            id: "junction_delete_right",
+            order: 1,
+            anchor: { x: 210, y: 120 },
+          },
+        ],
+      },
+    ];
+    await user.upload(
+      screen.getByLabelText("Open JSON file"),
+      new File([JSON.stringify(input)], "junction.tilefold.json", {
+        type: "application/json",
+      }),
+    );
+    const junction = await screen.findByRole("button", {
+      name: "Junction junction_delete",
+    });
+    await user.click(junction);
+    expect(junction).toHaveClass("selected");
+    await user.click(screen.getByRole("button", { name: "Delete selected" }));
+    expect(
+      screen.queryByRole("button", { name: "Junction junction_delete" }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(
+      screen.getByRole("button", { name: "Junction junction_delete" }),
+    ).toBeInTheDocument();
   });
 
   it("keeps the current document after a failed file import", async () => {

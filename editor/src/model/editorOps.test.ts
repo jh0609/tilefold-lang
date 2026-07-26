@@ -7,8 +7,11 @@ import {
   findOpenElementCenter,
   moveElement,
   nextStableId,
+  updateApplyTypes,
+  updateElementType,
+  type AddableElementKind,
 } from "./editorOps";
-import { parseProjectJson } from "./importProject";
+import { exportProjectJson, parseProjectJson } from "./importProject";
 import { collectConnectablePorts } from "./portConnections";
 
 function disconnectedPair() {
@@ -54,6 +57,42 @@ describe("editor operations", () => {
     expect(result.element.bounds.x).toBe(452);
   });
 
+  it.each([
+    ["unit_literal", "node_unit_1", ["value"], {}],
+    ["drop", "node_drop_1", ["input"], { type: "nat" }],
+    ["copy", "node_copy_1", ["input", "left", "right"], { type: "nat" }],
+    [
+      "apply",
+      "node_apply_1",
+      ["function", "argument", "result"],
+      { parameterType: "nat", resultType: "nat" },
+    ],
+    [
+      "nat_rec",
+      "node_nat_rec_1",
+      ["base", "step", "count", "result"],
+      { type: "nat" },
+    ],
+  ] as const)(
+    "adds a structurally valid %s with canonical defaults",
+    (kind, id, ports, properties) => {
+      const project = parseProjectJson(exampleJson);
+      const result = addElement(
+        project,
+        kind as AddableElementKind,
+        { x: 500, y: 300 },
+      );
+      expect(result.element.id).toBe(id);
+      expect(result.element.portAnchors.map((anchor) => anchor.port)).toEqual(
+        ports,
+      );
+      expect(result.element.properties).toEqual(properties);
+      expect(() =>
+        parseProjectJson(exportProjectJson(result.document)),
+      ).not.toThrow();
+    },
+  );
+
   it("chooses deterministic nearby centers without overlapping new elements", () => {
     const project = parseProjectJson(exampleJson);
     const preferred = { x: 200, y: 130 };
@@ -89,14 +128,124 @@ describe("editor operations", () => {
     ]);
   });
 
-  it("blocks deletion when a wire references the element", () => {
+  it("deletes an element and its exactly referenced wires together", () => {
     const project = parseProjectJson(exampleJson);
     const result = deleteSelection(project, {
       type: "element",
       id: "node_nat_2",
     });
-    expect(result.document).toBe(project);
-    expect(result.error).toContain("wire_nat_succ");
+    expect(result.error).toBeUndefined();
+    expect(
+      result.document.geometry.elements.some(
+        (element) => element.id === "node_nat_2",
+      ),
+    ).toBe(false);
+    expect(result.document.geometry.wires.map((wire) => wire.id)).toEqual([
+      "wire_parameter",
+      "wire_result",
+    ]);
+  });
+
+  it("deletes wires, Result boundaries, and junction references by exact ID", () => {
+    const project = parseProjectJson(exampleJson);
+    const withoutWire = deleteSelection(project, {
+      type: "wire",
+      id: "wire_nat_succ",
+    }).document;
+    expect(withoutWire.geometry.wires.map((wire) => wire.id)).not.toContain(
+      "wire_nat_succ",
+    );
+
+    const withoutResult = deleteSelection(project, {
+      type: "boundary",
+      containerId: "entry",
+      id: "entry_result",
+    }).document;
+    expect(withoutResult.geometry.containers[0]!.boundaryPorts).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "entry_result" })]),
+    );
+    expect(withoutResult.geometry.wires.map((wire) => wire.id)).not.toContain(
+      "wire_result",
+    );
+
+    const withJunction = {
+      ...project,
+      geometry: {
+        ...project.geometry,
+        junctions: [
+          {
+            id: "junction_1",
+            anchor: { x: 300, y: 200 },
+            outlets: [
+              {
+                id: "outlet_1",
+                order: 0,
+                anchor: { x: 320, y: 200 },
+              },
+            ],
+          },
+        ],
+        wires: [
+          ...project.geometry.wires,
+          {
+            id: "wire_junction",
+            points: [
+              { x: 300, y: 200 },
+              { x: 320, y: 200 },
+            ],
+            sourceHint: {
+              kind: "junction" as const,
+              junctionId: "junction_1",
+            },
+            targetHint: {
+              kind: "junction_outlet" as const,
+              junctionId: "junction_1",
+              outletId: "outlet_1",
+            },
+          },
+        ],
+      },
+    };
+    const withoutJunction = deleteSelection(withJunction, {
+      type: "junction",
+      id: "junction_1",
+    }).document;
+    expect(withoutJunction.geometry.junctions).toEqual([]);
+    expect(
+      withoutJunction.geometry.wires.map((wire) => wire.id),
+    ).not.toContain("wire_junction");
+  });
+
+  it("edits unconnected polymorphic and Apply types but protects connections", () => {
+    let project = parseProjectJson(exampleJson);
+    project = addElement(project, "copy", { x: 500, y: 200 }).document;
+    project = addElement(project, "apply", { x: 700, y: 200 }).document;
+    const copy = updateElementType(project, "node_copy_1", "unit");
+    expect(copy.error).toBeUndefined();
+    expect(
+      copy.document.geometry.elements.find(
+        (element) => element.id === "node_copy_1",
+      )?.properties,
+    ).toEqual({ type: "unit" });
+    const apply = updateApplyTypes(
+      copy.document,
+      "node_apply_1",
+      { arrow: ["nat", "nat"] },
+      "unit",
+    );
+    expect(apply.error).toBeUndefined();
+    expect(
+      apply.document.geometry.elements.find(
+        (element) => element.id === "node_apply_1",
+      )?.properties,
+    ).toEqual({
+      parameterType: { arrow: ["nat", "nat"] },
+      resultType: "unit",
+    });
+
+    expect(updateElementType(project, "drop_unit", "nat").error).toContain(
+      "wire_parameter",
+    );
   });
 
   it("adds a deterministic, hinted two-point wire without changing existing data", () => {

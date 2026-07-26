@@ -50,6 +50,22 @@ describe("Project JSON v1 import and export", () => {
     );
   });
 
+  it("rejects missing and malformed Core type properties", () => {
+    const missing = JSON.parse(exampleJson);
+    delete missing.geometry.elements[0].properties.type;
+    expect(() => parseProjectJson(JSON.stringify(missing))).toThrow(
+      "$.geometry.elements[0].properties.type",
+    );
+
+    const malformed = JSON.parse(exampleJson);
+    malformed.geometry.elements[0].properties.type = {
+      arrow: ["nat"],
+    };
+    expect(() => parseProjectJson(JSON.stringify(malformed))).toThrow(
+      "expected two type entries",
+    );
+  });
+
   it("preserves large Nat strings and meaningful orders", () => {
     const input = JSON.parse(exampleJson);
     const huge = "12345678901234567890123456789012345678901234567890";

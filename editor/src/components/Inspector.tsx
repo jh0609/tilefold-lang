@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type {
   Bounds,
+  CoreType,
   ProjectDocument,
   ProjectElement,
   Selection,
@@ -13,7 +14,62 @@ interface InspectorProps {
   error: string | null;
   onBoundsChange: (id: string, bounds: Bounds) => void;
   onNatValueChange: (id: string, value: string) => void;
+  onElementTypeChange: (id: string, type: CoreType) => void;
+  onApplyTypesChange: (
+    id: string,
+    parameterType: CoreType,
+    resultType: CoreType,
+  ) => void;
+  canDelete: boolean;
+  onDelete: () => void;
   onError: (error: string | null) => void;
+}
+
+const CORE_TYPE_PRESETS: Array<{ label: string; value: CoreType }> = [
+  { label: "Unit", value: "unit" },
+  { label: "Nat", value: "nat" },
+  { label: "Unit → Unit", value: { arrow: ["unit", "unit"] } },
+  { label: "Unit → Nat", value: { arrow: ["unit", "nat"] } },
+  { label: "Nat → Unit", value: { arrow: ["nat", "unit"] } },
+  { label: "Nat → Nat", value: { arrow: ["nat", "nat"] } },
+];
+
+function coreTypeKey(type: CoreType): string {
+  return JSON.stringify(type);
+}
+
+function CoreTypeField({
+  label,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: CoreType;
+  disabled: boolean;
+  onChange: (type: CoreType) => void;
+}) {
+  return (
+    <label>
+      {label}
+      <select
+        value={coreTypeKey(value)}
+        disabled={disabled}
+        onChange={(event) => {
+          const preset = CORE_TYPE_PRESETS.find(
+            (candidate) => coreTypeKey(candidate.value) === event.target.value,
+          );
+          if (preset) onChange(preset.value);
+        }}
+      >
+        {CORE_TYPE_PRESETS.map((preset) => (
+          <option key={preset.label} value={coreTypeKey(preset.value)}>
+            {preset.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 }
 
 function NumberField({
@@ -50,12 +106,20 @@ function ElementInspector({
   connectedWires,
   onBoundsChange,
   onNatValueChange,
+  onElementTypeChange,
+  onApplyTypesChange,
   onError,
 }: {
   element: ProjectElement;
   connectedWires: string[];
   onBoundsChange: (id: string, bounds: Bounds) => void;
   onNatValueChange: (id: string, value: string) => void;
+  onElementTypeChange: (id: string, type: CoreType) => void;
+  onApplyTypesChange: (
+    id: string,
+    parameterType: CoreType,
+    resultType: CoreType,
+  ) => void;
   onError: (error: string | null) => void;
 }) {
   const natValue =
@@ -109,6 +173,44 @@ function ElementInspector({
           />
         </label>
       )}
+      {(element.kind === "drop" ||
+        element.kind === "copy" ||
+        element.kind === "nat_rec") && (
+        <CoreTypeField
+          label="Value type"
+          value={element.properties.type}
+          disabled={connectedWires.length > 0}
+          onChange={(type) => onElementTypeChange(element.id, type)}
+        />
+      )}
+      {element.kind === "apply" && (
+        <>
+          <CoreTypeField
+            label="Parameter type"
+            value={element.properties.parameterType}
+            disabled={connectedWires.length > 0}
+            onChange={(parameterType) =>
+              onApplyTypesChange(
+                element.id,
+                parameterType,
+                element.properties.resultType,
+              )
+            }
+          />
+          <CoreTypeField
+            label="Result type"
+            value={element.properties.resultType}
+            disabled={connectedWires.length > 0}
+            onChange={(resultType) =>
+              onApplyTypesChange(
+                element.id,
+                element.properties.parameterType,
+                resultType,
+              )
+            }
+          />
+        </>
+      )}
       <section className="readout">
         <h3>Port anchors</h3>
         {element.portAnchors.map((anchor) => (
@@ -126,7 +228,10 @@ function ElementInspector({
             {connectedWires.map((wire) => (
               <code key={wire}>{wire}</code>
             ))}
-            <p className="limitation">Deletion is blocked while referenced.</p>
+            <p className="limitation">
+              Deleting this element also deletes these connected wires. Type
+              editing is disabled until they are disconnected.
+            </p>
           </>
         )}
       </section>
@@ -140,6 +245,10 @@ export function Inspector({
   error,
   onBoundsChange,
   onNatValueChange,
+  onElementTypeChange,
+  onApplyTypesChange,
+  canDelete,
+  onDelete,
   onError,
 }: InspectorProps) {
   let content = (
@@ -171,8 +280,39 @@ export function Inspector({
           connectedWires={connectedWires}
           onBoundsChange={onBoundsChange}
           onNatValueChange={onNatValueChange}
+          onElementTypeChange={onElementTypeChange}
+          onApplyTypesChange={onApplyTypesChange}
           onError={onError}
         />
+      );
+    }
+  } else if (selection?.type === "boundary") {
+    const container = document.geometry.containers.find(
+      (candidate) => candidate.id === selection.containerId,
+    );
+    const boundary = container?.boundaryPorts.find(
+      (candidate) => candidate.id === selection.id,
+    );
+    if (container && boundary) {
+      content = (
+        <>
+          <div className="inspector-heading">
+            <span className="kind-chip">{boundary.role} boundary</span>
+            <h2>{boundary.id}</h2>
+            <span className="read-only-label">
+              Container {container.id}
+            </span>
+          </div>
+          <code>
+            anchor ({boundary.anchor.x}, {boundary.anchor.y})
+          </code>
+          {boundary.role !== "result" && (
+            <p className="limitation">
+              Parameter and capture boundaries are structural and cannot be
+              deleted directly.
+            </p>
+          )}
+        </>
       );
     }
   } else if (selection?.type === "container") {
@@ -297,6 +437,13 @@ export function Inspector({
         </section>
       )}
       {content}
+      {selection && (
+        <section className="inspector-actions">
+          <button type="button" onClick={onDelete} disabled={!canDelete}>
+            Delete {selection.type} {selection.id}
+          </button>
+        </section>
+      )}
       {document.view && (
         <section className="readout">
           <h3>Saved view</h3>
