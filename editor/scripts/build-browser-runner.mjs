@@ -42,7 +42,7 @@ async function sourceHash() {
   for (const file of files) {
     hash.update(relative(repositoryRoot, file).replaceAll("\\", "/"));
     hash.update("\0");
-    hash.update(await readFile(file));
+    hash.update((await readFile(file, "utf8")).replaceAll("\r\n", "\n"));
     hash.update("\0");
   }
   return hash.digest("hex");
@@ -51,10 +51,15 @@ async function sourceHash() {
 const expectedSourceHash = await sourceHash();
 if (process.argv.includes("--check")) {
   const saved = JSON.parse(await readFile(metadata, "utf8"));
-  await readFile(artifact);
+  const generatedRunner = await readFile(artifact, "utf8");
   if (saved.sourceHash !== expectedSourceHash) {
     throw new Error(
       "Checked-in browser runner is stale. Run npm run runner:build.",
+    );
+  }
+  if (generatedRunner.includes("sourceMappingURL=")) {
+    throw new Error(
+      "Checked-in browser runner contains a source map. Regenerate the release artifact.",
     );
   }
   console.log(`browser runner fresh: ${expectedSourceHash}`);
@@ -70,6 +75,8 @@ const command = spawnSync(
     "build",
     "--root",
     repositoryRoot,
+    "--profile",
+    "release",
     "bin/browser_runner.bc.js",
   ],
   { cwd: repositoryRoot, encoding: "utf8", stdio: "inherit" },
@@ -88,6 +95,7 @@ await writeFile(
   `${JSON.stringify(
     {
       generator: "js_of_ocaml",
+      profile: "release",
       sourceHash: expectedSourceHash,
       source: "bin/browser_runner.ml",
     },
