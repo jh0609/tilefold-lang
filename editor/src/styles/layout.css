@@ -63,6 +63,31 @@
   border-left: 1px solid #e4e7ec;
 }
 
+.example-picker {
+  display: grid;
+  gap: 1px;
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.example-picker select {
+  width: min(220px, 34vw);
+  min-height: 32px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--bg-panel);
+  padding: 4px 28px 4px 8px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
 .file-button {
   display: inline-flex;
   align-items: center;
@@ -275,8 +300,13 @@
   }
 
   .toolbar-group {
+    flex-wrap: wrap;
     padding-left: 0;
     border-left: 0;
+  }
+
+  .example-picker select {
+    width: min(260px, calc(100vw - 24px));
   }
 
   .view-controls {

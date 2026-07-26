@@ -1,0 +1,752 @@
+{
+  "format": "tilefold-project",
+  "version": 1,
+  "geometry": {
+    "snapTolerance": 0,
+    "elements": [
+      {
+        "id": "addition_entry_drop_unit",
+        "kind": "drop",
+        "bounds": {
+          "x": 70,
+          "y": 20,
+          "width": 90,
+          "height": 60
+        },
+        "properties": {
+          "type": "unit"
+        },
+        "portAnchors": [
+          {
+            "port": "input",
+            "x": 70,
+            "y": 50
+          }
+        ]
+      },
+      {
+        "id": "addition_entry_captured_nat",
+        "kind": "nat_literal",
+        "bounds": {
+          "x": 70,
+          "y": 115,
+          "width": 90,
+          "height": 60
+        },
+        "properties": {
+          "value": "2"
+        },
+        "portAnchors": [
+          {
+            "port": "value",
+            "x": 160,
+            "y": 145
+          }
+        ]
+      },
+      {
+        "id": "addition_entry_argument_nat",
+        "kind": "nat_literal",
+        "bounds": {
+          "x": 70,
+          "y": 220,
+          "width": 90,
+          "height": 60
+        },
+        "properties": {
+          "value": "3"
+        },
+        "portAnchors": [
+          {
+            "port": "value",
+            "x": 160,
+            "y": 250
+          }
+        ]
+      },
+      {
+        "id": "addition_entry_function",
+        "kind": "function",
+        "bounds": {
+          "x": 220,
+          "y": 100,
+          "width": 130,
+          "height": 90
+        },
+        "properties": {
+          "templateId": "addition_template",
+          "parameterType": "nat",
+          "resultType": "nat",
+          "captures": [
+            {
+              "key": "a",
+              "type": "nat"
+            }
+          ]
+        },
+        "portAnchors": [
+          {
+            "port": "a",
+            "x": 220,
+            "y": 130
+          },
+          {
+            "port": "value",
+            "x": 350,
+            "y": 160
+          }
+        ]
+      },
+      {
+        "id": "addition_entry_apply",
+        "kind": "apply",
+        "bounds": {
+          "x": 370,
+          "y": 115,
+          "width": 110,
+          "height": 90
+        },
+        "properties": {
+          "parameterType": "nat",
+          "resultType": "nat"
+        },
+        "portAnchors": [
+          {
+            "port": "function",
+            "x": 370,
+            "y": 145
+          },
+          {
+            "port": "argument",
+            "x": 370,
+            "y": 175
+          },
+          {
+            "port": "result",
+            "x": 480,
+            "y": 160
+          }
+        ]
+      },
+      {
+        "id": "addition_step_function",
+        "kind": "function",
+        "bounds": {
+          "x": 740,
+          "y": 105,
+          "width": 130,
+          "height": 90
+        },
+        "properties": {
+          "templateId": "add_step_outer_template",
+          "parameterType": "nat",
+          "resultType": {
+            "arrow": [
+              "nat",
+              "nat"
+            ]
+          },
+          "captures": []
+        },
+        "portAnchors": [
+          {
+            "port": "value",
+            "x": 870,
+            "y": 165
+          }
+        ]
+      },
+      {
+        "id": "addition_natrec",
+        "kind": "nat_rec",
+        "bounds": {
+          "x": 930,
+          "y": 100,
+          "width": 120,
+          "height": 100
+        },
+        "properties": {
+          "type": "nat"
+        },
+        "portAnchors": [
+          {
+            "port": "base",
+            "x": 930,
+            "y": 120
+          },
+          {
+            "port": "step",
+            "x": 930,
+            "y": 140
+          },
+          {
+            "port": "count",
+            "x": 930,
+            "y": 160
+          },
+          {
+            "port": "result",
+            "x": 1050,
+            "y": 150
+          }
+        ]
+      },
+      {
+        "id": "add_step_drop_predecessor",
+        "kind": "drop",
+        "bounds": {
+          "x": 80,
+          "y": 440,
+          "width": 90,
+          "height": 60
+        },
+        "properties": {
+          "type": "nat"
+        },
+        "portAnchors": [
+          {
+            "port": "input",
+            "x": 80,
+            "y": 470
+          }
+        ]
+      },
+      {
+        "id": "add_step_accumulator_function",
+        "kind": "function",
+        "bounds": {
+          "x": 220,
+          "y": 500,
+          "width": 130,
+          "height": 90
+        },
+        "properties": {
+          "templateId": "add_step_inner_template",
+          "parameterType": "nat",
+          "resultType": "nat",
+          "captures": []
+        },
+        "portAnchors": [
+          {
+            "port": "value",
+            "x": 350,
+            "y": 560
+          }
+        ]
+      },
+      {
+        "id": "add_step_succ",
+        "kind": "succ",
+        "bounds": {
+          "x": 800,
+          "y": 470,
+          "width": 100,
+          "height": 60
+        },
+        "properties": {},
+        "portAnchors": [
+          {
+            "port": "input",
+            "x": 800,
+            "y": 500
+          },
+          {
+            "port": "result",
+            "x": 900,
+            "y": 500
+          }
+        ]
+      }
+    ],
+    "containers": [
+      {
+        "id": "addition_entry",
+        "kind": {
+          "kind": "entry",
+          "templateId": "addition_entry_template",
+          "resultType": "nat",
+          "dependencies": [
+            "addition_template"
+          ]
+        },
+        "bounds": {
+          "x": 0,
+          "y": 0,
+          "width": 500,
+          "height": 300
+        },
+        "boundaryPorts": [
+          {
+            "id": "addition_entry_parameter",
+            "role": "parameter",
+            "type": "unit",
+            "anchor": {
+              "x": 0,
+              "y": 50
+            }
+          },
+          {
+            "id": "addition_entry_result",
+            "role": "result",
+            "type": "nat",
+            "anchor": {
+              "x": 500,
+              "y": 160
+            }
+          }
+        ]
+      },
+      {
+        "id": "addition_container",
+        "kind": {
+          "kind": "template",
+          "templateId": "addition_template",
+          "parameterType": "nat",
+          "resultType": "nat",
+          "dependencies": [
+            "add_step_outer_template"
+          ]
+        },
+        "bounds": {
+          "x": 600,
+          "y": 0,
+          "width": 500,
+          "height": 300
+        },
+        "boundaryPorts": [
+          {
+            "id": "addition_parameter_b",
+            "role": "parameter",
+            "type": "nat",
+            "anchor": {
+              "x": 0,
+              "y": 80
+            }
+          },
+          {
+            "id": "addition_capture_a",
+            "role": "capture",
+            "captureKey": "a",
+            "type": "nat",
+            "anchor": {
+              "x": 0,
+              "y": 200
+            }
+          },
+          {
+            "id": "addition_result",
+            "role": "result",
+            "type": "nat",
+            "anchor": {
+              "x": 500,
+              "y": 150
+            }
+          }
+        ]
+      },
+      {
+        "id": "add_step_outer_container",
+        "kind": {
+          "kind": "template",
+          "templateId": "add_step_outer_template",
+          "parameterType": "nat",
+          "resultType": {
+            "arrow": [
+              "nat",
+              "nat"
+            ]
+          },
+          "dependencies": [
+            "add_step_inner_template"
+          ]
+        },
+        "bounds": {
+          "x": 0,
+          "y": 380,
+          "width": 500,
+          "height": 300
+        },
+        "boundaryPorts": [
+          {
+            "id": "add_step_predecessor",
+            "role": "parameter",
+            "type": "nat",
+            "anchor": {
+              "x": 0,
+              "y": 90
+            }
+          },
+          {
+            "id": "add_step_outer_result",
+            "role": "result",
+            "type": {
+              "arrow": [
+                "nat",
+                "nat"
+              ]
+            },
+            "anchor": {
+              "x": 500,
+              "y": 170
+            }
+          }
+        ]
+      },
+      {
+        "id": "add_step_inner_container",
+        "kind": {
+          "kind": "template",
+          "templateId": "add_step_inner_template",
+          "parameterType": "nat",
+          "resultType": "nat",
+          "dependencies": []
+        },
+        "bounds": {
+          "x": 600,
+          "y": 380,
+          "width": 500,
+          "height": 300
+        },
+        "boundaryPorts": [
+          {
+            "id": "add_step_accumulator",
+            "role": "parameter",
+            "type": "nat",
+            "anchor": {
+              "x": 0,
+              "y": 120
+            }
+          },
+          {
+            "id": "add_step_inner_result",
+            "role": "result",
+            "type": "nat",
+            "anchor": {
+              "x": 500,
+              "y": 120
+            }
+          }
+        ]
+      }
+    ],
+    "wires": [
+      {
+        "id": "addition_entry_wire_parameter",
+        "points": [
+          {
+            "x": 0,
+            "y": 50
+          },
+          {
+            "x": 70,
+            "y": 50
+          }
+        ],
+        "sourceHint": {
+          "kind": "boundary_port",
+          "containerId": "addition_entry",
+          "boundaryId": "addition_entry_parameter"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "addition_entry_drop_unit",
+          "port": "input"
+        }
+      },
+      {
+        "id": "addition_entry_wire_capture",
+        "points": [
+          {
+            "x": 160,
+            "y": 145
+          },
+          {
+            "x": 220,
+            "y": 130
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "addition_entry_captured_nat",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "addition_entry_function",
+          "port": "a"
+        }
+      },
+      {
+        "id": "addition_entry_wire_function",
+        "points": [
+          {
+            "x": 350,
+            "y": 160
+          },
+          {
+            "x": 370,
+            "y": 145
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "addition_entry_function",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "addition_entry_apply",
+          "port": "function"
+        }
+      },
+      {
+        "id": "addition_entry_wire_argument",
+        "points": [
+          {
+            "x": 160,
+            "y": 250
+          },
+          {
+            "x": 340,
+            "y": 250
+          },
+          {
+            "x": 370,
+            "y": 175
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "addition_entry_argument_nat",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "addition_entry_apply",
+          "port": "argument"
+        }
+      },
+      {
+        "id": "addition_entry_wire_result",
+        "points": [
+          {
+            "x": 480,
+            "y": 160
+          },
+          {
+            "x": 500,
+            "y": 160
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "addition_entry_apply",
+          "port": "result"
+        },
+        "targetHint": {
+          "kind": "boundary_port",
+          "containerId": "addition_entry",
+          "boundaryId": "addition_entry_result"
+        }
+      },
+      {
+        "id": "addition_wire_base",
+        "points": [
+          {
+            "x": 600,
+            "y": 200
+          },
+          {
+            "x": 890,
+            "y": 200
+          },
+          {
+            "x": 930,
+            "y": 120
+          }
+        ],
+        "sourceHint": {
+          "kind": "boundary_port",
+          "containerId": "addition_container",
+          "boundaryId": "addition_capture_a"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "addition_natrec",
+          "port": "base"
+        }
+      },
+      {
+        "id": "addition_wire_step",
+        "points": [
+          {
+            "x": 870,
+            "y": 165
+          },
+          {
+            "x": 930,
+            "y": 140
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "addition_step_function",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "addition_natrec",
+          "port": "step"
+        }
+      },
+      {
+        "id": "addition_wire_count",
+        "points": [
+          {
+            "x": 600,
+            "y": 80
+          },
+          {
+            "x": 900,
+            "y": 80
+          },
+          {
+            "x": 930,
+            "y": 160
+          }
+        ],
+        "sourceHint": {
+          "kind": "boundary_port",
+          "containerId": "addition_container",
+          "boundaryId": "addition_parameter_b"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "addition_natrec",
+          "port": "count"
+        }
+      },
+      {
+        "id": "addition_wire_result",
+        "points": [
+          {
+            "x": 1050,
+            "y": 150
+          },
+          {
+            "x": 1100,
+            "y": 150
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "addition_natrec",
+          "port": "result"
+        },
+        "targetHint": {
+          "kind": "boundary_port",
+          "containerId": "addition_container",
+          "boundaryId": "addition_result"
+        }
+      },
+      {
+        "id": "add_step_drop_predecessor_wire",
+        "points": [
+          {
+            "x": 0,
+            "y": 470
+          },
+          {
+            "x": 80,
+            "y": 470
+          }
+        ],
+        "sourceHint": {
+          "kind": "boundary_port",
+          "containerId": "add_step_outer_container",
+          "boundaryId": "add_step_predecessor"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "add_step_drop_predecessor",
+          "port": "input"
+        }
+      },
+      {
+        "id": "add_step_accumulator_function_result_wire",
+        "points": [
+          {
+            "x": 350,
+            "y": 560
+          },
+          {
+            "x": 500,
+            "y": 550
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "add_step_accumulator_function",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "boundary_port",
+          "containerId": "add_step_outer_container",
+          "boundaryId": "add_step_outer_result"
+        }
+      },
+      {
+        "id": "add_step_succ_input_wire",
+        "points": [
+          {
+            "x": 600,
+            "y": 500
+          },
+          {
+            "x": 800,
+            "y": 500
+          }
+        ],
+        "sourceHint": {
+          "kind": "boundary_port",
+          "containerId": "add_step_inner_container",
+          "boundaryId": "add_step_accumulator"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "add_step_succ",
+          "port": "input"
+        }
+      },
+      {
+        "id": "add_step_succ_result_wire",
+        "points": [
+          {
+            "x": 900,
+            "y": 500
+          },
+          {
+            "x": 1100,
+            "y": 500
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "add_step_succ",
+          "port": "result"
+        },
+        "targetHint": {
+          "kind": "boundary_port",
+          "containerId": "add_step_inner_container",
+          "boundaryId": "add_step_inner_result"
+        }
+      }
+    ],
+    "junctions": []
+  },
+  "view": {
+    "cameraX": 0,
+    "cameraY": 0,
+    "zoom": 1
+  }
+}

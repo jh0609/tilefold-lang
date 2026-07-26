@@ -254,3 +254,17 @@ for (const [name, parameterType, resultType] of [
   );
 }
 console.log(target);
+
+for (const name of ["successor", "addition", "multiplication"]) {
+  const example = parseProjectJson(
+    await readFile(
+      resolve(`../examples/${name}.tilefold.json`),
+      "utf8",
+    ),
+  );
+  await writeFile(
+    resolve(`.tmp/exported-example-${name}.tilefold.json`),
+    exportProjectJson(example),
+    "utf8",
+  );
+}

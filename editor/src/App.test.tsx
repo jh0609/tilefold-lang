@@ -58,6 +58,78 @@ describe("Tilefold editor UI", () => {
     expect(screen.getByText(/3 elements/)).toBeInTheDocument();
   });
 
+  it("selects natural-number examples and clears stale document UI state", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByTestId("element-node_nat_2"));
+    await user.click(screen.getByRole("button", { name: "Add Nat" }));
+    expect(screen.getByRole("button", { name: "Undo" })).toBeEnabled();
+
+    const picker = screen.getByRole("combobox", { name: "Example project" });
+    expect(
+      Array.from(picker.querySelectorAll("option"), (option) => option.textContent),
+    ).toEqual([
+      "Original — Nat(2) → Succ",
+      "Successor — 2 → 3",
+      "Addition — 2 + 3 = 5",
+      "Multiplication — 3 × 4 = 12",
+    ]);
+    await user.selectOptions(picker, "addition");
+    await user.click(screen.getByRole("button", { name: "Open example" }));
+
+    expect(screen.getByText("addition.tilefold.json")).toBeInTheDocument();
+    expect(screen.getByTestId("element-addition_natrec")).toBeInTheDocument();
+    expect(screen.getByText("No selection")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+    expect(screen.getByText("0 undo · 0 redo")).toBeInTheDocument();
+    const viewBox = screen
+      .getByTestId("project-canvas")
+      .getAttribute("viewBox")
+      ?.split(" ")
+      .map(Number);
+    expect(viewBox?.[2]).toBeGreaterThanOrEqual(1148);
+  });
+
+  it("removes the previous execution trace when opening another example", async () => {
+    const user = userEvent.setup();
+    class WorkerMock {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+      onmessageerror: ((event: MessageEvent) => void) | null = null;
+      terminate = vi.fn();
+      postMessage(message: { requestId: number }) {
+        queueMicrotask(() =>
+          this.onmessage?.({
+            data: {
+              requestId: message.requestId,
+              output: JSON.stringify({
+                status: "completed",
+                result: "Nat(3)",
+                rewriteCount: 1,
+                trace: [
+                  { index: 0, rule: "Succ", subject: "node_succ" },
+                ],
+              }),
+            },
+          } as MessageEvent),
+        );
+      }
+    }
+    vi.stubGlobal("Worker", WorkerMock);
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "Run" }));
+    expect(await screen.findByText("Nat(3)")).toBeInTheDocument();
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Example project" }),
+      "multiplication",
+    );
+    await user.click(screen.getByRole("button", { name: "Open example" }));
+
+    expect(screen.queryByText("Nat(3)")).not.toBeInTheDocument();
+    expect(screen.getByTestId("element-multiplication_natrec")).toBeInTheDocument();
+  });
+
   it("authors a total Function template and undoes it as one action", async () => {
     const user = userEvent.setup();
     render(<App />);

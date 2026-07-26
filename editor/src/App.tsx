@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import exampleJson from "../../examples/nat-succ.tilefold.json?raw";
 import { Canvas } from "./components/Canvas";
 import { Inspector } from "./components/Inspector";
 import { NodePalette } from "./components/NodePalette";
@@ -56,8 +55,14 @@ import {
   initialTraceIndex,
   traceEventAt,
 } from "./model/traceInspector";
+import {
+  EXAMPLE_PROJECTS,
+  exampleProjectById,
+  type ExampleProjectId,
+} from "./model/exampleProjects";
 
-const initialDocument = parseProjectJson(exampleJson);
+const initialExample = EXAMPLE_PROJECTS[0];
+const initialDocument = parseProjectJson(initialExample.projectJson);
 
 function readFileText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -93,9 +98,11 @@ export function App() {
     createEditorHistory(initialDocument),
   );
   const document = history.present;
-  const [projectName, setProjectName] = useState(
-    "nat-succ.tilefold.json",
+  const [projectName, setProjectName] = useState<string>(
+    initialExample.fileName,
   );
+  const [selectedExampleId, setSelectedExampleId] =
+    useState<ExampleProjectId>(initialExample.id);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [inspectorError, setInspectorError] = useState<string | null>(null);
@@ -293,9 +300,11 @@ export function App() {
   }
 
   function openExample() {
-    const next = parseProjectJson(exampleJson);
+    const example = exampleProjectById(selectedExampleId) ?? initialExample;
+    const next = parseProjectJson(example.projectJson);
     resetDocument(next);
-    setProjectName("nat-succ.tilefold.json");
+    fitViewToDocument(next);
+    setProjectName(example.fileName);
     setImportError(null);
   }
 
@@ -366,7 +375,7 @@ export function App() {
 
   function fitViewToDocument(target: ProjectDocument) {
     const contentBounds = projectContentBounds(target);
-    const reference = parseViewBox(referenceViewBox);
+    const reference = parseViewBox(savedViewBox(target.view));
     if (!contentBounds || !reference) return;
     setViewBox(formatViewBox(fitViewBoxToBounds(contentBounds, reference)));
   }
@@ -470,6 +479,9 @@ export function App() {
         canDelete={selectionCanBeDeleted(selection)}
         undoLabel={undoLabel(history)}
         redoLabel={redoLabel(history)}
+        examples={EXAMPLE_PROJECTS}
+        selectedExampleId={selectedExampleId}
+        onSelectExample={setSelectedExampleId}
         onOpenExample={openExample}
         onOpenFile={openFile}
         onExport={() => downloadProject(document)}
