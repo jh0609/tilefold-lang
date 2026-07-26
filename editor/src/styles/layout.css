@@ -124,12 +124,85 @@
 }
 
 .execution-trace {
+  display: grid;
+  gap: 3px;
   margin: 8px 0 0;
-  padding-left: 22px;
+  padding: 0;
+  list-style: none;
 }
 
 .execution-trace li {
-  margin: 4px 0;
+  min-width: 0;
+}
+
+.trace-inspector {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.trace-inspector-heading,
+.trace-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.trace-inspector h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.trace-navigation {
+  justify-content: flex-start;
+}
+
+.trace-event-details {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.trace-event-details div {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 6px;
+}
+
+.trace-event-details dt {
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.trace-event-details dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+
+.trace-unmapped,
+.trace-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.trace-event-button {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 7px;
+  border-color: transparent;
+  text-align: left;
+}
+
+.trace-event-button[aria-current="step"] {
+  border-color: var(--select);
+  color: var(--select);
+  background: #edf5ff;
 }
 
 .status-bar {

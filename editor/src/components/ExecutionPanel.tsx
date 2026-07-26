@@ -1,17 +1,28 @@
 import type { ExecutionResponse } from "../model/executionApi";
+import { TraceInspector } from "./TraceInspector";
 
 export type ExecutionState =
   | { status: "idle" }
   | { status: "running" }
-  | { status: "completed"; response: ExecutionResponse }
+  | {
+      status: "completed";
+      response: ExecutionResponse;
+      selectedTraceIndex: number | null;
+    }
   | { status: "failed"; message: string }
   | { status: "canceled" };
 
 interface ExecutionPanelProps {
   state: ExecutionState;
+  traceSourceElementId: string | null;
+  onTraceSelect: (index: number) => void;
 }
 
-export function ExecutionPanel({ state }: ExecutionPanelProps) {
+export function ExecutionPanel({
+  state,
+  traceSourceElementId,
+  onTraceSelect,
+}: ExecutionPanelProps) {
   const execution = state.status === "completed" ? state.response : null;
   return (
     <section
@@ -54,14 +65,17 @@ export function ExecutionPanel({ state }: ExecutionPanelProps) {
             Result: <strong>{execution.result}</strong> ·{" "}
             {execution.rewriteCount} rewrites
           </p>
-          <ol className="execution-trace" aria-label="Rewrite trace">
-            {execution.trace.map((event) => (
-              <li key={event.index}>
-                <code>#{event.index}</code> {event.rule}{" "}
-                <code>{event.subject}</code>
-              </li>
-            ))}
-          </ol>
+          {state.status === "completed" &&
+          state.selectedTraceIndex !== null ? (
+            <TraceInspector
+              trace={execution.trace}
+              selectedIndex={state.selectedTraceIndex}
+              sourceElementId={traceSourceElementId}
+              onSelect={onTraceSelect}
+            />
+          ) : (
+            <p className="trace-empty">No rewrite events.</p>
+          )}
         </>
       )}
     </section>
