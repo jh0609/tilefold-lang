@@ -4,6 +4,13 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
+interface WorkerMockShape {
+  onmessage: ((event: MessageEvent) => void) | null;
+  onerror: ((event: ErrorEvent) => void) | null;
+  onmessageerror: ((event: MessageEvent) => void) | null;
+  terminate: ReturnType<typeof vi.fn>;
+}
+
 beforeAll(() => {
   Object.defineProperty(SVGElement.prototype, "setPointerCapture", {
     configurable: true,
@@ -87,6 +94,160 @@ describe("Tilefold editor UI", () => {
     expect(postMessage).toHaveBeenCalledOnce();
   });
 
+  it("cancels execution, ignores a late result, and reruns with a new worker", async () => {
+    const user = userEvent.setup();
+    const workers: Array<{
+      onmessage: ((event: MessageEvent) => void) | null;
+      onerror: ((event: ErrorEvent) => void) | null;
+      onmessageerror: ((event: MessageEvent) => void) | null;
+      terminate: ReturnType<typeof vi.fn>;
+    }> = [];
+    class WorkerMock {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+      onmessageerror: ((event: MessageEvent) => void) | null = null;
+      postMessage = vi.fn();
+      terminate = vi.fn();
+      constructor() {
+        workers.push(this);
+      }
+    }
+    vi.stubGlobal("Worker", WorkerMock);
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Run" }));
+    const lateMessage = workers[0].onmessage;
+    expect(screen.getByRole("button", { name: "Cancel execution" })).toBeEnabled();
+    expect(screen.getByText("0 undo · 0 redo")).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Cancel execution" }),
+    );
+    expect(workers[0].terminate).toHaveBeenCalledOnce();
+    expect(screen.getByRole("status")).toHaveTextContent("Execution canceled");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run" })).toBeEnabled();
+    expect(screen.getByText("0 undo · 0 redo")).toBeInTheDocument();
+
+    lateMessage?.({
+      data: {
+        requestId: 1,
+        output: JSON.stringify({
+          status: "completed",
+          result: "Nat(99)",
+          rewriteCount: 0,
+          trace: [],
+        }),
+      },
+    } as MessageEvent);
+    expect(screen.queryByText("Nat(99)")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Run" }));
+    expect(workers).toHaveLength(2);
+    workers[1].onmessage?.({
+      data: {
+        requestId: 2,
+        output: JSON.stringify({
+          status: "completed",
+          result: "Nat(3)",
+          rewriteCount: 0,
+          trace: [],
+        }),
+      },
+    } as MessageEvent);
+    expect(await screen.findByText(/Result:/)).toHaveTextContent("Nat(3)");
+    expect(screen.queryByText("Execution canceled.")).not.toBeInTheDocument();
+  });
+
+  it("recovers with a new worker after a worker crash", async () => {
+    const user = userEvent.setup();
+    const workers: WorkerMockShape[] = [];
+    class WorkerMock {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+      onmessageerror: ((event: MessageEvent) => void) | null = null;
+      postMessage = vi.fn();
+      terminate = vi.fn();
+      constructor() {
+        workers.push(this);
+      }
+    }
+    vi.stubGlobal("Worker", WorkerMock);
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "Run" }));
+    workers[0].onerror?.({ message: "crashed" } as ErrorEvent);
+    expect(await screen.findByRole("alert")).toHaveTextContent("crashed");
+
+    await user.click(screen.getByRole("button", { name: "Run" }));
+    expect(workers).toHaveLength(2);
+    workers[1].onmessage?.({
+      data: {
+        requestId: 2,
+        output: JSON.stringify({
+          status: "completed",
+          result: "Nat(3)",
+          rewriteCount: 0,
+          trace: [],
+        }),
+      },
+    } as MessageEvent);
+    expect(await screen.findByText(/Result:/)).toHaveTextContent("Nat(3)");
+  });
+
+  it("terminates active execution when the editor unmounts", async () => {
+    const user = userEvent.setup();
+    let worker: WorkerMockShape | undefined;
+    class WorkerMock {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+      onmessageerror: ((event: MessageEvent) => void) | null = null;
+      postMessage = vi.fn();
+      terminate = vi.fn();
+      constructor() {
+        worker = this;
+      }
+    }
+    vi.stubGlobal("Worker", WorkerMock);
+    const rendered = render(<App />);
+    await user.click(screen.getByRole("button", { name: "Run" }));
+    rendered.unmount();
+    expect(worker?.terminate).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a completed result across selection and camera-only changes", async () => {
+    const user = userEvent.setup();
+    class WorkerMock {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+      onmessageerror: ((event: MessageEvent) => void) | null = null;
+      terminate = vi.fn();
+      postMessage = (message: { requestId: number }) =>
+        queueMicrotask(() =>
+          this.onmessage?.({
+            data: {
+              requestId: message.requestId,
+              output: JSON.stringify({
+                status: "completed",
+                result: "Nat(3)",
+                rewriteCount: 0,
+                trace: [],
+              }),
+            },
+          } as MessageEvent),
+        );
+    }
+    vi.stubGlobal("Worker", WorkerMock);
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "Run" }));
+    expect(await screen.findByText(/Result:/)).toHaveTextContent("Nat(3)");
+
+    await user.click(screen.getByTestId("element-node_nat_2"));
+    fireEvent.wheel(screen.getByTestId("project-canvas"), { deltaY: -120 });
+    await user.click(screen.getByRole("button", { name: "Fit view" }));
+    await user.click(screen.getByRole("button", { name: "Reset view" }));
+    expect(screen.getByText(/Result:/)).toHaveTextContent("Nat(3)");
+    expect(screen.getByText("0 undo · 0 redo")).toBeInTheDocument();
+  });
+
   it("ignores a worker response after the document changes", async () => {
     const user = userEvent.setup();
     let worker:
@@ -126,6 +287,7 @@ describe("Tilefold editor UI", () => {
 
     expect(worker?.terminate).toHaveBeenCalledOnce();
     expect(screen.queryByText(/Result:/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Execution canceled.")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Run" })).toBeEnabled();
   });
 
