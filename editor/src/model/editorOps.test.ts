@@ -5,6 +5,7 @@ import {
   addFunctionTemplate,
   addWire,
   deleteSelection,
+  findElementOwnerContainer,
   findOpenElementCenter,
   moveElement,
   nextStableId,
@@ -197,6 +198,55 @@ describe("editor operations", () => {
         "Cannot extend entry without overlapping blocking_container. Move the containers apart first.",
     });
     expect(blocked.geometry.elements).toBe(project.geometry.elements);
+  });
+
+  it("uses the innermost geometric owner and permits safe nested host expansion", () => {
+    const project = parseProjectJson(exampleJson);
+    const nestedHost = {
+      ...project.geometry.containers[0]!,
+      id: "nested_host",
+      kind: {
+        kind: "template" as const,
+        templateId: "nested_template",
+        parameterType: "unit" as const,
+        resultType: "nat" as const,
+        dependencies: [],
+      },
+      bounds: { x: 20, y: 20, width: 240, height: 120 },
+      boundaryPorts: [],
+    };
+    const parent = {
+      ...project.geometry.containers[0]!,
+      bounds: { x: 0, y: 0, width: 500, height: 400 },
+    };
+    const nestedElement = {
+      ...project.geometry.elements[1]!,
+      bounds: { x: 60, y: 60, width: 20, height: 20 },
+    };
+    const nestedDocument = {
+      ...project,
+      geometry: {
+        ...project.geometry,
+        elements: [nestedElement],
+        containers: [parent, nestedHost],
+        wires: [],
+      },
+    };
+
+    expect(findElementOwnerContainer(nestedDocument, nestedElement)?.id).toBe(
+      "nested_host",
+    );
+    const result = addFunctionTemplate(nestedDocument, "nested_host", {
+      templateId: "nested_child",
+      parameterType: "unit",
+      resultType: "unit",
+    });
+    if ("error" in result) throw new Error(result.error);
+    expect(
+      result.document.geometry.containers.find(
+        (container) => container.id === "nested_host",
+      )?.kind.dependencies,
+    ).toEqual(["nested_child"]);
   });
 
   it.each([

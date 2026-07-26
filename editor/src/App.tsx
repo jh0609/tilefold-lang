@@ -30,6 +30,7 @@ import {
 } from "./model/editorHistory";
 import { exportProjectJson, parseProjectJson } from "./model/importProject";
 import {
+  findElementOwnerContainer,
   findOpenElementCenter,
   nextFunctionTemplateId,
   type AddableElementKind,
@@ -147,20 +148,7 @@ export function App() {
       const element = document.geometry.elements.find(
         (candidate) => candidate.id === selection.id,
       );
-      if (element) {
-        const center = {
-          x: element.bounds.x + element.bounds.width / 2,
-          y: element.bounds.y + element.bounds.height / 2,
-        };
-        const containing = document.geometry.containers.filter(
-          (container) =>
-            center.x > container.bounds.x &&
-            center.x < container.bounds.x + container.bounds.width &&
-            center.y > container.bounds.y &&
-            center.y < container.bounds.y + container.bounds.height,
-        );
-        if (containing.length === 1) return containing[0];
-      }
+      if (element) return findElementOwnerContainer(document, element);
     }
     return (
       document.geometry.containers.find(

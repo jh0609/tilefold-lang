@@ -166,6 +166,55 @@ function containerBoundsOverlap(left: Bounds, right: Bounds): boolean {
   );
 }
 
+function boundsInside(inner: Bounds, outer: Bounds): boolean {
+  return (
+    inner.x >= outer.x &&
+    inner.y >= outer.y &&
+    inner.x + inner.width <= outer.x + outer.width &&
+    inner.y + inner.height <= outer.y + outer.height
+  );
+}
+
+function boundsArea(bounds: Bounds): number {
+  return bounds.width * bounds.height;
+}
+
+function containerParent(
+  containers: readonly ProjectContainer[],
+  container: ProjectContainer,
+): ProjectContainer | undefined {
+  return containers
+    .filter(
+      (candidate) =>
+        candidate.id !== container.id &&
+        boundsInside(container.bounds, candidate.bounds),
+    )
+    .sort(
+      (left, right) =>
+        boundsArea(left.bounds) - boundsArea(right.bounds) ||
+        left.id.localeCompare(right.id),
+    )[0];
+}
+
+export function findElementOwnerContainer(
+  document: ProjectDocument,
+  element: ProjectElement,
+): ProjectContainer | undefined {
+  const candidates = document.geometry.containers
+    .filter((container) => boundsInside(element.bounds, container.bounds))
+    .sort(
+      (left, right) =>
+        boundsArea(left.bounds) - boundsArea(right.bounds) ||
+        left.id.localeCompare(right.id),
+    );
+  const first = candidates[0];
+  if (!first) return undefined;
+  return candidates[1] &&
+    boundsArea(candidates[1].bounds) === boundsArea(first.bounds)
+    ? undefined
+    : first;
+}
+
 function validProjectId(value: string): boolean {
   return /^[A-Za-z0-9_.-]{1,128}$/.test(value);
 }
@@ -228,9 +277,18 @@ export function addFunctionTemplate(
     ...host.bounds,
     height: host.bounds.height + 200,
   };
+  const parent = containerParent(document.geometry.containers, host);
+  if (parent && !boundsInside(expandedHostBounds, parent.bounds)) {
+    return {
+      error: `Cannot extend ${host.id} outside its parent ${parent.id}. Move or resize the containers first.`,
+    };
+  }
+  const hostParentId = parent?.id;
   const overlappingContainer = document.geometry.containers.find(
     (container) =>
       container.id !== host.id &&
+      containerParent(document.geometry.containers, container)?.id ===
+        hostParentId &&
       containerBoundsOverlap(expandedHostBounds, container.bounds),
   );
   if (overlappingContainer) {
