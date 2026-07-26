@@ -46,5 +46,17 @@ currying/lowering algorithm.
 - The next vertical slice can lower validated Unit/Nat functions to existing
   immutable templates, closures, and unary `Apply` nodes.
 
-Local bindings, capture inference, automatic resource operations, decoding,
-and lowering are intentionally deferred.
+At this model checkpoint, local bindings, capture inference, automatic resource
+operations, decoding, and lowering were intentionally deferred.
+
+## Follow-up: minimal executable slice
+
+A minimal lowering slice accepts only nullary entry functions and at most one
+`Unit` or `Nat` parameter per callee. A unary parameter must be used exactly
+once. Calls lower to capture-free `Function` and `Apply` nodes; nullary Core
+templates receive and explicitly drop a synthetic Unit parameter.
+
+This preserves the original resource decision: the first executable slice does
+not pretend multi-use values are free, and it does not choose a `Copy` tree
+shape before the deterministic resource-usage pass is specified. General
+multi-argument lowering remains deferred.

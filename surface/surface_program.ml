@@ -111,6 +111,33 @@ type t = {
   canonical : string;
 }
 
+type lowering_error =
+  | Entry_function_not_found of Function_id.t
+  | Entry_function_requires_no_parameters of {
+      function_id : Function_id.t;
+      actual : int;
+    }
+  | Unsupported_parameter_count of {
+      function_id : Function_id.t;
+      actual : int;
+    }
+  | Unsupported_value_type of {
+      function_id : Function_id.t;
+      binding : Name.t;
+      typ : Core_type.t;
+    }
+  | Unsupported_parameter_use_count of {
+      function_id : Function_id.t;
+      parameter : Name.t;
+      actual : int;
+    }
+  | Core_graph_validation_errors of {
+      function_id : Function_id.t;
+      errors : Core_graph.validation_error list;
+    }
+  | Program_package_validation_errors of Program_package.validation_error list
+  | Lowering_invariant_violation of string
+
 let functions program = program.functions
 let canonical_serialization program = program.canonical
 
@@ -450,6 +477,417 @@ let validate raw =
         }
   | _ -> Error errors
 
+module CG = Core_graph
+module P = Program_package
+
+let ( let* ) result f =
+  match result with Ok value -> f value | Error _ as error -> error
+
+let core_template_id id =
+  match CG.Function_template_id.of_string (Function_id.to_string id) with
+  | Ok id -> id
+  | Error message ->
+      invalid_arg ("validated Surface function ID is not a Core template ID: " ^ message)
+
+let generated_node_id value =
+  match CG.Node_id.of_string value with
+  | Ok id -> id
+  | Error message -> invalid_arg ("invalid generated Surface node ID: " ^ message)
+
+let generated_edge_id value =
+  match CG.Edge_id.of_string value with
+  | Ok id -> id
+  | Error message -> invalid_arg ("invalid generated Surface edge ID: " ^ message)
+
+let parameter_node_id = generated_node_id "__surface_parameter"
+let result_node_id = generated_node_id "__surface_result"
+let unit_drop_node_id = generated_node_id "__surface_unit_drop"
+
+let port_ref node_id port_key : CG.port_ref =
+  { node_id; port_key }
+
+let output node_id = port_ref node_id CG.Port_key.value
+let input node_id = port_ref node_id CG.Port_key.input
+
+let supported_value_type = function
+  | Core_type.Unit | Core_type.Nat -> true
+  | Core_type.Arrow _ -> false
+
+let rec parameter_use_count parameter = function
+  | Parameter name -> if Name.equal parameter name then 1 else 0
+  | Unit_literal | Nat_literal _ -> 0
+  | Call call ->
+      List.fold_left
+        (fun count (argument : argument) ->
+          count + parameter_use_count parameter argument.value)
+        0 call.arguments
+
+type graph_build = {
+  next_node : int;
+  next_edge : int;
+  nodes_rev : CG.node list;
+  edges_rev : CG.edge list;
+  order_rev : CG.Node_id.t list;
+}
+
+let add_expression_node label kind executable state =
+  let node_id =
+    generated_node_id
+      (Printf.sprintf "__surface_expr_%04d_%s" state.next_node label)
+  in
+  let order_rev =
+    if executable then node_id :: state.order_rev else state.order_rev
+  in
+  ( {
+      state with
+      next_node = state.next_node + 1;
+      nodes_rev = { CG.id = node_id; kind } :: state.nodes_rev;
+      order_rev;
+    },
+    node_id )
+
+let add_edge source target state =
+  let id =
+    generated_edge_id
+      (Printf.sprintf "__surface_edge_%04d" state.next_edge)
+  in
+  {
+    state with
+    next_edge = state.next_edge + 1;
+    edges_rev = { CG.id; source; target } :: state.edges_rev;
+  }
+
+let find_built_template built id =
+  built
+  |> List.find_opt (fun (built_id, _) -> Function_id.equal built_id id)
+  |> Option.map snd
+
+let function_signature template : CG.function_signature =
+  {
+    template_id = CG.Function_template.id template;
+    parameter_type = CG.Function_template.parameter_type template;
+    result_type = CG.Function_template.result_type template;
+    captures = [];
+  }
+
+let rec compile_expression functions built state expression =
+  match expression with
+  | Parameter _ -> Ok (state, output parameter_node_id)
+  | Unit_literal ->
+      let state, node_id =
+        add_expression_node "unit" CG.Unit_literal false state
+      in
+      Ok (state, output node_id)
+  | Nat_literal nat ->
+      let state, node_id =
+        add_expression_node "nat" (CG.Nat_literal nat) false state
+      in
+      Ok (state, output node_id)
+  | Call call -> (
+      match find_function functions call.function_id with
+      | None ->
+          Error
+            [
+              Lowering_invariant_violation
+                ("validated call target disappeared: "
+                ^ Function_id.to_string call.function_id);
+            ]
+      | Some target -> (
+          let* state, argument_source =
+            match target.parameters with
+            | [] ->
+                let state, unit_id =
+                  add_expression_node "unit_argument" CG.Unit_literal false
+                    state
+                in
+                Ok (state, output unit_id)
+            | [ parameter ] -> (
+                match
+                  List.find_opt
+                    (fun (argument : argument) ->
+                      Name.equal argument.parameter parameter.name)
+                    call.arguments
+                with
+                | Some argument ->
+                    compile_expression functions built state argument.value
+                | None ->
+                    Error
+                      [
+                        Lowering_invariant_violation
+                          ("validated call argument disappeared: "
+                          ^ Function_id.to_string call.function_id ^ "."
+                          ^ Name.to_string parameter.name);
+                      ])
+            | parameters ->
+                Error
+                  [
+                    Unsupported_parameter_count
+                      {
+                        function_id = target.id;
+                        actual = List.length parameters;
+                      };
+                  ]
+          in
+          match find_built_template built target.id with
+          | None ->
+              Error
+                [
+                  Lowering_invariant_violation
+                    ("call target template was not built first: "
+                    ^ Function_id.to_string target.id);
+                ]
+          | Some target_template ->
+              let state, function_node_id =
+                add_expression_node "function"
+                  (CG.Function (function_signature target_template))
+                  true state
+              in
+              let state, apply_node_id =
+                add_expression_node "apply"
+                  (CG.Apply
+                     {
+                       apply_parameter_type =
+                         CG.Function_template.parameter_type target_template;
+                       apply_result_type =
+                         CG.Function_template.result_type target_template;
+                     })
+                  true state
+              in
+              let state =
+                add_edge (output function_node_id)
+                  (port_ref apply_node_id CG.Port_key.function_input)
+                  state
+              in
+              let state =
+                add_edge argument_source
+                  (port_ref apply_node_id CG.Port_key.argument)
+                  state
+              in
+              Ok
+                ( state,
+                  port_ref apply_node_id CG.Port_key.result )))
+
+let lower_function_decl functions built function_decl =
+  let parameter_type =
+    match function_decl.parameters with
+    | [] -> Core_type.Unit
+    | [ parameter ] -> parameter.typ
+    | _ ->
+        invalid_arg
+          "parameter count must be checked before lowering a Surface function"
+  in
+  let parameter_node : CG.node =
+    { id = parameter_node_id; kind = CG.Parameter parameter_type }
+  in
+  let result_node : CG.node =
+    { id = result_node_id; kind = CG.Result function_decl.result.typ }
+  in
+  let initial =
+    {
+      next_node = 0;
+      next_edge = 0;
+      nodes_rev = [ result_node; parameter_node ];
+      edges_rev = [];
+      order_rev = [];
+    }
+  in
+  let initial, synthetic_drop =
+    match function_decl.parameters with
+    | [] ->
+        let drop_node : CG.node =
+          { id = unit_drop_node_id; kind = CG.Drop Core_type.Unit }
+        in
+        let state =
+          { initial with nodes_rev = drop_node :: initial.nodes_rev }
+          |> add_edge (output parameter_node_id) (input unit_drop_node_id)
+        in
+        (state, Some unit_drop_node_id)
+    | [ _ ] -> (initial, None)
+    | _ -> assert false
+  in
+  let* state, body_source =
+    compile_expression functions built initial function_decl.body
+  in
+  let state =
+    add_edge body_source
+      (port_ref result_node_id CG.Port_key.value)
+      state
+  in
+  let state =
+    match synthetic_drop with
+    | Some drop_id -> { state with order_rev = drop_id :: state.order_rev }
+    | None -> state
+  in
+  let raw_graph =
+    CG.Raw_graph.of_lists ~nodes:(List.rev state.nodes_rev)
+      ~edges:(List.rev state.edges_rev)
+      ~default_node_order:(List.rev state.order_rev)
+  in
+  let available_templates = List.map snd built in
+  match CG.validate_with_templates available_templates raw_graph with
+  | Error errors ->
+      Error
+        [
+          Core_graph_validation_errors
+            { function_id = function_decl.id; errors };
+        ]
+  | Ok body ->
+      let dependencies =
+        call_dependencies function_decl
+        |> List.map core_template_id
+      in
+      Ok
+        (CG.Function_template.create ~dependencies
+           ~id:(core_template_id function_decl.id)
+           ~parameter_type ~result_type:function_decl.result.typ ~captures:[]
+           ~body ())
+
+let find_built_pair built id =
+  List.find_opt
+    (fun (built_id, _) -> Function_id.equal built_id id)
+    built
+
+let rec build_function functions built id =
+  match find_built_pair built id with
+  | Some _ -> Ok built
+  | None -> (
+      match find_function functions id with
+      | None ->
+          Error
+            [
+              Lowering_invariant_violation
+                ("validated Surface function disappeared: "
+                ^ Function_id.to_string id);
+            ]
+      | Some function_decl ->
+          let dependencies = call_dependencies function_decl in
+          let* built =
+            List.fold_left
+              (fun result dependency ->
+                let* built = result in
+                build_function functions built dependency)
+              (Ok built) dependencies
+          in
+          let* template =
+            lower_function_decl functions built function_decl
+          in
+          Ok ((id, template) :: built))
+
+let lowering_preflight_errors ~entry_function_id functions =
+  let entry_errors =
+    match find_function functions entry_function_id with
+    | None -> [ Entry_function_not_found entry_function_id ]
+    | Some entry when entry.parameters <> [] ->
+        [
+          Entry_function_requires_no_parameters
+            {
+              function_id = entry.id;
+              actual = List.length entry.parameters;
+            };
+        ]
+    | Some _ -> []
+  in
+  let function_errors =
+    List.concat_map
+      (fun (function_decl : function_decl) ->
+        let parameter_count_errors =
+          if List.length function_decl.parameters > 1 then
+            [
+              Unsupported_parameter_count
+                {
+                  function_id = function_decl.id;
+                  actual = List.length function_decl.parameters;
+                };
+            ]
+          else []
+        in
+        let parameter_type_errors =
+          function_decl.parameters
+          |> List.filter_map (fun (parameter : parameter) ->
+                 if supported_value_type parameter.typ then None
+                 else
+                   Some
+                     (Unsupported_value_type
+                        {
+                          function_id = function_decl.id;
+                          binding = parameter.name;
+                          typ = parameter.typ;
+                        }))
+        in
+        let result_type_errors =
+          if supported_value_type function_decl.result.typ then []
+          else
+            [
+              Unsupported_value_type
+                {
+                  function_id = function_decl.id;
+                  binding = function_decl.result.name;
+                  typ = function_decl.result.typ;
+                };
+            ]
+        in
+        let use_errors =
+          match function_decl.parameters with
+          | [ parameter ] ->
+              let actual =
+                parameter_use_count parameter.name function_decl.body
+              in
+              if actual = 1 then []
+              else
+                [
+                  Unsupported_parameter_use_count
+                    {
+                      function_id = function_decl.id;
+                      parameter = parameter.name;
+                      actual;
+                    };
+                ]
+          | [] | _ :: _ :: _ -> []
+        in
+        parameter_count_errors @ parameter_type_errors
+        @ result_type_errors @ use_errors)
+      functions
+  in
+  entry_errors @ function_errors
+
+let lower_to_program_package ~entry_function_id program =
+  let functions = program.functions in
+  let preflight_errors =
+    lowering_preflight_errors ~entry_function_id functions
+  in
+  match preflight_errors with
+  | _ :: _ -> Error preflight_errors
+  | [] ->
+      let* built =
+        List.fold_left
+          (fun result (function_decl : function_decl) ->
+            let* built = result in
+            build_function functions built function_decl.id)
+          (Ok []) functions
+      in
+      let templates =
+        built
+        |> List.map snd
+        |> List.sort (fun left right ->
+               CG.Function_template_id.compare
+                 (CG.Function_template.id left)
+                 (CG.Function_template.id right))
+      in
+      let entry =
+        match find_function functions entry_function_id with
+        | Some entry -> entry
+        | None -> assert false
+      in
+      let raw =
+        P.Raw.create ~templates
+          ~entry_template_id:(core_template_id entry_function_id)
+          ~result_type:entry.result.typ ()
+      in
+      (match P.validate raw with
+      | Ok package -> Ok package
+      | Error errors ->
+          Error [ Program_package_validation_errors errors ])
+
 let render_function_id id = Function_id.to_string id
 let render_name name = Name.to_string name
 
@@ -491,3 +929,35 @@ let render_validation_error = function
   | Function_call_cycle ids ->
       "surface function call cycle: "
       ^ String.concat " -> " (List.map render_function_id ids)
+
+let render_lowering_error = function
+  | Entry_function_not_found function_id ->
+      "Surface lowering entry function not found: "
+      ^ render_function_id function_id
+  | Entry_function_requires_no_parameters { function_id; actual } ->
+      "Surface lowering entry function must have no parameters: "
+      ^ render_function_id function_id ^ " has "
+      ^ string_of_int actual
+  | Unsupported_parameter_count { function_id; actual } ->
+      "Surface lowering currently supports at most one parameter: "
+      ^ render_function_id function_id ^ " has "
+      ^ string_of_int actual
+  | Unsupported_value_type { function_id; binding; typ } ->
+      "Surface lowering currently supports only Unit and Nat values: "
+      ^ render_function_id function_id ^ "."
+      ^ render_name binding ^ " has type "
+      ^ Core_type.to_string typ
+  | Unsupported_parameter_use_count { function_id; parameter; actual } ->
+      "Surface lowering currently requires a unary parameter to be used exactly once: "
+      ^ render_function_id function_id ^ "."
+      ^ render_name parameter ^ " is used "
+      ^ string_of_int actual ^ " times"
+  | Core_graph_validation_errors { function_id; errors } ->
+      "Surface lowering produced an invalid Core graph for "
+      ^ render_function_id function_id ^ ": "
+      ^ String.concat "; " (List.map CG.validation_error_to_string errors)
+  | Program_package_validation_errors errors ->
+      "Surface lowering produced an invalid program package: "
+      ^ String.concat "; " (List.map P.validation_error_to_string errors)
+  | Lowering_invariant_violation message ->
+      "Surface lowering invariant violation: " ^ message

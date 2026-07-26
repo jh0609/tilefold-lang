@@ -110,3 +110,37 @@ val validate : Raw.t -> (t, validation_error list) result
 val functions : t -> function_decl list
 val canonical_serialization : t -> string
 val render_validation_error : validation_error -> string
+
+type lowering_error =
+  | Entry_function_not_found of Function_id.t
+  | Entry_function_requires_no_parameters of {
+      function_id : Function_id.t;
+      actual : int;
+    }
+  | Unsupported_parameter_count of {
+      function_id : Function_id.t;
+      actual : int;
+    }
+  | Unsupported_value_type of {
+      function_id : Function_id.t;
+      binding : Name.t;
+      typ : Core_type.t;
+    }
+  | Unsupported_parameter_use_count of {
+      function_id : Function_id.t;
+      parameter : Name.t;
+      actual : int;
+    }
+  | Core_graph_validation_errors of {
+      function_id : Function_id.t;
+      errors : Core_graph.validation_error list;
+    }
+  | Program_package_validation_errors of Program_package.validation_error list
+  | Lowering_invariant_violation of string
+
+val lower_to_program_package :
+  entry_function_id:Function_id.t ->
+  t ->
+  (Program_package.t, lowering_error list) result
+
+val render_lowering_error : lowering_error -> string

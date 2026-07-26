@@ -87,15 +87,35 @@ The canonical form is an S-expression headed by
 This format is initially a deterministic conformance and test view. It is not
 the persisted editor document format, and no decoder is defined yet.
 
+## First lowering slice
+
+`Surface_program.lower_to_program_package` lowers the smallest executable
+subset to the existing Core and returns a validated `Program_package.t`.
+
+- the entry function has no Surface parameters and becomes a Core `Unit -> A`
+  template whose synthetic Unit input is explicitly dropped;
+- a non-entry function may have one `Unit` or `Nat` parameter;
+- a Surface call becomes a capture-free Core `Function` followed by `Apply`;
+- generated nodes, edges, dependencies, and rewrite order are deterministic;
+- a unary parameter must currently be consumed exactly once.
+
+The last restriction is intentional. Zero or multiple uses require the
+separate resource-usage pass that inserts `Drop` or a balanced `Copy` tree.
+Until that pass exists, lowering reports `Unsupported_parameter_use_count`
+instead of silently changing Core resource semantics.
+
+Functions with multiple named parameters remain valid Surface values and
+serialize canonically, but this initial lowering slice rejects them explicitly.
+
 ## Deliberate exclusions
 
 This checkpoint does not define:
 
 - local `let` bindings;
-- automatic `Copy` or `Drop`;
+- automatic `Copy` or `Drop` for Surface parameters;
 - lexical capture inference;
 - pattern matching or user-defined data types;
-- Surface-to-Core lowering;
+- general multi-argument Surface-to-Core lowering;
 - a writable textual Surface syntax.
 
 Those features must build on the validated model without weakening Core's

@@ -1,6 +1,9 @@
 open Tilefold
 
 module S = Tilefold_surface.Surface_program
+module CG = Core_graph
+module P = Program_package
+module PS = Program_package_serialization
 
 let function_id value =
   match S.Function_id.of_string value with
@@ -17,6 +20,12 @@ let nat_parameter value : S.parameter =
 
 let nat_result value : S.result =
   { name = name value; typ = Core_type.Nat }
+
+let unit_parameter value : S.parameter =
+  { name = name value; typ = Core_type.Unit }
+
+let unit_result value : S.result =
+  { name = name value; typ = Core_type.Unit }
 
 let argument parameter value : S.argument =
   { parameter = name parameter; value }
@@ -219,6 +228,184 @@ let test_call_cycle_is_rejected () =
         | _ -> false)
       (validate [ function_b; function_a ]))
 
+let identity_function : S.function_decl =
+  {
+    id = function_id "identity";
+    parameters = [ nat_parameter "value" ];
+    result = nat_result "same";
+    body = S.Parameter (name "value");
+  }
+
+let lowering_entry_function : S.function_decl =
+  {
+    id = function_id "lower-entry";
+    parameters = [];
+    result = nat_result "answer";
+    body =
+      call "identity"
+        [ argument "value" (S.Nat_literal Nat.one) ];
+  }
+
+let validate_or_fail functions =
+  match validate functions with
+  | Ok program -> program
+  | Error errors ->
+      failwith
+        (String.concat "\n" (List.map S.render_validation_error errors))
+
+let lower_or_fail program =
+  match
+    S.lower_to_program_package
+      ~entry_function_id:(function_id "lower-entry")
+      program
+  with
+  | Ok package -> package
+  | Error errors ->
+      failwith
+        (String.concat "\n" (List.map S.render_lowering_error errors))
+
+let test_first_surface_lowering_slice_runs () =
+  let package =
+    validate_or_fail [ lowering_entry_function; identity_function ]
+    |> lower_or_fail
+  in
+  (match P.run package with
+  | P.Completed { value; _ } -> (
+      match Runtime_value.payload value with
+      | Runtime_value.Nat value -> assert (Nat.equal value Nat.one)
+      | _ -> failwith "lowered Surface program returned a non-Nat value")
+  | _ -> failwith "lowered Surface program did not complete");
+  let order =
+    package
+    |> P.entry_template
+    |> CG.Function_template.body
+    |> CG.Validated_graph.default_node_order
+    |> List.map CG.Node_id.to_string
+  in
+  assert (
+    order
+    = [
+        "__surface_expr_0001_function";
+        "__surface_expr_0002_apply";
+        "__surface_unit_drop";
+      ])
+
+let test_unit_surface_lowering_slice_runs () =
+  let identity : S.function_decl =
+    {
+      id = function_id "unit-identity";
+      parameters = [ unit_parameter "value" ];
+      result = unit_result "same";
+      body = S.Parameter (name "value");
+    }
+  in
+  let entry : S.function_decl =
+    {
+      id = function_id "unit-entry";
+      parameters = [];
+      result = unit_result "answer";
+      body =
+        call "unit-identity"
+          [ argument "value" S.Unit_literal ];
+    }
+  in
+  let package =
+    validate_or_fail [ entry; identity ]
+    |> fun program ->
+    match
+      S.lower_to_program_package
+        ~entry_function_id:(function_id "unit-entry")
+        program
+    with
+    | Ok package -> package
+    | Error errors ->
+        failwith
+          (String.concat "\n" (List.map S.render_lowering_error errors))
+  in
+  match P.run package with
+  | P.Completed { value; _ } ->
+      assert (
+        Runtime_value.payload_equal
+          (Runtime_value.payload value)
+          Runtime_value.Unit)
+  | _ -> failwith "lowered Unit Surface program did not complete"
+
+let test_lowering_is_canonical_across_function_order () =
+  let left =
+    validate_or_fail [ lowering_entry_function; identity_function ]
+    |> lower_or_fail
+    |> PS.encode
+  in
+  let right =
+    validate_or_fail [ identity_function; lowering_entry_function ]
+    |> lower_or_fail
+    |> PS.encode
+  in
+  assert (String.equal left right)
+
+let test_lowering_rejects_multi_argument_functions () =
+  let program =
+    validate_or_fail
+      [
+        first_function;
+        entry_function
+          [
+            argument "left" (S.Nat_literal Nat.zero);
+            argument "right" (S.Nat_literal Nat.one);
+          ];
+      ]
+  in
+  match
+    S.lower_to_program_package
+      ~entry_function_id:(function_id "entry")
+      program
+  with
+  | Error errors ->
+      assert (
+        List.exists
+          (function
+            | S.Unsupported_parameter_count { function_id = id; actual = 2 } ->
+                S.Function_id.equal id (function_id "first")
+            | _ -> false)
+          errors)
+  | Ok _ -> failwith "multi-argument Surface lowering unexpectedly succeeded"
+
+let test_lowering_defers_automatic_drop () =
+  let constant : S.function_decl =
+    {
+      id = function_id "constant";
+      parameters = [ nat_parameter "unused" ];
+      result = nat_result "answer";
+      body = S.Nat_literal Nat.zero;
+    }
+  in
+  let entry : S.function_decl =
+    {
+      lowering_entry_function with
+      body =
+        call "constant"
+          [ argument "unused" (S.Nat_literal Nat.one) ];
+    }
+  in
+  let program = validate_or_fail [ constant; entry ] in
+  match
+    S.lower_to_program_package
+      ~entry_function_id:(function_id "lower-entry")
+      program
+  with
+  | Error errors ->
+      assert (
+        List.exists
+          (function
+            | S.Unsupported_parameter_use_count
+                { function_id = id; parameter; actual = 0 } ->
+                S.Function_id.equal id (function_id "constant")
+                && S.Name.equal parameter (name "unused")
+            | _ -> false)
+          errors)
+  | Ok _ ->
+      failwith "unused parameter lowering unexpectedly inserted an implicit Drop"
+
 let () =
   test_names_must_not_be_empty ();
   test_valid_named_multi_argument_call ();
@@ -228,4 +415,9 @@ let () =
   test_call_argument_validation ();
   test_unknown_call_target ();
   test_call_cycle_is_rejected ();
+  test_first_surface_lowering_slice_runs ();
+  test_unit_surface_lowering_slice_runs ();
+  test_lowering_is_canonical_across_function_order ();
+  test_lowering_rejects_multi_argument_functions ();
+  test_lowering_defers_automatic_drop ();
   print_endline "surface program tests passed"
