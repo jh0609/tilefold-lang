@@ -4,7 +4,14 @@ import { Canvas } from "./components/Canvas";
 import { Inspector } from "./components/Inspector";
 import { StatusBar } from "./components/StatusBar";
 import { Toolbar } from "./components/Toolbar";
-import { savedViewBox } from "./model/coordinates";
+import {
+  cameraZoomPercent,
+  fitViewBoxToBounds,
+  formatViewBox,
+  parseViewBox,
+  projectContentBounds,
+  savedViewBox,
+} from "./model/coordinates";
 import {
   type EditorCommand,
 } from "./model/editorCommands";
@@ -17,6 +24,7 @@ import {
   undoLabel,
 } from "./model/editorHistory";
 import { exportProjectJson, parseProjectJson } from "./model/importProject";
+import { findOpenElementCenter } from "./model/editorOps";
 import type { Point, ProjectDocument, Selection } from "./model/project";
 import type {
   ConnectablePort,
@@ -67,14 +75,21 @@ export function App() {
   const [inspectorError, setInspectorError] = useState<string | null>(null);
   const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
   const [viewBox, setViewBox] = useState(savedViewBox(initialDocument.view));
+  const referenceViewBox = savedViewBox(document.view);
 
   const viewportCenter = useMemo<Point>(() => {
-    const [x, y, width, height] = viewBox.split(" ").map(Number);
+    const camera = parseViewBox(viewBox);
+    if (!camera) return { x: 0, y: 0 };
     return {
-      x: Math.round(x + width / 2),
-      y: Math.round(y + height / 2),
+      x: Math.round(camera.x + camera.width / 2),
+      y: Math.round(camera.y + camera.height / 2),
     };
   }, [viewBox]);
+  const zoomPercent = useMemo(() => {
+    const camera = parseViewBox(viewBox);
+    const reference = parseViewBox(referenceViewBox);
+    return camera && reference ? cameraZoomPercent(camera, reference) : 100;
+  }, [referenceViewBox, viewBox]);
 
   function resetDocument(next: ProjectDocument) {
     setHistory(createEditorHistory(next));
@@ -149,7 +164,7 @@ export function App() {
     const command = {
       type: "add_element",
       kind,
-      center: viewportCenter,
+      center: findOpenElementCenter(document, kind, viewportCenter),
     } as const;
     const nextDocument = runCommand(command);
     if (!nextDocument) return;
@@ -171,6 +186,13 @@ export function App() {
     if (runCommand({ type: "delete_selection", selection })) {
       setSelection(null);
     }
+  }
+
+  function fitView() {
+    const contentBounds = projectContentBounds(document);
+    const reference = parseViewBox(referenceViewBox);
+    if (!contentBounds || !reference) return;
+    setViewBox(formatViewBox(fitViewBoxToBounds(contentBounds, reference)));
   }
 
   function connectPorts(source: ConnectablePort, target: ConnectablePort) {
@@ -246,6 +268,7 @@ export function App() {
         onDelete={removeSelected}
         onUndo={undo}
         onRedo={redo}
+        onFitView={fitView}
         onResetView={() => setViewBox(savedViewBox(document.view))}
       />
       <div className="workspace">
@@ -253,6 +276,9 @@ export function App() {
           document={document}
           selection={selection}
           viewBox={viewBox}
+          referenceViewBox={referenceViewBox}
+          zoomPercent={zoomPercent}
+          onViewBoxChange={setViewBox}
           onSelect={(next) => {
             setSelection(next);
             setInspectorError(null);
@@ -282,6 +308,18 @@ export function App() {
               (candidate) => candidate.id === id,
             );
             if (!element) return;
+            if (
+              bounds.width === element.bounds.width &&
+              bounds.height === element.bounds.height
+            ) {
+              runCommand({
+                type: "move_element",
+                id,
+                from: { x: element.bounds.x, y: element.bounds.y },
+                to: { x: bounds.x, y: bounds.y },
+              });
+              return;
+            }
             runCommand({
               type: "resize_or_move_element",
               id,

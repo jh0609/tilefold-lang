@@ -10,10 +10,95 @@ import type {
 import {
   endpointHintEqual,
   pointEqual,
+  resolveEndpointHint,
   validateConnection,
   type ConnectablePort,
   type WireEndpoint,
 } from "./portConnections";
+
+type AddableElementKind = "nat_literal" | "succ";
+
+const NEW_ELEMENT_SIZE: Record<
+  AddableElementKind,
+  { width: number; height: number }
+> = {
+  nat_literal: { width: 96, height: 56 },
+  succ: { width: 88, height: 56 },
+};
+const ELEMENT_PLACEMENT_CLEARANCE = 12;
+const ELEMENT_PLACEMENT_STEP = { x: 120, y: 80 };
+const ELEMENT_PLACEMENT_RINGS = 24;
+
+function newElementBounds(kind: AddableElementKind, center: Point): Bounds {
+  const { width, height } = NEW_ELEMENT_SIZE[kind];
+  return {
+    x: Math.round(center.x - width / 2),
+    y: Math.round(center.y - height / 2),
+    width,
+    height,
+  };
+}
+
+function boundsOverlapWithClearance(left: Bounds, right: Bounds): boolean {
+  return (
+    left.x < right.x + right.width + ELEMENT_PLACEMENT_CLEARANCE &&
+    left.x + left.width + ELEMENT_PLACEMENT_CLEARANCE > right.x &&
+    left.y < right.y + right.height + ELEMENT_PLACEMENT_CLEARANCE &&
+    left.y + left.height + ELEMENT_PLACEMENT_CLEARANCE > right.y
+  );
+}
+
+export function findOpenElementCenter(
+  document: ProjectDocument,
+  kind: AddableElementKind,
+  preferredCenter: Point,
+): Point {
+  const preferred = {
+    x: Math.round(preferredCenter.x),
+    y: Math.round(preferredCenter.y),
+  };
+  const available = (center: Point) => {
+    const candidate = newElementBounds(kind, center);
+    return document.geometry.elements.every(
+      (element) => !boundsOverlapWithClearance(candidate, element.bounds),
+    );
+  };
+  if (available(preferred)) return preferred;
+
+  const directions = [
+    { x: 1, y: 0 },
+    { x: 1, y: 1 },
+    { x: 0, y: 1 },
+    { x: -1, y: 1 },
+    { x: -1, y: 0 },
+    { x: -1, y: -1 },
+    { x: 0, y: -1 },
+    { x: 1, y: -1 },
+  ] as const;
+  for (let ring = 1; ring <= ELEMENT_PLACEMENT_RINGS; ring += 1) {
+    for (const direction of directions) {
+      const candidate = {
+        x: preferred.x + direction.x * ring * ELEMENT_PLACEMENT_STEP.x,
+        y: preferred.y + direction.y * ring * ELEMENT_PLACEMENT_STEP.y,
+      };
+      if (available(candidate)) return candidate;
+    }
+  }
+
+  const { width } = NEW_ELEMENT_SIZE[kind];
+  const rightmost = Math.max(
+    preferred.x,
+    ...document.geometry.elements.map(
+      (element) => element.bounds.x + element.bounds.width,
+    ),
+  );
+  return {
+    x: Math.round(
+      rightmost + ELEMENT_PLACEMENT_CLEARANCE + width / 2,
+    ),
+    y: preferred.y,
+  };
+}
 
 export function nextStableId(
   document: ProjectDocument,
@@ -44,27 +129,25 @@ export function collectStableIds(document: ProjectDocument): Set<string> {
 
 export function addElement(
   document: ProjectDocument,
-  kind: "nat_literal" | "succ",
+  kind: AddableElementKind,
   center: Point,
 ): { document: ProjectDocument; element: ProjectElement } {
   const isNat = kind === "nat_literal";
-  const width = isNat ? 96 : 88;
-  const height = 56;
-  const x = Math.round(center.x - width / 2);
-  const y = Math.round(center.y - height / 2);
+  const bounds = newElementBounds(kind, center);
+  const { x, y, width, height } = bounds;
   const id = nextStableId(document, isNat ? "node_nat_" : "node_succ_");
   const element: ProjectElement = isNat
     ? {
         id,
         kind,
-        bounds: { x, y, width, height },
+        bounds,
         properties: { value: "0" },
         portAnchors: [{ port: "value", x: x + width, y: y + height / 2 }],
       }
     : {
         id,
         kind,
-        bounds: { x, y, width, height },
+        bounds,
         properties: {},
         portAnchors: [
           { port: "input", x, y: y + height / 2 },
@@ -176,8 +259,7 @@ export function reconnectWireEndpoint(
     excludeWireId: wireId,
   });
   if ("error" in validation) return validation;
-  const beforeHint =
-    endpoint === "source" ? wire.sourceHint : wire.targetHint;
+  const beforeHint = endpoint === "source" ? wire.sourceHint : wire.targetHint;
   const afterPort =
     endpoint === "source" ? validation.source : validation.target;
   if (endpointHintEqual(beforeHint, afterPort.hint)) {
@@ -191,13 +273,11 @@ export function reconnectWireEndpoint(
   };
   if (
     points.some(
-      (point, index) =>
-        index > 0 && pointEqual(points[index - 1]!, point),
+      (point, index) => index > 0 && pointEqual(points[index - 1]!, point),
     )
   ) {
     return {
-      error:
-        "Reconnection would create consecutive duplicate wire points.",
+      error: "Reconnection would create consecutive duplicate wire points.",
     };
   }
   const updated: ProjectWire =
@@ -215,33 +295,129 @@ export function reconnectWireEndpoint(
   };
 }
 
+export type MoveElementResult =
+  | {
+      document: ProjectDocument;
+      element: ProjectElement;
+      affectedEndpointCount: number;
+    }
+  | { error: string };
+
+function hintReferencesElementPort(
+  hint: ProjectWire["sourceHint"],
+  elementId: string,
+): boolean {
+  return hint?.kind === "element_port" && hint.elementId === elementId;
+}
+
 export function moveElement(
   document: ProjectDocument,
   id: string,
   next: Point,
-): ProjectDocument {
-  return {
+): MoveElementResult {
+  const matches = document.geometry.elements.filter(
+    (element) => element.id === id,
+  );
+  if (matches.length !== 1) {
+    return {
+      error:
+        matches.length === 0
+          ? `Element ${id} does not exist.`
+          : `Element ${id} is not unique.`,
+    };
+  }
+  if (!Number.isFinite(next.x) || !Number.isFinite(next.y)) {
+    return { error: "Element position must use finite coordinates." };
+  }
+  const current = matches[0]!;
+  const rounded = { x: Math.round(next.x), y: Math.round(next.y) };
+  const dx = rounded.x - current.bounds.x;
+  const dy = rounded.y - current.bounds.y;
+  if (dx === 0 && dy === 0) {
+    return { document, element: current, affectedEndpointCount: 0 };
+  }
+  const moved: ProjectElement = {
+    ...current,
+    bounds: {
+      ...current.bounds,
+      x: rounded.x,
+      y: rounded.y,
+    },
+    portAnchors: current.portAnchors.map((anchor) => ({
+      ...anchor,
+      x: anchor.x + dx,
+      y: anchor.y + dy,
+    })),
+  };
+  const elements = document.geometry.elements.map((element) =>
+    element.id === id ? moved : element,
+  );
+  const movedDocument: ProjectDocument = {
     ...document,
     geometry: {
       ...document.geometry,
-      elements: document.geometry.elements.map((element) => {
-        if (element.id !== id) return element;
-        const dx = Math.round(next.x) - element.bounds.x;
-        const dy = Math.round(next.y) - element.bounds.y;
+      elements,
+    },
+  };
+  let affectedEndpointCount = 0;
+  const wires: ProjectWire[] = [];
+  for (const wire of document.geometry.wires) {
+    const sourceMoves = hintReferencesElementPort(wire.sourceHint, id);
+    const targetMoves = hintReferencesElementPort(wire.targetHint, id);
+    if (!sourceMoves && !targetMoves) {
+      wires.push(wire);
+      continue;
+    }
+    if (wire.points.length < 2) {
+      return {
+        error: `Wire ${wire.id} does not contain a valid polyline.`,
+      };
+    }
+    const points = wire.points.map((point) => ({ ...point }));
+    const endpoints: WireEndpoint[] = [];
+    if (sourceMoves) endpoints.push("source");
+    if (targetMoves) endpoints.push("target");
+    for (const endpoint of endpoints) {
+      const hint = endpoint === "source" ? wire.sourceHint : wire.targetHint;
+      const port = resolveEndpointHint(movedDocument, hint);
+      if (!port) {
         return {
-          ...element,
-          bounds: {
-            ...element.bounds,
-            x: element.bounds.x + dx,
-            y: element.bounds.y + dy,
-          },
-          portAnchors: element.portAnchors.map((anchor) => ({
-            ...anchor,
-            x: anchor.x + dx,
-            y: anchor.y + dy,
-          })),
+          error: `Wire ${wire.id} ${endpoint} hint does not resolve to a port on ${id}.`,
         };
-      }),
+      }
+      const expectedDirection = endpoint === "source" ? "output" : "input";
+      if (port.direction !== expectedDirection) {
+        return {
+          error: `Wire ${wire.id} ${endpoint} hint does not reference an ${expectedDirection} port.`,
+        };
+      }
+      const pointIndex = endpoint === "source" ? 0 : points.length - 1;
+      points[pointIndex] = {
+        x: Math.round(port.anchor.x),
+        y: Math.round(port.anchor.y),
+      };
+      affectedEndpointCount += 1;
+    }
+    if (
+      points.some(
+        (point, index) => index > 0 && pointEqual(points[index - 1]!, point),
+      )
+    ) {
+      return {
+        error: `Moving ${id} would create consecutive duplicate points in wire ${wire.id}.`,
+      };
+    }
+    wires.push({ ...wire, points });
+  }
+  return {
+    element: moved,
+    affectedEndpointCount,
+    document: {
+      ...movedDocument,
+      geometry: {
+        ...movedDocument.geometry,
+        wires,
+      },
     },
   };
 }
@@ -251,7 +427,9 @@ export function resizeOrMoveElement(
   id: string,
   nextBounds: Bounds,
 ): ProjectDocument {
-  const current = document.geometry.elements.find((element) => element.id === id);
+  const current = document.geometry.elements.find(
+    (element) => element.id === id,
+  );
   if (!current) return document;
   const dx = nextBounds.x - current.bounds.x;
   const dy = nextBounds.y - current.bounds.y;

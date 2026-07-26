@@ -4,6 +4,7 @@ import {
   addElement,
   addWire,
   deleteSelection,
+  findOpenElementCenter,
   moveElement,
   nextStableId,
 } from "./editorOps";
@@ -53,16 +54,39 @@ describe("editor operations", () => {
     expect(result.element.bounds.x).toBe(452);
   });
 
-  it("moves integer bounds and absolute port anchors but not wires", () => {
+  it("chooses deterministic nearby centers without overlapping new elements", () => {
     const project = parseProjectJson(exampleJson);
-    const beforeWire = project.geometry.wires[1]!.points;
-    const moved = moveElement(project, "node_nat_2", { x: 101.7, y: 99.2 });
-    const element = moved.geometry.elements.find(
+    const preferred = { x: 200, y: 130 };
+    const natCenter = findOpenElementCenter(
+      project,
+      "nat_literal",
+      preferred,
+    );
+    expect(natCenter).toEqual(preferred);
+    const withNat = addElement(project, "nat_literal", natCenter).document;
+
+    const succCenter = findOpenElementCenter(withNat, "succ", preferred);
+    expect(succCenter).toEqual({ x: 320, y: 130 });
+    const withSucc = addElement(withNat, "succ", succCenter).document;
+
+    expect(
+      findOpenElementCenter(withSucc, "nat_literal", preferred),
+    ).toEqual({ x: 320, y: 210 });
+  });
+
+  it("moves integer bounds, absolute port anchors, and hinted wire endpoints", () => {
+    const project = parseProjectJson(exampleJson);
+    const result = moveElement(project, "node_nat_2", { x: 101.7, y: 99.2 });
+    if ("error" in result) throw new Error(result.error);
+    const element = result.document.geometry.elements.find(
       (candidate) => candidate.id === "node_nat_2",
     )!;
     expect(element.bounds).toMatchObject({ x: 102, y: 99 });
     expect(element.portAnchors[0]).toMatchObject({ x: 122, y: 109 });
-    expect(moved.geometry.wires[1]!.points).toEqual(beforeWire);
+    expect(result.document.geometry.wires[1]!.points).toEqual([
+      { x: 122, y: 109 },
+      { x: 120, y: 70 },
+    ]);
   });
 
   it("blocks deletion when a wire references the element", () => {

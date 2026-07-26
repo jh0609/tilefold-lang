@@ -10,12 +10,7 @@ import {
 } from "./editorOps";
 import { exportProjectJson, parseProjectJson } from "./importProject";
 import type { ConnectablePort, WireEndpoint } from "./portConnections";
-import type {
-  Bounds,
-  Point,
-  ProjectDocument,
-  Selection,
-} from "./project";
+import type { Bounds, Point, ProjectDocument, Selection } from "./project";
 
 export type EditorCommand =
   | {
@@ -115,8 +110,23 @@ export function applyEditorCommand(
     }
     case "delete_selection":
       return deleteSelection(document, command.selection);
-    case "move_element":
-      return { document: moveElement(document, command.id, command.to) };
+    case "move_element": {
+      const result = moveElement(document, command.id, command.to);
+      if ("error" in result) return { document, error: result.error };
+      try {
+        return {
+          document: parseProjectJson(exportProjectJson(result.document)),
+        };
+      } catch (error) {
+        return {
+          document,
+          error:
+            error instanceof Error
+              ? `Moved element failed the editor structure check: ${error.message}`
+              : "Moved element failed the editor structure check.",
+        };
+      }
+    }
     case "resize_or_move_element":
       return {
         document: resizeOrMoveElement(document, command.id, command.after),

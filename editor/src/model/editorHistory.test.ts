@@ -115,4 +115,50 @@ describe("editor command history", () => {
     expect(failed.error).toBe("This connection already exists.");
     expect(failed.history).toBe(redone);
   });
+
+  it("undoes and redoes an element move with all tracked wire endpoints in one entry", () => {
+    const initial = parseProjectJson(exampleJson);
+    const executed = executeEditorCommand(createEditorHistory(initial), {
+      type: "move_element",
+      id: "node_succ",
+      from: { x: 120, y: 50 },
+      to: { x: 200, y: 150 },
+    });
+    expect(executed.error).toBeUndefined();
+    expect(executed.history.past).toHaveLength(1);
+    expect(executed.history.present.geometry.wires[1]!.points.at(-1)).toEqual({
+      x: 200,
+      y: 170,
+    });
+    expect(executed.history.present.geometry.wires[2]!.points[0]).toEqual({
+      x: 240,
+      y: 170,
+    });
+
+    const undone = undoEditorCommand(executed.history);
+    expect(undone.present).toBe(initial);
+    const redone = redoEditorCommand(undone);
+    expect(redone.present).toBe(executed.history.present);
+    expect(redone.present.geometry.wires.map((wire) => wire.id)).toEqual(
+      initial.geometry.wires.map((wire) => wire.id),
+    );
+  });
+
+  it("leaves undo and redo stacks untouched when a tracked move fails", () => {
+    const initial = parseProjectJson(exampleJson);
+    const added = executeEditorCommand(createEditorHistory(initial), {
+      type: "add_element",
+      kind: "nat_literal",
+      center: { x: 500, y: 300 },
+    }).history;
+    const withRedo = undoEditorCommand(added);
+    const failed = executeEditorCommand(withRedo, {
+      type: "move_element",
+      id: "node_nat_2",
+      from: { x: 60, y: 60 },
+      to: { x: 100, y: 60 },
+    });
+    expect(failed.error).toContain("consecutive duplicate points");
+    expect(failed.history).toBe(withRedo);
+  });
 });

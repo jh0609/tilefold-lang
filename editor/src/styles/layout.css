@@ -75,7 +75,9 @@
   clip: rect(0, 0, 0, 0);
 }
 
-.view-button {
+.view-controls {
+  display: flex;
+  gap: 5px;
   margin-left: auto;
 }
 
@@ -124,7 +126,7 @@
     border-left: 0;
   }
 
-  .view-button {
+  .view-controls {
     margin-left: 0;
   }
 

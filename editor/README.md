@@ -49,9 +49,10 @@ spacing, and radius.
 
 - The top toolbar opens the shared example or a local JSON file, exports the
   current document, adds Nat/Succ/Result data, blocks unsafe deletion, provides
-  undo/redo, and resets the camera.
+  undo/redo, fits all rendered geometry, and resets the camera.
 - The SVG canvas renders containers, relative boundary anchors, elements,
-  absolute port anchors, wire polylines, junctions, and explicit outlets.
+  absolute port anchors, wire polylines, junctions, and explicit outlets. The
+  wheel zooms around the pointer and a middle-button drag pans the camera.
 - The Inspector edits element integer bounds and canonical Nat strings and
   shows read-only information for containers, wires, junctions, and saved view.
 - The status bar distinguishes the editor structure check from the unavailable
@@ -88,21 +89,52 @@ view. It adds no UI fields. It need not match the OCaml canonical byte layout.
 ## Editing policies
 
 New IDs use the smallest unused positive integer for a stable prefix such as
-`node_nat_1`; array length is never used. Nat and Succ are inserted at the
-current viewport center with their fixed v1 port schema. Result means a
+`node_nat_1`; array length is never used. Nat and Succ prefer the current
+viewport center with their fixed v1 port schema. If that bounds would overlap
+an existing element or leave less than 12 project units of clearance, the
+editor checks a deterministic 120×80 grid around the center, starting to the
+right and proceeding clockwise. The chosen center is stored in the typed add
+command, so Undo/Redo reuses exactly the same geometry. Wires, junctions, and
+container boundaries are not treated as placement obstacles. Result means a
 container Result boundary, since v1 has no `result` element kind; adding it is
 blocked when the first container already has one.
 
 Pointer positions are transformed through the SVG current transformation matrix
 and rounded to project integers. Element movement translates its bounds and
-absolute port anchors by the same delta. It does not change stable IDs,
-properties, array order, or wire points.
+absolute port anchors by the same delta. Wire endpoints whose explicit
+`element_port` hints reference the moved element follow their new port anchors
+during the drag preview and in the committed document. Geometry proximity is
+never used to infer attachment.
+
+Compact nodes keep the center of their body usable as a drag surface. Their
+transparent 22-unit port hit target is biased eight units outward from the node
+center while the visible anchor, semantic port anchor, connection preview, and
+exported geometry remain unchanged. Clicking the visible five-unit port still
+starts a connection, but grabbing the center of a 20×20 literal no longer does.
+Non-compact port labels use a separate row below the element title so input
+names do not collide with operation names; this is presentation-only and does
+not move anchors or change exported geometry.
+Keyboard focus is drawn as a dashed ring on the visible element body rather
+than around its larger transparent port hit targets. Enter or Space selects the
+focused element without creating a document command.
+
+Canvas navigation is UI-only. Wheel zoom stays anchored under the pointer and
+is clamped to 25–400% of the saved Project view; middle-button dragging pans
+without changing selection. The current percentage is shown in the canvas and
+Fit view frames elements, containers, wire points, junctions, and outlets with
+24 project units of padding while preserving the saved view's aspect ratio.
+It never zooms in beyond 400%, but it can zoom out beyond the wheel's 25% limit
+when required to keep a large document visible. Reset view restores the imported
+`view.cameraX`, `cameraY`, and `zoom`.
+Navigation never creates a document command, history entry, or exported field.
+Escape, `pointercancel`, or lost pointer capture restores a pan's starting
+camera. Wheel navigation is paused during element, connection, reconnection, or
+pan gestures so their coordinate transforms remain stable.
 
 Containers are selectable but intentionally read-only. Moving a container
 without a fully specified policy for contained elements and wires could change
-Geometry ownership. Wire polylines are rendered and preserved but not edited or
-rerouted. Consequently a moved element can visually separate from an existing
-wire endpoint. This is a visible limitation, not an inferred reconnection.
+Geometry ownership. Container boundary points therefore stay fixed when an
+element connected to one moves.
 
 Deletion is currently supported only for unreferenced elements. A wire hint
 that references an element blocks deletion and reports the wire IDs. No
@@ -111,9 +143,10 @@ cascade deletion is performed.
 Document changes use typed commands and an immutable 100-entry history.
 Undo/redo is available from the toolbar and with Ctrl/Cmd+Z,
 Ctrl/Cmd+Shift+Z, or Ctrl/Cmd+Y. A completed pointer drag creates one history
-entry rather than one entry per pointer movement. Consecutive edits to the same
-Nat value are coalesced. Opening an example or another file starts a fresh
-history so undo never crosses document boundaries.
+entry containing both the element position and every affected wire endpoint,
+rather than one entry per pointer movement. Undo and redo restore both together.
+Consecutive edits to the same Nat value are coalesced. Opening an example or
+another file starts a fresh history so undo never crosses document boundaries.
 
 On narrow screens the compact toolbar wraps and the 310px Inspector moves below
 the canvas. Project coordinates and saved data do not change. Hover strengthens
@@ -148,10 +181,23 @@ correct direction, the polyline is structurally valid, and its endpoint exactly
 matches the integer port anchor. The Inspector explains why a handle is
 unavailable.
 
-Wire bend points, segments, junctions, and routing are not editable. Moving a
-node still does not update existing wire geometry, which can intentionally make
-its old wire handles unavailable until the stored geometry is repaired by a
-future feature.
+Moving an element applies the same preservation policy to every semantically
+attached endpoint: source hints update only the first point, target hints update
+only the last point, and self-loops update both. Stable wire IDs, wire array
+order, endpoint hints, opposite endpoints, and all middle points remain
+unchanged. Multiple attached wires are updated atomically in one typed command.
+Drag state remains UI-only, so live preview never creates history entries.
+
+If an older document has an endpoint point that no longer matches its otherwise
+valid element-port hint, moving that element repairs the endpoint to the new
+anchor. An attached hint that cannot resolve to the named port, has the wrong
+direction, has an invalid polyline, or would create consecutive duplicate
+points rejects the whole move without changing the document. Unrelated invalid
+geometry is not treated as an attachment.
+
+Wire bend points, segments, junctions, and routing are not editable. Element
+movement deliberately does not reroute or translate middle points. Container
+movement remains unsupported.
 
 ## Next steps
 
