@@ -25,6 +25,14 @@ The browser entrypoint is compiled with `js_of_ocaml` and
 only worker lifecycle, request correlation, transport-shape checking, and UI
 state; it does not implement validation or execution semantics.
 
+The browser backend owns at most one active request. A normally completed
+Worker may be reused. Explicit Cancel, a semantic document change, worker
+failure, unreadable worker messaging, or editor unmount terminates and discards
+the Worker; the next Run creates a new generation. Each active request has an
+`AbortSignal`, request ID, and Worker generation, so cancellation settles its
+promise exactly once and late messages cannot become current results.
+Cancellation is a UI lifecycle event, not an Engine result or trace event.
+
 The generated JavaScript is checked in for Node-only static deployment
 environments. A source fingerprint covers the OCaml library and browser
 entrypoint inputs. Production builds fail when the checked-in artifact is
@@ -36,10 +44,14 @@ browser results.
 - Production Run needs no API, server, or external network request.
 - Project JSON and execution state remain separate, and execution never enters
   editor history.
+- Cancel is implemented by Worker termination. It returns no partial trace and
+  cannot resume from the interrupted rewrite.
+- Semantic document changes cancel active work and invalidate completed
+  results. Selection, focus, and camera-only changes do neither.
 - Arbitrary-precision Nat behavior remains the Zarith behavior of the OCaml
   reference implementation.
 - The checked-in generated artifact must not be edited manually.
 - The projected result is diagnostic transport, not a stable public trace
   schema.
-- Step execution, cancellation UI, trace animation, and a permanent trace
-  serialization remain future work.
+- Cooperative cancellation, automatic timeouts, step execution, pause/resume,
+  trace animation, and a permanent trace serialization remain future work.

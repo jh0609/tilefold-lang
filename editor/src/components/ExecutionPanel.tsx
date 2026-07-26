@@ -1,26 +1,41 @@
 import type { ExecutionResponse } from "../model/executionApi";
 
+export type ExecutionState =
+  | { status: "idle" }
+  | { status: "running" }
+  | { status: "completed"; response: ExecutionResponse }
+  | { status: "failed"; message: string }
+  | { status: "canceled" };
+
 interface ExecutionPanelProps {
-  execution: ExecutionResponse | null;
-  error: string | null;
-  running: boolean;
+  state: ExecutionState;
 }
 
-export function ExecutionPanel({
-  execution,
-  error,
-  running,
-}: ExecutionPanelProps) {
+export function ExecutionPanel({ state }: ExecutionPanelProps) {
+  const execution = state.status === "completed" ? state.response : null;
   return (
-    <section className="execution-panel" aria-labelledby="execution-title">
+    <section
+      className="execution-panel"
+      aria-labelledby="execution-title"
+      aria-busy={state.status === "running"}
+    >
       <h2 id="execution-title">OCaml execution</h2>
-      {running && <p role="status">Running the reference engine…</p>}
-      {error && (
-        <p className="execution-error" role="alert">
-          {error}
+      {state.status === "running" && (
+        <p role="status" aria-live="polite">
+          Running the reference engine…
         </p>
       )}
-      {!running && !error && !execution && (
+      {state.status === "failed" && (
+        <p className="execution-error" role="alert">
+          {state.message}
+        </p>
+      )}
+      {state.status === "canceled" && (
+        <p className="execution-canceled" role="status" aria-live="polite">
+          Execution canceled.
+        </p>
+      )}
+      {state.status === "idle" && (
         <p>Run the current Project JSON in the browser OCaml worker.</p>
       )}
       {execution?.status === "error" && (

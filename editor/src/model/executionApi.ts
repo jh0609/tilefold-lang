@@ -31,12 +31,29 @@ interface WorkerResponse {
 interface ExecutionWorker {
   onmessage: ((event: MessageEvent<WorkerResponse>) => void) | null;
   onerror: ((event: ErrorEvent) => void) | null;
+  onmessageerror: ((event: MessageEvent) => void) | null;
   postMessage(message: WorkerRequest): void;
   terminate(): void;
 }
 
+export class ExecutionCanceledError extends Error {
+  constructor(message = "Execution canceled.") {
+    super(message);
+    this.name = "ExecutionCanceledError";
+  }
+}
+
+export function isExecutionCanceledError(
+  error: unknown,
+): error is ExecutionCanceledError {
+  return error instanceof ExecutionCanceledError;
+}
+
 export interface ExecutionBackend {
-  run(projectJson: string): Promise<ExecutionResponse>;
+  run(
+    projectJson: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<ExecutionResponse>;
   dispose(): void;
 }
 
@@ -98,62 +115,169 @@ export function createBrowserExecutionBackend(
   createWorker: () => ExecutionWorker = () =>
     new Worker(new URL("../executionWorker.ts", import.meta.url)) as ExecutionWorker,
 ): ExecutionBackend {
-  const worker = createWorker();
   let nextRequestId = 1;
+  let nextGeneration = 1;
   let disposed = false;
-  const pending = new Map<
-    number,
-    {
-      resolve: (response: ExecutionResponse) => void;
-      reject: (error: Error) => void;
-    }
-  >();
+  let worker: ExecutionWorker | null = null;
+  let generation = 0;
+  let active:
+    | {
+        requestId: number;
+        generation: number;
+        signal?: AbortSignal;
+        onAbort?: () => void;
+        resolve: (response: ExecutionResponse) => void;
+        reject: (error: Error) => void;
+      }
+    | null = null;
 
-  worker.onmessage = ({ data }) => {
-    const request = pending.get(data.requestId);
+  function finish(
+    request: NonNullable<typeof active>,
+    outcome:
+      | { type: "resolve"; response: ExecutionResponse }
+      | { type: "reject"; error: Error },
+  ) {
+    if (active !== request) return;
+    active = null;
+    if (request.signal && request.onAbort) {
+      request.signal.removeEventListener("abort", request.onAbort);
+    }
+    if (outcome.type === "resolve") request.resolve(outcome.response);
+    else request.reject(outcome.error);
+  }
+
+  function discardWorker(ownedWorker: ExecutionWorker) {
+    if (worker !== ownedWorker) return;
+    worker = null;
+    generation = nextGeneration++;
+    ownedWorker.onmessage = null;
+    ownedWorker.onerror = null;
+    ownedWorker.onmessageerror = null;
+    ownedWorker.terminate();
+  }
+
+  function ensureWorker(): ExecutionWorker {
+    if (worker) return worker;
+    const ownedWorker = createWorker();
+    const ownedGeneration = nextGeneration++;
+    worker = ownedWorker;
+    generation = ownedGeneration;
+
+    ownedWorker.onmessage = ({ data }) => {
+      const request = active;
+      if (
+        worker !== ownedWorker ||
+        generation !== ownedGeneration ||
+        !request ||
+        request.generation !== ownedGeneration ||
+        request.requestId !== data.requestId
+      ) {
+        return;
+      }
+      if (data.workerError) {
+        finish(request, {
+          type: "reject",
+          error: new Error(`Browser runner failed: ${data.workerError}`),
+        });
+        return;
+      }
+      try {
+        finish(request, {
+          type: "resolve",
+          response: parseExecutionResponse(data.output ?? ""),
+        });
+      } catch (error) {
+        finish(request, {
+          type: "reject",
+          error:
+            error instanceof Error
+              ? error
+              : new Error("Invalid runner response."),
+        });
+      }
+    };
+    ownedWorker.onerror = (event) => {
+      const request = active;
+      discardWorker(ownedWorker);
+      if (request) {
+        finish(request, {
+          type: "reject",
+          error: new Error(
+            `Browser worker failed: ${event.message || "unknown worker error"}`,
+          ),
+        });
+      }
+    };
+    ownedWorker.onmessageerror = () => {
+      const request = active;
+      discardWorker(ownedWorker);
+      if (request) {
+        finish(request, {
+          type: "reject",
+          error: new Error("Browser worker returned an unreadable message."),
+        });
+      }
+    };
+    return ownedWorker;
+  }
+
+  function cancelActive(message: string) {
+    const request = active;
     if (!request) return;
-    pending.delete(data.requestId);
-    if (data.workerError) {
-      request.reject(new Error(`Browser runner failed: ${data.workerError}`));
-      return;
-    }
-    try {
-      request.resolve(parseExecutionResponse(data.output ?? ""));
-    } catch (error) {
-      request.reject(
-        error instanceof Error ? error : new Error("Invalid runner response."),
-      );
-    }
-  };
-  worker.onerror = (event) => {
-    disposed = true;
-    worker.terminate();
-    const error = new Error(
-      `Browser worker failed: ${event.message || "unknown worker error"}`,
-    );
-    pending.forEach(({ reject }) => reject(error));
-    pending.clear();
-  };
+    const ownedWorker = worker;
+    if (ownedWorker) discardWorker(ownedWorker);
+    finish(request, {
+      type: "reject",
+      error: new ExecutionCanceledError(message),
+    });
+  }
 
   return {
-    run(projectJson) {
+    run(projectJson, options) {
       if (disposed) {
         return Promise.reject(new Error("Browser runner has been disposed."));
       }
+      if (active) {
+        return Promise.reject(new Error("Browser runner is already running."));
+      }
+      if (options?.signal?.aborted) {
+        return Promise.reject(new ExecutionCanceledError());
+      }
+
+      const ownedWorker = ensureWorker();
       const requestId = nextRequestId++;
       return new Promise((resolve, reject) => {
-        pending.set(requestId, { resolve, reject });
-        worker.postMessage({ requestId, projectJson });
+        const request: NonNullable<typeof active> = {
+          requestId,
+          generation,
+          signal: options?.signal,
+          resolve,
+          reject,
+        };
+        request.onAbort = () => cancelActive("Execution canceled.");
+        active = request;
+        request.signal?.addEventListener("abort", request.onAbort, {
+          once: true,
+        });
+        try {
+          ownedWorker.postMessage({ requestId, projectJson });
+        } catch (error) {
+          discardWorker(ownedWorker);
+          finish(request, {
+            type: "reject",
+            error:
+              error instanceof Error
+                ? error
+                : new Error("Unable to start browser execution."),
+          });
+        }
       });
     },
     dispose() {
       if (disposed) return;
       disposed = true;
-      worker.terminate();
-      pending.forEach(({ reject }) =>
-        reject(new Error("Browser runner request was cancelled.")),
-      );
-      pending.clear();
-    },
+      cancelActive("Browser runner disposed.");
+      if (worker) discardWorker(worker);
+    }
   };
 }

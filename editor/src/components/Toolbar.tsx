@@ -17,6 +17,7 @@ interface ToolbarProps {
   onFitView: () => void;
   onResetView: () => void;
   onRun: () => void;
+  onCancel: () => void;
   running: boolean;
 }
 
@@ -39,6 +40,7 @@ export function Toolbar({
   onFitView,
   onResetView,
   onRun,
+  onCancel,
   running,
 }: ToolbarProps) {
   return (
@@ -109,8 +111,12 @@ export function Toolbar({
         </button>
       </div>
       <div className="view-controls" aria-label="Canvas view">
-        <button type="button" onClick={onRun} disabled={running}>
-          {running ? "Running…" : "Run"}
+        <button
+          type="button"
+          onClick={running ? onCancel : onRun}
+          aria-label={running ? "Cancel execution" : "Run"}
+        >
+          {running ? "Cancel" : "Run"}
         </button>
         <button type="button" onClick={onFitView}>
           Fit view

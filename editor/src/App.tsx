@@ -4,7 +4,10 @@ import { Canvas } from "./components/Canvas";
 import { Inspector } from "./components/Inspector";
 import { StatusBar } from "./components/StatusBar";
 import { Toolbar } from "./components/Toolbar";
-import { ExecutionPanel } from "./components/ExecutionPanel";
+import {
+  ExecutionPanel,
+  type ExecutionState,
+} from "./components/ExecutionPanel";
 import {
   cameraZoomPercent,
   fitViewBoxToBounds,
@@ -33,8 +36,8 @@ import type {
 } from "./model/portConnections";
 import {
   createBrowserExecutionBackend,
+  isExecutionCanceledError,
   type ExecutionBackend,
-  type ExecutionResponse,
 } from "./model/executionApi";
 
 const initialDocument = parseProjectJson(exampleJson);
@@ -80,11 +83,12 @@ export function App() {
   const [importError, setImportError] = useState<string | null>(null);
   const [inspectorError, setInspectorError] = useState<string | null>(null);
   const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
-  const [execution, setExecution] = useState<ExecutionResponse | null>(null);
-  const [executionError, setExecutionError] = useState<string | null>(null);
-  const [running, setRunning] = useState(false);
+  const [executionState, setExecutionState] = useState<ExecutionState>({
+    status: "idle",
+  });
   const executionRequest = useRef(0);
   const executionBackend = useRef<ExecutionBackend | null>(null);
+  const executionAbort = useRef<AbortController | null>(null);
   const [viewBox, setViewBox] = useState(savedViewBox(initialDocument.view));
   const referenceViewBox = savedViewBox(document.view);
 
@@ -103,42 +107,56 @@ export function App() {
   }, [referenceViewBox, viewBox]);
 
   function resetDocument(next: ProjectDocument) {
-    cancelExecution();
+    invalidateExecution();
     setHistory(createEditorHistory(next));
     setSelection(null);
     setInspectorError(null);
     setViewBox(savedViewBox(next.view));
-    setExecution(null);
-    setExecutionError(null);
-    setRunning(false);
+  }
+
+  function stopExecution(nextState: ExecutionState) {
+    executionRequest.current += 1;
+    executionAbort.current?.abort();
+    executionAbort.current = null;
+    setExecutionState(nextState);
   }
 
   function cancelExecution() {
-    executionRequest.current += 1;
-    executionBackend.current?.dispose();
-    executionBackend.current = null;
-    setRunning(false);
+    stopExecution({ status: "canceled" });
+  }
+
+  function invalidateExecution() {
+    stopExecution({ status: "idle" });
   }
 
   async function runProject() {
+    if (executionAbort.current) return;
     const request = executionRequest.current + 1;
     executionRequest.current = request;
-    setRunning(true);
-    setExecutionError(null);
+    const controller = new AbortController();
+    executionAbort.current = controller;
+    setExecutionState({ status: "running" });
     try {
       executionBackend.current ??= createBrowserExecutionBackend();
       const projectJson = exportProjectJson(document);
-      const response = await executionBackend.current.run(projectJson);
+      const response = await executionBackend.current.run(projectJson, {
+        signal: controller.signal,
+      });
       if (executionRequest.current !== request) return;
-      setExecution(response);
+      setExecutionState({ status: "completed", response });
     } catch (error) {
       if (executionRequest.current !== request) return;
-      setExecution(null);
-      setExecutionError(
-        error instanceof Error ? error.message : "Unknown execution failure.",
-      );
+      if (isExecutionCanceledError(error)) {
+        setExecutionState({ status: "canceled" });
+      } else {
+        setExecutionState({
+          status: "failed",
+          message:
+            error instanceof Error ? error.message : "Unknown execution failure.",
+        });
+      }
     } finally {
-      if (executionRequest.current === request) setRunning(false);
+      if (executionRequest.current === request) executionAbort.current = null;
     }
   }
 
@@ -148,12 +166,11 @@ export function App() {
       setInspectorError(result.error);
       return null;
     }
+    if (result.history === history) return null;
     setHistory(result.history);
     setInspectorError(null);
-    cancelExecution();
-    setExecution(null);
-    setExecutionError(null);
-    return result.history === history ? null : result.history.present;
+    invalidateExecution();
+    return result.history.present;
   }
 
   function selectionExists(
@@ -176,9 +193,7 @@ export function App() {
     setHistory(next);
     if (!selectionExists(next.present, selection)) setSelection(null);
     setInspectorError(null);
-    cancelExecution();
-    setExecution(null);
-    setExecutionError(null);
+    invalidateExecution();
   }
 
   function redo() {
@@ -187,9 +202,7 @@ export function App() {
     setHistory(next);
     if (!selectionExists(next.present, selection)) setSelection(null);
     setInspectorError(null);
-    cancelExecution();
-    setExecution(null);
-    setExecutionError(null);
+    invalidateExecution();
   }
 
   function openExample() {
@@ -305,6 +318,9 @@ export function App() {
 
   useEffect(
     () => () => {
+      executionRequest.current += 1;
+      executionAbort.current?.abort();
+      executionAbort.current = null;
       executionBackend.current?.dispose();
       executionBackend.current = null;
     },
@@ -332,7 +348,8 @@ export function App() {
         onFitView={fitView}
         onResetView={() => setViewBox(savedViewBox(document.view))}
         onRun={runProject}
-        running={running}
+        onCancel={cancelExecution}
+        running={executionState.status === "running"}
       />
       <div className="workspace">
         <Canvas
@@ -405,9 +422,7 @@ export function App() {
           onError={setInspectorError}
         />
         <ExecutionPanel
-          execution={execution}
-          error={executionError}
-          running={running}
+          state={executionState}
         />
       </div>
       <StatusBar

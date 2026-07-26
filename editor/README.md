@@ -29,6 +29,25 @@ The result panel shows the final runtime value and a minimal diagnostic list of
 rewrite index, rule, and subject node. This is not a new public trace
 serialization format. Project JSON never leaves the browser.
 
+While execution is active, **Run** becomes **Cancel**. Cancel immediately
+terminates the active Worker, settles the pending request as cancellation, and
+allows the next Run to create a fresh Worker. A normally completed Worker is
+reused; Worker errors, unreadable messages, semantic document changes, and
+editor unmount discard it. Request IDs plus Worker generations prevent late
+responses from older Workers from replacing the current result.
+
+Explicit Cancel is shown as a neutral `Execution canceled` state. A semantic
+Project JSON edit, import, Undo, or Redo automatically cancels active work and
+clears results without presenting a user error. Selection, focus, zoom, pan,
+Fit, and Reset view are UI-only and preserve completed results. Execution and
+cancellation never enter Project JSON or undo/redo history.
+
+Cancellation is process isolation through Worker termination, not an OCaml
+Engine rewrite or trace event. It does not return a partial trace and cannot be
+resumed. Cooperative cancellation, automatic timeouts, and pause/step execution
+are not implemented; large projects remain subject to browser time and memory
+limits.
+
 The browser artifact is checked in because static deployment environments may
 provide Node without OCaml. Do not edit `public/tilefold_runner.js` or its
 metadata by hand. Regenerate and verify it from the repository root OCaml

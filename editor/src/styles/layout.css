@@ -118,6 +118,11 @@
   color: var(--error);
 }
 
+.execution-canceled {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
 .execution-trace {
   margin: 8px 0 0;
   padding-left: 22px;
