@@ -1,7 +1,7 @@
 import exampleJson from "../../examples/nat-succ.tilefold.json?raw";
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
 beforeAll(() => {
@@ -25,6 +25,8 @@ beforeAll(() => {
   });
 });
 
+afterEach(() => vi.unstubAllGlobals());
+
 describe("Tilefold editor UI", () => {
   it("opens the shared example and selects then clears an element", async () => {
     const user = userEvent.setup();
@@ -38,6 +40,93 @@ describe("Tilefold editor UI", () => {
     expect(screen.getByText("No selection")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Open example" }));
     expect(screen.getByText(/3 elements/)).toBeInTheDocument();
+  });
+
+  it("shows the OCaml execution result and minimal rewrite trace", async () => {
+    const user = userEvent.setup();
+    const postMessage = vi.fn(
+      (
+        message: { requestId: number },
+        worker: {
+          onmessage: ((event: MessageEvent) => void) | null;
+        },
+      ) => {
+        queueMicrotask(() =>
+          worker.onmessage?.({
+            data: {
+              requestId: message.requestId,
+              output: JSON.stringify({
+                status: "completed",
+                result: "Nat(3)",
+                rewriteCount: 1,
+                trace: [{ index: 0, rule: "Succ", subject: "node_succ" }],
+              }),
+            },
+          } as MessageEvent),
+        );
+      },
+    );
+    class WorkerMock {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+      postMessage = (message: { requestId: number }) =>
+        postMessage(message, this);
+      terminate = vi.fn();
+    }
+    vi.stubGlobal("Worker", WorkerMock);
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Run" }));
+
+    expect(await screen.findByText(/Result:/)).toHaveTextContent(
+      "Result: Nat(3) · 1 rewrites",
+    );
+    expect(screen.getByRole("list", { name: "Rewrite trace" })).toHaveTextContent(
+      "#0 Succ node_succ",
+    );
+    expect(postMessage).toHaveBeenCalledOnce();
+  });
+
+  it("ignores a worker response after the document changes", async () => {
+    const user = userEvent.setup();
+    let worker:
+      | {
+          onmessage: ((event: MessageEvent) => void) | null;
+          terminate: ReturnType<typeof vi.fn>;
+        }
+      | undefined;
+    class WorkerMock {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+      postMessage = vi.fn();
+      terminate = vi.fn();
+      constructor() {
+        worker = this;
+      }
+    }
+    vi.stubGlobal("Worker", WorkerMock);
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "Run" }));
+    await user.click(screen.getByTestId("element-node_nat_2"));
+    const input = screen.getByLabelText("Nat value");
+    await user.clear(input);
+    await user.type(input, "4");
+
+    worker?.onmessage?.({
+      data: {
+        requestId: 1,
+        output: JSON.stringify({
+          status: "completed",
+          result: "Nat(3)",
+          rewriteCount: 0,
+          trace: [],
+        }),
+      },
+    } as MessageEvent);
+
+    expect(worker?.terminate).toHaveBeenCalledOnce();
+    expect(screen.queryByText(/Result:/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run" })).toBeEnabled();
   });
 
   it("selects a focused element from the keyboard without changing history", () => {

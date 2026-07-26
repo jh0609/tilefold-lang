@@ -291,7 +291,9 @@ export function Inspector({
             <span>{document.geometry.junctions.length}<small>junctions</small></span>
           </div>
           <p className="structure-pass">Editor structure check passed</p>
-          <p className="limitation">Tilefold semantic validation is not connected.</p>
+          <p className="limitation">
+            Semantic validation runs on demand in the browser OCaml worker.
+          </p>
         </section>
       )}
       {content}

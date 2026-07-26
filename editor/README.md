@@ -2,8 +2,9 @@
 
 This directory contains a small, independent visual editor for
 `Tilefold project JSON v1`. Its source of truth is the TypeScript
-`ProjectDocument` state, never the SVG DOM. The browser does not run the OCaml
-validator, Geometry inference, Core lowering, or execution engine.
+`ProjectDocument` state, never the SVG DOM. Editing remains independent of
+semantics; **Run** explicitly sends a snapshot to the browser-compiled OCaml
+reference pipeline.
 
 ## Install and run
 
@@ -11,6 +12,39 @@ validator, Geometry inference, Core lowering, or execution engine.
 npm install
 npm run dev
 ```
+
+**Run** executes Project JSON in a Web Worker using the checked-in
+`js_of_ocaml` build of the OCaml reference engine. It works in the static
+production build without a server or execution API:
+
+```text
+Project JSON
+→ Project_document.decode_json
+→ infer_symbolic
+→ lower_to_program_package
+→ Program_package.run_completed
+```
+
+The result panel shows the final runtime value and a minimal diagnostic list of
+rewrite index, rule, and subject node. This is not a new public trace
+serialization format. Project JSON never leaves the browser.
+
+The browser artifact is checked in because static deployment environments may
+provide Node without OCaml. Do not edit `public/tilefold_runner.js` or its
+metadata by hand. Regenerate and verify it from the repository root OCaml
+sources with:
+
+```sh
+npm run runner:build
+npm run runner:check
+npm run runner:differential
+```
+
+`runner:build` requires the declared opam dependencies, including
+`js_of_ocaml`, `js_of_ocaml-ppx`, and `zarith_stubs_js`. `npm run build` checks
+the source fingerprint so stale generated code cannot be deployed silently.
+The native stdin runner remains only for differential verification and
+diagnostics; the editor does not call it.
 
 Production and verification commands:
 
@@ -205,5 +239,5 @@ The next editor layer can add:
 
 - wire bend-point and segment editing;
 - container movement with a specified deterministic group-translation policy;
-- OCaml JavaScript/WASM integration for decode, validation, inference,
-  execution, diagnostics, and trace display.
+- full typed diagnostic presentation;
+- step execution, trace filtering, and trace animation.

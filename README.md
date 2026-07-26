@@ -6,8 +6,9 @@ language documentation.
 ## Minimal 2D editor
 
 The independent React editor is in [`editor/`](editor/). It opens and preserves
-Tilefold project JSON v1 documents without running the OCaml semantic validator
-or execution engine in the browser.
+Tilefold project JSON v1 documents and runs the normative OCaml decoder,
+inference, lowering, and Engine in a production Web Worker compiled with
+`js_of_ocaml`.
 
 ```sh
 cd editor

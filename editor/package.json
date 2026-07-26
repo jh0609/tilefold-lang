@@ -5,7 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "build": "npm run runner:check && tsc -b && vite build",
+    "runner:build": "node scripts/build-browser-runner.mjs",
+    "runner:check": "node scripts/build-browser-runner.mjs --check",
+    "runner:differential": "node scripts/differential-runner.mjs",
     "export:fixture": "tsx src/test/exportFixture.ts",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
