@@ -40,6 +40,35 @@ describe("Tilefold editor UI", () => {
     expect(screen.getByText(/3 elements/)).toBeInTheDocument();
   });
 
+  it("shows the OCaml execution result and minimal rewrite trace", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: "completed",
+        result: "Nat(3)",
+        rewriteCount: 1,
+        trace: [{ index: 0, rule: "Succ", subject: "node_succ" }],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Run" }));
+
+    expect(await screen.findByText(/Result:/)).toHaveTextContent(
+      "Result: Nat(3) · 1 rewrites",
+    );
+    expect(screen.getByRole("list", { name: "Rewrite trace" })).toHaveTextContent(
+      "#0 Succ node_succ",
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/execute-project",
+      expect.objectContaining({ method: "POST" }),
+    );
+    vi.unstubAllGlobals();
+  });
+
   it("selects a focused element from the keyboard without changing history", () => {
     render(<App />);
     const element = screen.getByTestId("element-drop_unit");

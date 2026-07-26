@@ -84,7 +84,46 @@
 .workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 310px;
+  grid-template-rows: minmax(0, 1fr) auto;
   min-height: 0;
+}
+
+.workspace > .canvas-shell {
+  grid-row: 1 / 3;
+}
+
+.execution-panel {
+  max-height: 220px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  padding: 12px 18px;
+  color: var(--text-muted);
+  background: var(--bg-panel);
+  font-size: 11px;
+}
+
+.execution-panel h2 {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.execution-panel p {
+  margin: 6px 0;
+}
+
+.execution-error {
+  color: var(--error);
+}
+
+.execution-trace {
+  margin: 8px 0 0;
+  padding-left: 22px;
+}
+
+.execution-trace li {
+  margin: 4px 0;
 }
 
 .status-bar {
@@ -143,6 +182,14 @@
 
   .workspace {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(440px, 62vh) auto;
+    grid-template-rows: minmax(440px, 62vh) auto auto;
+  }
+
+  .workspace > .canvas-shell {
+    grid-row: auto;
+  }
+
+  .execution-panel {
+    border-left: 0;
   }
 }

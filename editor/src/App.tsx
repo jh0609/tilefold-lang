@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import exampleJson from "../../examples/nat-succ.tilefold.json?raw";
 import { Canvas } from "./components/Canvas";
 import { Inspector } from "./components/Inspector";
 import { StatusBar } from "./components/StatusBar";
 import { Toolbar } from "./components/Toolbar";
+import { ExecutionPanel } from "./components/ExecutionPanel";
 import {
   cameraZoomPercent,
   fitViewBoxToBounds,
@@ -30,6 +31,10 @@ import type {
   ConnectablePort,
   WireEndpoint,
 } from "./model/portConnections";
+import {
+  executeProject,
+  type ExecutionResponse,
+} from "./model/executionApi";
 
 const initialDocument = parseProjectJson(exampleJson);
 
@@ -74,6 +79,10 @@ export function App() {
   const [importError, setImportError] = useState<string | null>(null);
   const [inspectorError, setInspectorError] = useState<string | null>(null);
   const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
+  const [execution, setExecution] = useState<ExecutionResponse | null>(null);
+  const [executionError, setExecutionError] = useState<string | null>(null);
+  const [running, setRunning] = useState(false);
+  const executionRequest = useRef(0);
   const [viewBox, setViewBox] = useState(savedViewBox(initialDocument.view));
   const referenceViewBox = savedViewBox(document.view);
 
@@ -92,10 +101,34 @@ export function App() {
   }, [referenceViewBox, viewBox]);
 
   function resetDocument(next: ProjectDocument) {
+    executionRequest.current += 1;
     setHistory(createEditorHistory(next));
     setSelection(null);
     setInspectorError(null);
     setViewBox(savedViewBox(next.view));
+    setExecution(null);
+    setExecutionError(null);
+    setRunning(false);
+  }
+
+  async function runProject() {
+    const request = executionRequest.current + 1;
+    executionRequest.current = request;
+    setRunning(true);
+    setExecutionError(null);
+    try {
+      const response = await executeProject(document);
+      if (executionRequest.current !== request) return;
+      setExecution(response);
+    } catch (error) {
+      if (executionRequest.current !== request) return;
+      setExecution(null);
+      setExecutionError(
+        error instanceof Error ? error.message : "Unknown execution failure.",
+      );
+    } finally {
+      if (executionRequest.current === request) setRunning(false);
+    }
   }
 
   function runCommand(command: EditorCommand): ProjectDocument | null {
@@ -106,6 +139,8 @@ export function App() {
     }
     setHistory(result.history);
     setInspectorError(null);
+    setExecution(null);
+    setExecutionError(null);
     return result.history === history ? null : result.history.present;
   }
 
@@ -129,6 +164,8 @@ export function App() {
     setHistory(next);
     if (!selectionExists(next.present, selection)) setSelection(null);
     setInspectorError(null);
+    setExecution(null);
+    setExecutionError(null);
   }
 
   function redo() {
@@ -137,6 +174,8 @@ export function App() {
     setHistory(next);
     if (!selectionExists(next.present, selection)) setSelection(null);
     setInspectorError(null);
+    setExecution(null);
+    setExecutionError(null);
   }
 
   function openExample() {
@@ -250,6 +289,13 @@ export function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   });
 
+  useEffect(
+    () => () => {
+      executionRequest.current += 1;
+    },
+    [],
+  );
+
   return (
     <div className="editor-app">
       <Toolbar
@@ -270,6 +316,8 @@ export function App() {
         onRedo={redo}
         onFitView={fitView}
         onResetView={() => setViewBox(savedViewBox(document.view))}
+        onRun={runProject}
+        running={running}
       />
       <div className="workspace">
         <Canvas
@@ -340,6 +388,11 @@ export function App() {
             });
           }}
           onError={setInspectorError}
+        />
+        <ExecutionPanel
+          execution={execution}
+          error={executionError}
+          running={running}
         />
       </div>
       <StatusBar

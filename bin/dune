@@ -2,3 +2,7 @@
  (name main)
  (public_name tilefold)
  (libraries tilefold))
+
+(executable
+ (name project_runner)
+ (libraries tilefold yojson))

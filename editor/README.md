@@ -12,6 +12,23 @@ npm install
 npm run dev
 ```
 
+The development server exposes a local-only execution endpoint backed by the
+OCaml reference engine. `opam` and the repository's OCaml dependencies must be
+available when using **Run**. The endpoint executes:
+
+```text
+Project JSON
+→ Project_document.decode_json
+→ infer_symbolic
+→ lower_to_program_package
+→ Program_package.run_completed
+```
+
+The result panel shows the final runtime value and a minimal diagnostic list of
+rewrite index, rule, and subject node. This is not a new public trace
+serialization format. Production builds remain static and do not include an
+OCaml runtime service.
+
 Production and verification commands:
 
 ```sh
@@ -206,4 +223,5 @@ The next editor layer can add:
 - wire bend-point and segment editing;
 - container movement with a specified deterministic group-translation policy;
 - OCaml JavaScript/WASM integration for decode, validation, inference,
-  execution, diagnostics, and trace display.
+  production OCaml runtime packaging, full diagnostics, and stable public trace
+  serialization.
