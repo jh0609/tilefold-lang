@@ -20,7 +20,7 @@
   display: block;
   margin-bottom: 2px;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: var(--font-micro);
   font-weight: 750;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -29,12 +29,12 @@
 .palette-heading h2 {
   margin: 0;
   color: var(--text);
-  font-size: 16px;
+  font-size: var(--font-heading-md);
 }
 
 .palette-count {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-caption);
 }
 
 .palette-search {
@@ -77,8 +77,8 @@
 .palette-guidance {
   margin: 9px 14px 4px;
   color: var(--text-muted);
-  font-size: 10px;
-  line-height: 1.4;
+  font-size: var(--font-caption);
+  line-height: 1.5;
 }
 
 .palette-groups {
@@ -95,7 +95,7 @@
 .palette-group h3 {
   margin: 0 5px 6px;
   color: #667085;
-  font-size: 9px;
+  font-size: var(--font-micro);
   letter-spacing: 0.09em;
   text-transform: uppercase;
 }
@@ -109,12 +109,12 @@
   position: relative;
   display: grid;
   width: 100%;
-  min-height: 62px;
+  min-height: 70px;
   grid-template-columns: 36px minmax(0, 1fr);
   align-items: start;
   gap: 9px;
   border-color: transparent;
-  padding: 8px;
+  padding: 9px 8px;
   text-align: left;
 }
 
@@ -154,7 +154,7 @@
   justify-content: space-between;
   gap: 8px;
   color: var(--text);
-  font-size: 11px;
+  font-size: var(--font-body);
 }
 
 .function-authoring-heading button {
@@ -169,15 +169,15 @@
 .function-authoring p {
   margin: 0;
   color: var(--text-muted);
-  font-size: 9px;
-  line-height: 1.4;
+  font-size: var(--font-micro);
+  line-height: 1.5;
 }
 
 .function-authoring label {
   display: grid;
   gap: 4px;
   color: #475467;
-  font-size: 9px;
+  font-size: var(--font-micro);
   font-weight: 700;
 }
 
@@ -191,6 +191,7 @@
   color: var(--text);
   background: white;
   font: inherit;
+  font-size: var(--font-caption);
 }
 
 .function-type-fields {
@@ -219,7 +220,7 @@
   justify-content: space-between;
   gap: 8px;
   color: #475467;
-  font-size: 9px;
+  font-size: var(--font-micro);
 }
 
 .function-captures-heading button {
@@ -228,7 +229,7 @@
   padding: 3px 7px;
   color: var(--call);
   background: white;
-  font-size: 9px;
+  font-size: var(--font-micro);
   font-weight: 750;
 }
 
@@ -253,7 +254,7 @@
   border-color: var(--call);
   color: white;
   background: var(--call);
-  font-size: 10px;
+  font-size: var(--font-caption);
   font-weight: 750;
 }
 
@@ -291,18 +292,18 @@
 
 .palette-item-name strong {
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--font-body);
 }
 
 .palette-item-name small {
   color: var(--text-muted);
-  font-size: 8px;
+  font-size: var(--font-micro);
 }
 
 .palette-item-copy code {
   overflow: hidden;
   color: var(--item-accent);
-  font-size: 9px;
+  font-size: var(--font-micro);
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -311,8 +312,8 @@
 .palette-item-copy > span:last-child {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 9px;
-  line-height: 1.3;
+  font-size: var(--font-micro);
+  line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -342,13 +343,13 @@
   gap: 5px;
   margin: 24px 7px;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-caption);
   text-align: center;
 }
 
 .palette-empty strong {
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--font-body);
 }
 
 .palette-legend {
@@ -358,13 +359,13 @@
   border-top: 1px solid #eaecf0;
   padding: 10px 14px;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: var(--font-micro);
 }
 
 .palette-legend strong {
   width: 100%;
   color: #475467;
-  font-size: 9px;
+  font-size: var(--font-micro);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }

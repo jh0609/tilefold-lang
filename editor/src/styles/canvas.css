@@ -41,7 +41,7 @@
 
 .container-shape text {
   fill: #5e5182;
-  font-size: 7px;
+  font-size: 9px;
   font-weight: 700;
 }
 
@@ -288,7 +288,7 @@
 .element-signature {
   fill: #475467;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 7px;
+  font-size: 9px;
   font-weight: 650;
   pointer-events: none;
 }
@@ -301,23 +301,23 @@
 }
 
 .element-node.compact .element-kind {
-  font-size: 5px;
+  font-size: 7px;
 }
 
 .element-node.compact .element-primary-value {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .selection-badge {
   fill: var(--select);
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 800;
   letter-spacing: 0.06em;
   pointer-events: none;
 }
 
 .element-node.compact .selection-badge {
-  font-size: 4px;
+  font-size: 6px;
 }
 
 .port-anchor {
@@ -354,7 +354,7 @@
 
 .port-label {
   fill: #475467;
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 650;
   pointer-events: none;
 }
@@ -372,7 +372,7 @@
   color: #475467;
   background: rgba(255, 255, 255, 0.91);
   padding: 6px 9px;
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 
 .canvas-hint strong {
@@ -397,7 +397,7 @@
   color: var(--text-muted);
   background: rgba(255, 255, 255, 0.96);
   padding: 4px;
-  font-size: 10px;
+  font-size: var(--font-caption);
   box-shadow: 0 4px 12px rgba(16, 24, 40, 0.08);
 }
 
@@ -410,7 +410,7 @@
   min-width: 42px;
   color: var(--text);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 10px;
+  font-size: var(--font-caption);
   font-weight: 700;
   text-align: center;
 }
@@ -436,12 +436,12 @@
   background: rgba(236, 253, 243, 0.96);
   padding: 8px 12px;
   box-shadow: 0 6px 18px rgba(16, 24, 40, 0.12);
-  font-size: 10px;
+  font-size: var(--font-caption);
   pointer-events: none;
 }
 
 .connection-banner strong {
-  font-size: 11px;
+  font-size: var(--font-body);
 }
 
 .connection-banner.is-rejected {

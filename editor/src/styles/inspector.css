@@ -13,13 +13,13 @@
   margin: 7px 0 0;
   overflow-wrap: anywhere;
   color: var(--text);
-  font-size: 16px;
+  font-size: var(--font-heading-md);
 }
 
 .inspector h3 {
   margin: 0 0 8px;
   color: #475467;
-  font-size: 11px;
+  font-size: var(--font-caption);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -31,12 +31,12 @@
   background: #eaecf0;
   padding: 3px 8px;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 10px;
+  font-size: var(--font-micro);
 }
 
 .read-only-label {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-caption);
 }
 
 .field-grid {
@@ -51,7 +51,7 @@
   gap: 5px;
   margin-bottom: 12px;
   color: #475467;
-  font-size: 12px;
+  font-size: var(--font-body);
   font-weight: 650;
 }
 
@@ -86,14 +86,15 @@
   border-top: 1px solid #eaecf0;
   padding-top: 15px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-caption);
+  line-height: 1.5;
 }
 
 .readout code,
 .inspector > code {
   display: block;
   color: #475467;
-  font-size: 11px;
+  font-size: var(--font-caption);
 }
 
 .empty-inspector {
@@ -135,13 +136,13 @@
 .summary-grid small {
   color: var(--text-muted);
   font-family: inherit;
-  font-size: 9px;
+  font-size: var(--font-micro);
   font-weight: 500;
 }
 
 .structure-pass {
   color: #087a5b;
-  font-size: 11px;
+  font-size: var(--font-caption);
   font-weight: 700;
 }
 
@@ -151,7 +152,8 @@
   color: #93370d;
   background: #fffaeb;
   padding: 9px 10px;
-  font-size: 11px;
+  font-size: var(--font-caption);
+  line-height: 1.5;
 }
 
 .signature-dialog-backdrop {
