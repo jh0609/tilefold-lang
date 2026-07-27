@@ -88,12 +88,20 @@ Production and verification commands:
 ```sh
 npm run typecheck
 npm test
+npm run test:e2e
 npm run build
 ```
 
 The app is a React 19 + TypeScript + Vite project. Tests use Vitest, jsdom,
-React Testing Library, and user-event. It has no canvas/graph framework, global
-state library, or UI framework.
+React Testing Library, user-event, and Playwright. The Playwright suite runs one
+Chromium project against the production Vite preview. It covers the browser
+Surface function authoring flow: create a named multi-argument function, edit
+its body through SVG port dragging, return to entry, create a Call, wire the
+result, run the OCaml worker, export Project JSON, import it in a fresh page,
+rerun, and verify referenced-template deletion protection. Playwright reports,
+traces, screenshots, videos, and build output are local test artifacts and are
+not committed. The editor has no canvas/graph framework, global state library,
+or UI framework.
 
 ## Visual direction
 

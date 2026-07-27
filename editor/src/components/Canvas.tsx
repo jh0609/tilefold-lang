@@ -22,6 +22,7 @@ import {
 } from "../model/portConnections";
 import type {
   CoreType,
+  EndpointHint,
   Point,
   ProjectContainer,
   ProjectDocument,
@@ -103,6 +104,9 @@ function ContainerShape({
   return (
     <g
       className={`container-shape${selected ? " selected" : ""}`}
+      data-container-id={container.id}
+      data-container-kind={container.kind.kind}
+      data-template-id={container.kind.templateId}
       role="button"
       tabIndex={0}
       aria-label={`${container.kind.kind} container ${container.id}`}
@@ -135,6 +139,55 @@ function ContainerShape({
       ))}
     </g>
   );
+}
+
+function endpointDataAttributes(
+  document: ProjectDocument,
+  hint: EndpointHint | undefined,
+  side: "source" | "target",
+) {
+  if (!hint) return {};
+  if (hint.kind === "element_port") {
+    const element = document.geometry.elements.find(
+      (candidate) => candidate.id === hint.elementId,
+    );
+    return {
+      [`data-${side}-kind`]: "element",
+      [`data-${side}-node-id`]: hint.elementId,
+      [`data-${side}-node-kind`]: element?.kind ?? "",
+      [`data-${side}-port-name`]: hint.port,
+    };
+  }
+  if (hint.kind === "boundary_port") {
+    const container = document.geometry.containers.find(
+      (candidate) => candidate.id === hint.containerId,
+    );
+    const boundary = container?.boundaryPorts.find(
+      (candidate) => candidate.id === hint.boundaryId,
+    );
+    return {
+      [`data-${side}-kind`]: "boundary",
+      [`data-${side}-container-id`]: hint.containerId,
+      [`data-${side}-container-kind`]: container?.kind.kind ?? "",
+      [`data-${side}-boundary-id`]: hint.boundaryId,
+      [`data-${side}-boundary-role`]: boundary?.role ?? "",
+      [`data-${side}-port-name`]:
+        boundary?.role === "capture"
+          ? `capture:${boundary.captureKey}`
+          : (boundary?.role ?? ""),
+    };
+  }
+  if (hint.kind === "junction") {
+    return {
+      [`data-${side}-kind`]: "junction",
+      [`data-${side}-junction-id`]: hint.junctionId,
+    };
+  }
+  return {
+    [`data-${side}-kind`]: "junction_outlet",
+    [`data-${side}-junction-id`]: hint.junctionId,
+    [`data-${side}-outlet-id`]: hint.outletId,
+  };
 }
 
 export function Canvas({
@@ -659,6 +712,9 @@ export function Canvas({
             <polyline
               key={wire.id}
               data-testid={`wire-${wire.id}`}
+              data-wire-id={wire.id}
+              {...endpointDataAttributes(renderedDocument, wire.sourceHint, "source")}
+              {...endpointDataAttributes(renderedDocument, wire.targetHint, "target")}
               className={
                 selection?.type === "wire" && selection.id === wire.id
                   ? "wire selected"
@@ -789,6 +845,20 @@ export function Canvas({
                 key={port.key}
                 className={`port-hit-area boundary-hit ${port.direction}${connection?.validHover?.key === port.key ? " connection-target" : ""}${connectionTargets.compatible.has(port.key) ? " connection-compatible" : ""}${connectionTargets.rejected.has(port.key) ? " connection-rejected" : ""}`}
                 data-testid={`port-${port.key}`}
+                data-boundary-owner-id={port.ownerId}
+                data-port-name={port.name}
+                data-port-direction={port.direction}
+                data-port-kind="boundary"
+                data-container-id={
+                  port.hint.kind === "boundary_port"
+                    ? port.hint.containerId
+                    : undefined
+                }
+                data-boundary-id={
+                  port.hint.kind === "boundary_port"
+                    ? port.hint.boundaryId
+                    : undefined
+                }
                 cx={port.anchor.x}
                 cy={port.anchor.y}
                 r={11}

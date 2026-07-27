@@ -123,6 +123,8 @@ export function ElementNode({
     <g
       className={`element-node kind-${element.kind}${compact ? " compact" : ""}${selected ? " selected" : ""}${traceHighlighted ? " trace-highlighted" : ""}`}
       data-testid={`element-${element.id}`}
+      data-node-id={element.id}
+      data-node-kind={element.kind}
       data-trace-highlighted={traceHighlighted ? "true" : undefined}
       role="button"
       aria-label={`${KIND_LABELS[element.kind]} element ${element.id}`}
@@ -212,6 +214,10 @@ export function ElementNode({
                 cy={hitCenter.y}
                 r={11}
                 data-testid={`port-${port.key}`}
+                data-node-id={element.id}
+                data-node-kind={element.kind}
+                data-port-name={anchor.port}
+                data-port-direction={port.direction}
                 role="button"
                 tabIndex={0}
                 aria-label={`${port.direction} port ${anchor.port} on ${element.id}${port.direction === "output" ? ", drag to connect" : ", connection target"}`}
