@@ -632,7 +632,7 @@ let test_lowering_inserts_automatic_drop () =
            | CG.Drop Core_type.Nat -> true
            | _ -> false))
 
-let test_lowering_counts_multiple_parameter_uses () =
+let test_lowering_inserts_copy_for_multiple_parameter_uses () =
   let duplicate : S.function_decl =
     {
       id = function_id "duplicate";
@@ -654,26 +654,237 @@ let test_lowering_counts_multiple_parameter_uses () =
           [ argument "value" (S.Nat_literal Nat.one) ];
     }
   in
-  let program =
+  let package =
     validate_or_fail [ entry; duplicate; first_function ]
+    |> lower_or_fail
   in
-  match
-    S.lower_to_program_package
-      ~entry_function_id:(function_id "lower-entry")
-      program
-  with
-  | Error errors ->
+  (match P.run package with
+  | P.Completed { value; trace; _ } ->
+      (match Runtime_value.payload value with
+      | Runtime_value.Nat value -> assert (Nat.equal value Nat.one)
+      | _ -> failwith "copied Surface program returned a non-Nat value");
       assert (
-        List.exists
-          (function
-            | S.Unsupported_parameter_use_count
-                { function_id = id; parameter; actual = 2 } ->
-                S.Function_id.equal id (function_id "duplicate")
-                && S.Name.equal parameter (name "value")
-            | _ -> false)
-          errors)
-  | Ok _ ->
-      failwith "multiple parameter uses unexpectedly lowered without Copy"
+        List.fold_left
+          (fun count event ->
+            if event.Rewrite_event.rule = Rewrite_event.Copy then
+              count + 1
+            else count)
+          0 trace
+        = 1)
+  | _ -> failwith "copied Surface program did not complete");
+  let duplicate_template =
+    P.templates package
+    |> List.find (fun template ->
+           CG.Function_template_id.to_string
+             (CG.Function_template.id template)
+           = "duplicate")
+  in
+  let body = CG.Function_template.body duplicate_template in
+  assert (
+    CG.Validated_graph.nodes body
+    |> List.exists (fun (node : CG.node) ->
+           CG.Node_id.to_string node.id
+           = "__surface_copy_0000_root"
+           &&
+           match node.kind with
+           | CG.Copy Core_type.Nat -> true
+           | _ -> false));
+  assert (
+    CG.Validated_graph.default_node_order body
+    |> List.hd
+    |> CG.Node_id.to_string
+    = "__surface_copy_0000_root")
+
+let test_lowering_builds_balanced_copy_tree () =
+  let select_first : S.function_decl =
+    {
+      id = function_id "select-first-of-four";
+      parameters =
+        [
+          nat_parameter "a";
+          nat_parameter "b";
+          nat_parameter "c";
+          nat_parameter "d";
+        ];
+      result = nat_result "selected";
+      body = S.Parameter (name "a");
+    }
+  in
+  let repeat : S.function_decl =
+    {
+      id = function_id "repeat-four";
+      parameters = [ nat_parameter "value" ];
+      result = nat_result "answer";
+      body =
+        call "select-first-of-four"
+          [
+            argument "d" (S.Parameter (name "value"));
+            argument "b" (S.Parameter (name "value"));
+            argument "a" (S.Parameter (name "value"));
+            argument "c" (S.Parameter (name "value"));
+          ];
+    }
+  in
+  let entry : S.function_decl =
+    {
+      lowering_entry_function with
+      body =
+        call "repeat-four"
+          [ argument "value" (S.Nat_literal Nat.one) ];
+    }
+  in
+  let package =
+    validate_or_fail [ repeat; entry; select_first ]
+    |> lower_or_fail
+  in
+  (match P.run package with
+  | P.Completed { value; trace; _ } ->
+      (match Runtime_value.payload value with
+      | Runtime_value.Nat value -> assert (Nat.equal value Nat.one)
+      | _ -> failwith "balanced Copy program returned a non-Nat value");
+      assert (
+        List.fold_left
+          (fun count event ->
+            if event.Rewrite_event.rule = Rewrite_event.Copy then
+              count + 1
+            else count)
+          0 trace
+        = 3)
+  | _ -> failwith "balanced Copy program did not complete");
+  let repeat_template =
+    P.templates package
+    |> List.find (fun template ->
+           CG.Function_template_id.to_string
+             (CG.Function_template.id template)
+           = "repeat-four")
+  in
+  let body = CG.Function_template.body repeat_template in
+  let copy_ids =
+    CG.Validated_graph.nodes body
+    |> List.filter_map (fun (node : CG.node) ->
+           match node.kind with
+           | CG.Copy Core_type.Nat ->
+               Some (CG.Node_id.to_string node.id)
+           | _ -> None)
+    |> List.sort String.compare
+  in
+  assert (
+    copy_ids
+    = [
+        "__surface_copy_0000_root";
+        "__surface_copy_0000_rootL";
+        "__surface_copy_0000_rootR";
+      ]);
+  assert (
+    CG.Validated_graph.default_node_order body
+    |> List.map CG.Node_id.to_string
+    |> List.filter (fun id ->
+           String.starts_with ~prefix:"__surface_copy_" id)
+    = [
+        "__surface_copy_0000_root";
+        "__surface_copy_0000_rootL";
+        "__surface_copy_0000_rootR";
+      ])
+
+let test_odd_copy_tree_assigns_extra_leaf_left () =
+  let select_first : S.function_decl =
+    {
+      id = function_id "select-first-of-three";
+      parameters =
+        [ nat_parameter "a"; nat_parameter "b"; nat_parameter "c" ];
+      result = nat_result "selected";
+      body = S.Parameter (name "a");
+    }
+  in
+  let repeat : S.function_decl =
+    {
+      id = function_id "repeat-three";
+      parameters = [ nat_parameter "value" ];
+      result = nat_result "answer";
+      body =
+        call "select-first-of-three"
+          [
+            argument "a" (S.Parameter (name "value"));
+            argument "b" (S.Parameter (name "value"));
+            argument "c" (S.Parameter (name "value"));
+          ];
+    }
+  in
+  let entry : S.function_decl =
+    {
+      lowering_entry_function with
+      body =
+        call "repeat-three"
+          [ argument "value" (S.Nat_literal Nat.one) ];
+    }
+  in
+  let package =
+    validate_or_fail [ select_first; repeat; entry ]
+    |> lower_or_fail
+  in
+  let repeat_template =
+    P.templates package
+    |> List.find (fun template ->
+           CG.Function_template_id.to_string
+             (CG.Function_template.id template)
+           = "repeat-three")
+  in
+  let copy_ids =
+    CG.Function_template.body repeat_template
+    |> CG.Validated_graph.nodes
+    |> List.filter_map (fun (node : CG.node) ->
+           match node.kind with
+           | CG.Copy Core_type.Nat ->
+               Some (CG.Node_id.to_string node.id)
+           | _ -> None)
+    |> List.sort String.compare
+  in
+  assert (
+    copy_ids
+    = [
+        "__surface_copy_0000_root";
+        "__surface_copy_0000_rootL";
+      ])
+
+let test_copy_lowering_is_canonical_across_argument_order () =
+  let select_first : S.function_decl =
+    {
+      id = function_id "copy-order-target";
+      parameters =
+        [ nat_parameter "a"; nat_parameter "b"; nat_parameter "c" ];
+      result = nat_result "selected";
+      body = S.Parameter (name "a");
+    }
+  in
+  let lower arguments =
+    let repeat : S.function_decl =
+      {
+        id = function_id "copy-order-repeat";
+        parameters = [ nat_parameter "value" ];
+        result = nat_result "answer";
+        body = call "copy-order-target" arguments;
+      }
+    in
+    let entry : S.function_decl =
+      {
+        lowering_entry_function with
+        body =
+          call "copy-order-repeat"
+            [ argument "value" (S.Nat_literal Nat.one) ];
+      }
+    in
+    validate_or_fail [ entry; repeat; select_first ]
+    |> lower_or_fail
+    |> PS.encode
+  in
+  let arguments =
+    [
+      argument "a" (S.Parameter (name "value"));
+      argument "b" (S.Parameter (name "value"));
+      argument "c" (S.Parameter (name "value"));
+    ]
+  in
+  assert (String.equal (lower arguments) (lower (List.rev arguments)))
 
 let () =
   test_names_must_not_be_empty ();
@@ -693,5 +904,8 @@ let () =
   test_multi_argument_lowering_is_canonical_across_argument_order ();
   test_generated_template_id_collision_is_rejected ();
   test_lowering_inserts_automatic_drop ();
-  test_lowering_counts_multiple_parameter_uses ();
+  test_lowering_inserts_copy_for_multiple_parameter_uses ();
+  test_lowering_builds_balanced_copy_tree ();
+  test_odd_copy_tree_assigns_extra_leaf_left ();
+  test_copy_lowering_is_canonical_across_argument_order ();
   print_endline "surface program tests passed"

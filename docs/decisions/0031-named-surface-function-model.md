@@ -86,6 +86,24 @@ with explicit Surface function IDs instead of silently renaming semantic
 objects. Capture lists follow declaration order.
 
 Unused captures or the final parameter receive explicit `Drop` nodes in the
-body template. Parameters used once remain directly connected. Parameters used
-more than once are still rejected until the balanced deterministic `Copy` pass
-is specified and implemented.
+body template. Parameters used once remain directly connected.
+
+## Follow-up: deterministic resource lowering
+
+Every parameter use is counted before the final body template is compiled.
+Zero uses produce `Drop`, one use receives the original boundary value, and
+`n > 1` uses produce a balanced binary tree of `n - 1` Core `Copy` nodes.
+
+The tree is deterministic:
+
+- the left subtree receives `(n + 1) / 2` leaves;
+- the right subtree receives `n / 2` leaves;
+- node IDs contain the parameter declaration index and a root/left/right path;
+- leaves are assigned left-to-right to occurrences in canonical compilation
+  order.
+
+Canonical compilation visits call arguments in parameter declaration order,
+not call-site presentation order. Named-argument reordering therefore cannot
+change resource flow or the standard trace. The pass applies only to the
+currently supported Unit/Nat values, matching the existing Core `Copy`
+runtime boundary.

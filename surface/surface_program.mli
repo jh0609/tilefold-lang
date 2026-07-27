@@ -126,11 +126,6 @@ type lowering_error =
       binding : Name.t;
       typ : Core_type.t;
     }
-  | Unsupported_parameter_use_count of {
-      function_id : Function_id.t;
-      parameter : Name.t;
-      actual : int;
-    }
   | Core_graph_validation_errors of {
       function_id : Function_id.t;
       errors : Core_graph.validation_error list;

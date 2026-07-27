@@ -127,16 +127,25 @@ The call `first(right = 1, left = 0)` then becomes
 `Apply(Apply(Function(first), 0), 1)`. Call-site argument order remains
 non-semantic.
 
-Multiple uses still require a balanced `Copy` tree. Until that deterministic
-resource pass is implemented, lowering reports
-`Unsupported_parameter_use_count` for any parameter used more than once.
+Resource usage is explicit in every generated body template:
+
+- zero uses generate one `Drop`;
+- one use connects the boundary value directly;
+- two or more uses generate a balanced binary `Copy` tree with `n - 1` Copy
+  nodes for `n` uses.
+
+For an odd number of uses, the left subtree receives the extra leaf. Leaves are
+assigned left-to-right to parameter occurrences encountered during canonical
+expression compilation. Calls compile arguments in parameter declaration
+order, so rearranging named arguments at a call site does not change the Copy
+tree or leaf assignment. Copy nodes use deterministic IDs containing the
+parameter index and tree path.
 
 ## Deliberate exclusions
 
 This checkpoint does not define:
 
 - local `let` bindings;
-- automatic `Copy` for multiply-used Surface parameters;
 - lexical capture inference;
 - pattern matching or user-defined data types;
 - a writable textual Surface syntax.

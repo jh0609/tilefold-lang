@@ -126,11 +126,6 @@ type lowering_error =
       binding : Name.t;
       typ : Core_type.t;
     }
-  | Unsupported_parameter_use_count of {
-      function_id : Function_id.t;
-      parameter : Name.t;
-      actual : int;
-    }
   | Core_graph_validation_errors of {
       function_id : Function_id.t;
       errors : Core_graph.validation_error list;
@@ -520,6 +515,10 @@ let capture_node_id index =
 let capture_drop_node_id index =
   generated_node_id (Printf.sprintf "__surface_capture_drop_%04d" index)
 
+let copy_node_id binding_index path =
+  generated_node_id
+    (Printf.sprintf "__surface_copy_%04d_%s" binding_index path)
+
 let port_ref node_id port_key : CG.port_ref =
   { node_id; port_key }
 
@@ -587,6 +586,37 @@ let add_edge source target state =
     edges_rev = { CG.id; source; target } :: state.edges_rev;
   }
 
+let rec build_copy_tree ~binding_index ~typ ~path ~uses source state =
+  if uses <= 0 then
+    invalid_arg "a generated Copy tree must have at least one leaf"
+  else if uses = 1 then (state, [ source ])
+  else
+    let node_id = copy_node_id binding_index path in
+    let node : CG.node = { id = node_id; kind = CG.Copy typ } in
+    let state =
+      {
+        state with
+        nodes_rev = node :: state.nodes_rev;
+        order_rev = node_id :: state.order_rev;
+      }
+      |> add_edge source (input node_id)
+    in
+    let left_uses = (uses + 1) / 2 in
+    let right_uses = uses / 2 in
+    let state, left_sources =
+      build_copy_tree ~binding_index ~typ ~path:(path ^ "L")
+        ~uses:left_uses
+        (port_ref node_id CG.Port_key.left)
+        state
+    in
+    let state, right_sources =
+      build_copy_tree ~binding_index ~typ ~path:(path ^ "R")
+        ~uses:right_uses
+        (port_ref node_id CG.Port_key.right)
+        state
+    in
+    (state, left_sources @ right_sources)
+
 type built_function = {
   surface_id : Function_id.t;
   outer_template : CG.Function_template.t;
@@ -615,13 +645,36 @@ let function_signature ?(captures = []) template : CG.function_signature =
 
 type parameter_binding = {
   parameter : parameter;
-  source : CG.port_ref;
+  sources : CG.port_ref list;
 }
 
-let find_parameter_binding bindings name =
-  List.find_opt
-    (fun binding -> Name.equal binding.parameter.name name)
-    bindings
+let take_parameter_source bindings name =
+  let rec loop preceding = function
+    | [] ->
+        Error
+          [
+            Lowering_invariant_violation
+              ("validated parameter binding disappeared: "
+              ^ Name.to_string name);
+          ]
+    | binding :: rest ->
+        if Name.equal binding.parameter.name name then
+          match binding.sources with
+          | source :: sources ->
+              Ok
+                ( source,
+                  List.rev_append preceding
+                    ({ binding with sources } :: rest) )
+          | [] ->
+              Error
+                [
+                  Lowering_invariant_violation
+                    ("generated parameter sources were exhausted: "
+                    ^ Name.to_string name);
+                ]
+        else loop (binding :: preceding) rest
+  in
+  loop [] bindings
 
 let find_call_argument call (parameter : parameter) =
   List.find_opt
@@ -631,26 +684,21 @@ let find_call_argument call (parameter : parameter) =
 
 let rec compile_expression functions built bindings state expression =
   match expression with
-  | Parameter name -> (
-      match find_parameter_binding bindings name with
-      | Some binding -> Ok (state, binding.source)
-      | None ->
-          Error
-            [
-              Lowering_invariant_violation
-                ("validated parameter binding disappeared: "
-                ^ Name.to_string name);
-            ])
+  | Parameter name ->
+      let* source, bindings =
+        take_parameter_source bindings name
+      in
+      Ok (state, bindings, source)
   | Unit_literal ->
       let state, node_id =
         add_expression_node "unit" CG.Unit_literal false state
       in
-      Ok (state, output node_id)
+      Ok (state, bindings, output node_id)
   | Nat_literal nat ->
       let state, node_id =
         add_expression_node "nat" (CG.Nat_literal nat) false state
       in
-      Ok (state, output node_id)
+      Ok (state, bindings, output node_id)
   | Call call -> (
       match find_function functions call.function_id with
       | None ->
@@ -661,10 +709,10 @@ let rec compile_expression functions built bindings state expression =
                 ^ Function_id.to_string call.function_id);
             ]
       | Some target -> (
-          let* state, argument_sources_rev =
+          let* state, bindings, argument_sources_rev =
             List.fold_left
               (fun result (parameter : parameter) ->
-                let* state, sources_rev = result in
+                let* state, bindings, sources_rev = result in
                 match find_call_argument call parameter with
                 | None ->
                     Error
@@ -675,12 +723,15 @@ let rec compile_expression functions built bindings state expression =
                           ^ Name.to_string parameter.name);
                       ]
                 | Some argument ->
-                    let* state, source =
+                    let* state, bindings, source =
                       compile_expression functions built bindings state
                         argument.value
                     in
-                    Ok (state, (parameter, source) :: sources_rev))
-              (Ok (state, [])) target.parameters
+                    Ok
+                      ( state,
+                        bindings,
+                        (parameter, source) :: sources_rev ))
+              (Ok (state, bindings, [])) target.parameters
           in
           match find_built_template built target.id with
           | None ->
@@ -712,7 +763,7 @@ let rec compile_expression functions built bindings state expression =
                   true state
               in
               let rec apply_arguments state function_source = function
-                | [] -> Ok (state, function_source)
+                | [] -> Ok (state, bindings, function_source)
                 | (parameter, argument_source) :: rest ->
                     let parameter_type, result_type =
                       match parameter with
@@ -806,20 +857,19 @@ let lower_body_template functions built function_decl =
     base_graph_state ~parameter_type
       ~result_type:function_decl.result.typ captures
   in
-  let capture_bindings =
+  let parameter_sources =
     List.mapi
       (fun index parameter ->
-        { parameter; source = output (capture_node_id index) })
+        (parameter, output (capture_node_id index)))
       preceding_parameters
   in
-  let bindings =
+  let parameter_sources =
     match current_parameter with
-    | None -> capture_bindings
+    | None -> parameter_sources
     | Some parameter ->
-        capture_bindings
-        @ [ { parameter; source = output parameter_node_id } ]
+        parameter_sources @ [ (parameter, output parameter_node_id) ]
   in
-  let initial, drop_ids_rev =
+  let initial, bindings, drop_ids_rev =
     match current_parameter with
     | None ->
         let drop_node : CG.node =
@@ -829,34 +879,63 @@ let lower_body_template functions built function_decl =
           { initial with nodes_rev = drop_node :: initial.nodes_rev }
           |> add_edge (output parameter_node_id) (input unit_drop_node_id)
         in
-        (state, [ unit_drop_node_id ])
+        (state, [], [ unit_drop_node_id ])
     | Some _ ->
         List.fold_left
-          (fun (state, drop_ids_rev) (index, binding) ->
-            if
-              parameter_use_count binding.parameter.name
-                function_decl.body
-              <> 0
-            then (state, drop_ids_rev)
-            else
+          (fun (state, bindings_rev, drop_ids_rev)
+               (index, ((parameter : parameter), source)) ->
+            let uses =
+              parameter_use_count parameter.name function_decl.body
+            in
+            if uses = 0 then
               let node_id =
                 if index = List.length preceding_parameters then
                   parameter_drop_node_id
                 else capture_drop_node_id index
               in
               let drop_node : CG.node =
-                { id = node_id; kind = CG.Drop binding.parameter.typ }
+                { id = node_id; kind = CG.Drop parameter.typ }
               in
               let state =
                 { state with nodes_rev = drop_node :: state.nodes_rev }
-                |> add_edge binding.source (input node_id)
+                |> add_edge source (input node_id)
               in
-              (state, node_id :: drop_ids_rev))
-          (initial, [])
-          (List.mapi (fun index binding -> (index, binding)) bindings)
+              ( state,
+                { parameter; sources = [] } :: bindings_rev,
+                node_id :: drop_ids_rev )
+            else
+              let state, sources =
+                build_copy_tree ~binding_index:index ~typ:parameter.typ
+                  ~path:"root" ~uses source state
+              in
+              ( state,
+                { parameter; sources } :: bindings_rev,
+                drop_ids_rev ))
+          (initial, [], [])
+          (List.mapi
+             (fun index parameter_source ->
+               (index, parameter_source))
+             parameter_sources)
+        |> fun (state, bindings_rev, drop_ids_rev) ->
+        (state, List.rev bindings_rev, drop_ids_rev)
   in
-  let* state, body_source =
+  let* state, remaining_bindings, body_source =
     compile_expression functions built bindings initial function_decl.body
+  in
+  let* () =
+    match
+      List.find_opt
+        (fun binding -> binding.sources <> [])
+        remaining_bindings
+    with
+    | None -> Ok ()
+    | Some binding ->
+        Error
+          [
+            Lowering_invariant_violation
+              ("generated parameter sources were not consumed: "
+              ^ Name.to_string binding.parameter.name);
+          ]
   in
   let state =
     add_edge body_source
@@ -1100,23 +1179,7 @@ let lowering_preflight_errors ~entry_function_id functions =
                 };
             ]
         in
-        let use_errors =
-          function_decl.parameters
-          |> List.filter_map (fun parameter ->
-              let actual =
-                parameter_use_count parameter.name function_decl.body
-              in
-              if actual <= 1 then None
-              else
-                Some
-                  (Unsupported_parameter_use_count
-                     {
-                       function_id = function_decl.id;
-                       parameter = parameter.name;
-                       actual;
-                     }))
-        in
-        parameter_type_errors @ result_type_errors @ use_errors)
+        parameter_type_errors @ result_type_errors)
       functions
   in
   entry_errors @ generated_template_collision_errors functions
@@ -1219,11 +1282,6 @@ let render_lowering_error = function
       ^ render_function_id function_id ^ "."
       ^ render_name binding ^ " has type "
       ^ Core_type.to_string typ
-  | Unsupported_parameter_use_count { function_id; parameter; actual } ->
-      "Surface lowering currently supports each parameter used at most once: "
-      ^ render_function_id function_id ^ "."
-      ^ render_name parameter ^ " is used "
-      ^ string_of_int actual ^ " times"
   | Core_graph_validation_errors { function_id; errors } ->
       "Surface lowering produced an invalid Core graph for "
       ^ render_function_id function_id ^ ": "
