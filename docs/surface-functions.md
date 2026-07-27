@@ -141,6 +141,24 @@ order, so rearranging named arguments at a call site does not change the Copy
 tree or leaf assignment. Copy nodes use deterministic IDs containing the
 parameter index and tree path.
 
+## Editor integration slice
+
+The browser editor now stores optional Project JSON v1 `surfaceFunctions`
+metadata for authoring named functions without exposing internal Core IDs. The
+metadata records the function name, ordered argument names and Unit/Nat types,
+the named result, and the body container to reopen. It is UI/navigation data
+over ordinary project geometry: execution still goes through Function, Apply,
+boundary ports, wires, geometry inference, symbolic lowering, and Core.
+
+For this editor slice, a named multi-argument function is represented by one
+editable template body. Earlier arguments appear as ordered Function capture
+ports and the final argument remains the template Parameter boundary. A single
+Call palette action can therefore show named arguments in declaration order
+while still producing ordinary closure creation and Apply geometry. The
+expression-based `Surface_program` lowering above remains the reference model
+for deterministic currying and balanced Copy/Drop generation; richer editor
+body analysis and source-mapped lowering diagnostics remain future work.
+
 ## Deliberate exclusions
 
 This checkpoint does not define:

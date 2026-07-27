@@ -280,4 +280,118 @@ await writeFile(
   exportProjectJson(capturedCall.document),
   "utf8",
 );
+
+const namedFunction = addFunctionTemplate(
+  parseProjectJson(await readFile(source, "utf8")),
+  "entry",
+  {
+    templateId: "fixture_choose_right",
+    parameters: [
+      { name: "left", type: "nat" },
+      { name: "right", type: "nat" },
+    ],
+    resultName: "selected",
+    resultType: "nat",
+  },
+);
+if ("error" in namedFunction) throw new Error(namedFunction.error);
+const namedCall = addFunctionCall(
+  namedFunction.document,
+  "entry",
+  "fixture_choose_right",
+);
+if ("error" in namedCall) throw new Error(namedCall.error);
+const captureWire = namedCall.document.geometry.wires.find(
+  (wire) =>
+    wire.targetHint?.kind === "element_port" &&
+    wire.targetHint.elementId === namedCall.functionElement.id &&
+    wire.targetHint.port === "left",
+);
+const argumentWire = namedCall.document.geometry.wires.find(
+  (wire) =>
+    wire.targetHint?.kind === "element_port" &&
+    wire.targetHint.elementId === namedCall.applyElement.id &&
+    wire.targetHint.port === "argument",
+);
+const captureSource =
+  captureWire?.sourceHint?.kind === "element_port"
+    ? captureWire.sourceHint.elementId
+    : "";
+const argumentSource =
+  argumentWire?.sourceHint?.kind === "element_port"
+    ? argumentWire.sourceHint.elementId
+    : "";
+const resultDropWire = namedCall.document.geometry.wires.find(
+  (wire) =>
+    wire.sourceHint?.kind === "element_port" &&
+    wire.sourceHint.elementId === namedCall.applyElement.id &&
+    wire.sourceHint.port === "result" &&
+    wire.targetHint?.kind === "element_port",
+);
+const resultDropId =
+  resultDropWire?.targetHint?.kind === "element_port"
+    ? resultDropWire.targetHint.elementId
+    : "";
+const applyResult = namedCall.applyElement.portAnchors.find(
+  (anchor) => anchor.port === "result",
+)!;
+const entryResult = namedCall.document.geometry.containers[0]!.boundaryPorts.find(
+  (boundary) => boundary.role === "result",
+)!;
+const entryResultPoint = {
+  x: namedCall.document.geometry.containers[0]!.bounds.x + entryResult.anchor.x,
+  y: namedCall.document.geometry.containers[0]!.bounds.y + entryResult.anchor.y,
+};
+const executableNamedCall = {
+  ...namedCall.document,
+  geometry: {
+    ...namedCall.document.geometry,
+    elements: namedCall.document.geometry.elements
+      .filter(
+        (element) =>
+          !["node_nat_2", "node_succ", resultDropId].includes(element.id),
+      )
+      .map((element) => {
+        if (element.id === captureSource && element.kind === "nat_literal") {
+          return { ...element, properties: { value: "2" } };
+        }
+        if (element.id === argumentSource && element.kind === "nat_literal") {
+          return { ...element, properties: { value: "3" } };
+        }
+        return element;
+      }),
+    wires: [
+      ...namedCall.document.geometry.wires.filter(
+        (wire) =>
+          ![
+            "wire_nat_succ",
+            "wire_result",
+            resultDropWire?.id ?? "",
+          ].includes(wire.id),
+      ),
+      {
+        id: "wire_fixture_choose_right_result",
+        points: [
+          { x: applyResult.x, y: applyResult.y },
+          entryResultPoint,
+        ],
+        sourceHint: {
+          kind: "element_port" as const,
+          elementId: namedCall.applyElement.id,
+          port: "result",
+        },
+        targetHint: {
+          kind: "boundary_port" as const,
+          containerId: "entry",
+          boundaryId: entryResult.id,
+        },
+      },
+    ],
+  },
+};
+await writeFile(
+  resolve(".tmp/exported-function-named-call-result.tilefold.json"),
+  exportProjectJson(executableNamedCall),
+  "utf8",
+);
 console.log(target);

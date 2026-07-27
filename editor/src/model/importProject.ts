@@ -3,6 +3,7 @@ import {
   type Bounds,
   type ProjectDocument,
   type ProjectElement,
+  type SurfaceFunctionMetadata,
 } from "./project";
 
 export class StructureError extends Error {
@@ -230,6 +231,86 @@ function containerAt(value: unknown, path: string): void {
   });
 }
 
+function surfaceFunctionAt(value: unknown, path: string): SurfaceFunctionMetadata {
+  const record = objectAt(value, path);
+  stringAt(required(record, "name", path), `${path}.name`);
+  stringAt(required(record, "templateId", path), `${path}.templateId`);
+  stringAt(
+    required(record, "bodyContainerId", path),
+    `${path}.bodyContainerId`,
+  );
+  const parameters = arrayAt(
+    required(record, "parameters", path),
+    `${path}.parameters`,
+  );
+  parameters.forEach((parameter, index) => {
+    const parameterPath = `${path}.parameters[${index}]`;
+    const parameterRecord = objectAt(parameter, parameterPath);
+    stringAt(
+      required(parameterRecord, "name", parameterPath),
+      `${parameterPath}.name`,
+    );
+    coreTypeAt(
+      required(parameterRecord, "type", parameterPath),
+      `${parameterPath}.type`,
+    );
+  });
+  const result = objectAt(required(record, "result", path), `${path}.result`);
+  stringAt(required(result, "name", `${path}.result`), `${path}.result.name`);
+  coreTypeAt(required(result, "type", `${path}.result`), `${path}.result.type`);
+  return value as SurfaceFunctionMetadata;
+}
+
+function checkSurfaceFunctionReferences(
+  surfaceFunctions: readonly SurfaceFunctionMetadata[] | undefined,
+  containers: readonly unknown[],
+): void {
+  if (!surfaceFunctions) return;
+  const containerRecords = containers.map((container, index) => ({
+    path: `$.geometry.containers[${index}]`,
+    value: objectAt(container, `$.geometry.containers[${index}]`),
+  }));
+  const templateIds = new Set<string>();
+  const containerIds = new Set<string>();
+  for (const { path, value } of containerRecords) {
+    containerIds.add(stringAt(required(value, "id", path), `${path}.id`));
+    const kind = objectAt(required(value, "kind", path), `${path}.kind`);
+    templateIds.add(
+      stringAt(required(kind, "templateId", `${path}.kind`), `${path}.kind.templateId`),
+    );
+  }
+  const seenNames = new Set<string>();
+  surfaceFunctions.forEach((functionInfo, index) => {
+    const path = `$.surfaceFunctions[${index}]`;
+    if (seenNames.has(functionInfo.name)) {
+      throw new StructureError(path, `duplicate function name ${functionInfo.name}`);
+    }
+    seenNames.add(functionInfo.name);
+    if (!templateIds.has(functionInfo.templateId)) {
+      throw new StructureError(
+        `${path}.templateId`,
+        `unknown template ${functionInfo.templateId}`,
+      );
+    }
+    if (!containerIds.has(functionInfo.bodyContainerId)) {
+      throw new StructureError(
+        `${path}.bodyContainerId`,
+        `unknown container ${functionInfo.bodyContainerId}`,
+      );
+    }
+    const seenParameters = new Set<string>();
+    functionInfo.parameters.forEach((parameter, parameterIndex) => {
+      if (seenParameters.has(parameter.name)) {
+        throw new StructureError(
+          `${path}.parameters[${parameterIndex}].name`,
+          `duplicate argument ${parameter.name}`,
+        );
+      }
+      seenParameters.add(parameter.name);
+    });
+  });
+}
+
 function wireAt(value: unknown, path: string): void {
   const wire = objectAt(value, path);
   idAt(wire, path);
@@ -393,7 +474,18 @@ export function parseProjectJson(text: string): ProjectDocument {
   junctions.forEach((value, index) =>
     junctionAt(value, `$.geometry.junctions[${index}]`),
   );
+  const surfaceFunctions =
+    document.surfaceFunctions === undefined
+      ? undefined
+      : arrayAt(document.surfaceFunctions, "$.surfaceFunctions").map(
+          (value, index) =>
+            surfaceFunctionAt(value, `$.surfaceFunctions[${index}]`),
+        );
+  if (document.currentContainerId !== undefined) {
+    stringAt(document.currentContainerId, "$.currentContainerId");
+  }
   checkRenderingReferences(elements, containers, wires, junctions);
+  checkSurfaceFunctionReferences(surfaceFunctions, containers);
   if (document.view !== undefined) {
     const view = objectAt(document.view, "$.view");
     integerAt(required(view, "cameraX", "$.view"), "$.view.cameraX");

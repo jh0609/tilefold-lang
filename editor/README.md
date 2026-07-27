@@ -125,8 +125,9 @@ kind and port-type colors, spacing, and radius.
   primary Run/Cancel action.
 - The persistent left palette searches and explains Unit, Nat, Succ, Drop,
   Copy, Function, Call, Apply, and NatRec creation plus the Result boundary action.
-  Function asks for a stable template ID and a Unit/Nat parameter and result
-  type, with optional named Unit/Nat captures, before creating the template.
+  Function asks for a user-facing function name, ordered Unit/Nat arguments,
+  a named Unit/Nat result, and optional explicit captures before creating the
+  editable body template.
 - The SVG canvas renders containers, relative boundary anchors, elements,
   absolute port anchors, wire polylines, junctions, and explicit outlets. The
   wheel zooms around the pointer and a middle-button drag pans the camera.
@@ -163,8 +164,9 @@ kinds without specialized visuals use a labeled generic node and are preserved.
 An import failure leaves the current document untouched and reports a JSON path.
 
 Export uses readable two-space JSON and preserves stable IDs, Nat strings, wire
-point order, explicit junction outlet order, hints, container data, and saved
-view. It adds no UI fields. It need not match the OCaml canonical byte layout.
+point order, explicit junction outlet order, hints, container data, optional
+Surface function authoring metadata, current graph context, and saved view. It
+need not match the OCaml canonical byte layout.
 
 ## Editing policies
 
@@ -186,35 +188,45 @@ element kind; adding it is blocked when the first container already has one.
 
 Function authoring creates a referenced template container, Parameter and
 Result boundaries, a total starter body, a closure element in the selected
-container (or the entry container by default), and the exact template
-dependency. Equal Unit/Nat signatures use explicit Copy and Drop nodes to form
-an identity body; cross-type signatures explicitly Drop the parameter and
-produce `Unit` or `Nat(0)`. The new closure is connected to an arrow-typed Drop
-so adding it does not invalidate an otherwise executable program. Users can
-remove that safety connection when wiring the closure to Apply. All generated
-containers, elements, boundaries, dependencies, and wires are one typed command
-and one Undo/Redo step.
+container (or the entry container by default), the exact template dependency,
+and optional `surfaceFunctions` metadata for the user-facing function name,
+argument names, result name, and body container. Equal Unit/Nat signatures use
+explicit Copy and Drop nodes to form an identity body; cross-type signatures
+explicitly Drop the parameter and produce `Unit` or `Nat(0)`. The new closure is
+connected to an arrow-typed Drop so adding it does not invalidate an otherwise
+executable program. Users can remove that safety connection when wiring the
+closure to Apply. All generated containers, elements, boundaries, dependencies,
+wires, and metadata are one typed command and one Undo/Redo step. After
+creation the editor opens the new body container; the Inspector provides a
+return action to the entry graph.
 
-Each named capture becomes both a template Capture boundary and an input port on
-the host Function. The generated template explicitly Drops each unused capture;
-the host supplies deterministic temporary `Unit` or `Nat(0)` literals so the
-project remains executable until those inputs are rewired. Capture keys must be
-unique v1 identifiers, cannot use the reserved Function output key `value`, and
-are generated in canonical key order.
+For a named multi-argument Surface function, every argument before the final
+argument becomes both a template Capture boundary and an input port on the host
+Function. The final argument remains the template Parameter boundary. This keeps
+the UI focused on one named function while the saved geometry still lowers
+through existing Function and Apply semantics. Additional explicit captures are
+also supported. The generated template explicitly Drops each unused capture; the
+host supplies deterministic temporary `Unit` or `Nat(0)` literals so the project
+remains executable until those inputs are rewired. Capture keys must be unique
+v1 identifiers and cannot use the reserved Function output key `value`.
 
 Call authoring lists compatible existing templates for the selected host and
-adds their Function closure, capture literals, Apply node, argument literal,
-result Drop, wires, and missing dependency as one Undo/Redo step. Templates that
-would introduce a self or transitive dependency cycle are excluded and the
-typed command performs the same cycle check again. The compact two-column
-starter layout keeps capture and argument literals next to their consumer.
+shows the user-facing function name and named arguments in declaration order.
+It adds the Function closure, capture literals for earlier arguments, Apply
+node, final argument literal, result Drop, wires, and missing dependency as one
+Undo/Redo step. Templates that would introduce a self or transitive dependency
+cycle are excluded and the typed command performs the same cycle check again.
+The compact two-column starter layout keeps capture and argument literals next
+to their consumer. Connecting named arguments in a different visual order does
+not change the canonical lowering because the underlying ports are stable.
 
-Template IDs use the v1 identifier alphabet and must be unique among
-containers. Generated stable IDs use the normal smallest-unused policy.
-Authoring refuses to expand the host container when doing so would overlap
-another container. The current form intentionally supports only Unit and Nat
-parameters, results, and captures; inferred captures, nested arrow authoring,
-renaming, and signature editing remain future work.
+Function names and template IDs use the v1 identifier alphabet and must be
+unique among containers. Generated stable IDs use the normal smallest-unused
+policy. Authoring refuses to expand the host container when doing so would
+overlap another container. The current form intentionally supports only Unit and
+Nat parameters, results, and captures; inferred captures, nested arrow
+authoring, renaming referenced signatures, and source-mapped lowering errors
+remain future work.
 
 Pointer positions are transformed through the SVG current transformation matrix
 and rounded to project integers. Element movement translates its bounds and

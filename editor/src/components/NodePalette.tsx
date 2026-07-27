@@ -34,6 +34,12 @@ interface FunctionCaptureRow {
   type: PrimitiveCoreType;
 }
 
+interface FunctionParameterRow {
+  draftId: number;
+  name: string;
+  type: PrimitiveCoreType;
+}
+
 const PALETTE_GROUPS: PaletteGroup[] = [
   {
     name: "Values",
@@ -178,8 +184,11 @@ export function NodePalette({
   const [query, setQuery] = useState("");
   const [authoringFunction, setAuthoringFunction] = useState(false);
   const [templateId, setTemplateId] = useState(suggestedFunctionTemplateId);
-  const [parameterType, setParameterType] =
-    useState<PrimitiveCoreType>("unit");
+  const nextParameterDraftId = useRef(2);
+  const [parameters, setParameters] = useState<FunctionParameterRow[]>([
+    { draftId: 1, name: "value", type: "unit" },
+  ]);
+  const [resultName, setResultName] = useState("result");
   const [resultType, setResultType] = useState<PrimitiveCoreType>("unit");
   const nextCaptureDraftId = useRef(1);
   const [captures, setCaptures] = useState<FunctionCaptureRow[]>([]);
@@ -208,12 +217,18 @@ export function NodePalette({
         .includes(normalizedQuery),
     ),
   })).filter((group) => group.items.length > 0);
+  const selectedCallable = callableTemplates.find(
+    (template) => template.templateId === callTemplateId,
+  );
 
   function runAction(action: PaletteAction) {
     if (action.kind === "element") onAddElement(action.elementKind);
     if (action.kind === "result") onAddResult();
     if (action.kind === "function") {
       setTemplateId(suggestedFunctionTemplateId);
+      nextParameterDraftId.current = 2;
+      setParameters([{ draftId: 1, name: "value", type: "unit" }]);
+      setResultName("result");
       setCaptures([]);
       setAuthoringFunction(true);
     }
@@ -310,7 +325,10 @@ export function NodePalette({
                             if (
                               onAddFunction({
                                 templateId,
-                                parameterType,
+                                parameters: parameters.map(
+                                  ({ name, type }) => ({ name, type }),
+                                ),
+                                resultName,
                                 resultType,
                                 captures: captures.map(
                                   ({ key, type }) => ({ key, type }),
@@ -322,7 +340,7 @@ export function NodePalette({
                           }}
                         >
                           <div className="function-authoring-heading">
-                            <strong>New function template</strong>
+                            <strong>New Surface function</strong>
                             <button
                               type="button"
                               aria-label="Cancel function template"
@@ -335,7 +353,7 @@ export function NodePalette({
                             Closure host: <code>{functionHostLabel}</code>
                           </p>
                           <label>
-                            Template ID
+                            Function name
                             <input
                               value={templateId}
                               pattern={"[A-Za-z0-9_.\\-]{1,128}"}
@@ -345,24 +363,110 @@ export function NodePalette({
                               }
                             />
                           </label>
-                          <div className="function-type-fields">
-                            <label>
-                              Parameter
-                              <select
-                                value={parameterType}
-                                onChange={(event) =>
-                                  setParameterType(
-                                    event.target.value as PrimitiveCoreType,
-                                  )
+                          <div className="function-captures">
+                            <div className="function-captures-heading">
+                              <strong>Arguments</strong>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setParameters((current) => [
+                                    ...current,
+                                    {
+                                      draftId: nextParameterDraftId.current++,
+                                      name: `arg_${current.length + 1}`,
+                                      type: "nat",
+                                    },
+                                  ])
                                 }
                               >
-                                <option value="unit">Unit</option>
-                                <option value="nat">Nat</option>
-                              </select>
-                            </label>
-                            <span aria-hidden="true">→</span>
+                                Add argument
+                              </button>
+                            </div>
+                            {parameters.map((parameter, index) => (
+                              <div
+                                className="function-capture-row"
+                                key={parameter.draftId}
+                              >
+                                <label>
+                                  <span className="visually-hidden">
+                                    Argument {index + 1} name
+                                  </span>
+                                  <input
+                                    aria-label={`Argument ${index + 1} name`}
+                                    value={parameter.name}
+                                    pattern={"[A-Za-z0-9_.\\-]{1,128}"}
+                                    required
+                                    onChange={(event) =>
+                                      setParameters((current) =>
+                                        current.map((candidate, candidateIndex) =>
+                                          candidateIndex === index
+                                            ? {
+                                                ...candidate,
+                                                name: event.target.value,
+                                              }
+                                            : candidate,
+                                        ),
+                                      )
+                                    }
+                                  />
+                                </label>
+                                <label>
+                                  <span className="visually-hidden">
+                                    Argument {index + 1} type
+                                  </span>
+                                  <select
+                                    aria-label={`Argument ${index + 1} type`}
+                                    value={parameter.type}
+                                    onChange={(event) =>
+                                      setParameters((current) =>
+                                        current.map((candidate, candidateIndex) =>
+                                          candidateIndex === index
+                                            ? {
+                                                ...candidate,
+                                                type: event.target
+                                                  .value as PrimitiveCoreType,
+                                              }
+                                            : candidate,
+                                        ),
+                                      )
+                                    }
+                                  >
+                                    <option value="unit">Unit</option>
+                                    <option value="nat">Nat</option>
+                                  </select>
+                                </label>
+                                <button
+                                  type="button"
+                                  aria-label={`Remove argument ${index + 1}`}
+                                  disabled={parameters.length === 1}
+                                  onClick={() =>
+                                    setParameters((current) =>
+                                      current.filter(
+                                        (_, candidateIndex) =>
+                                          candidateIndex !== index,
+                                      ),
+                                    )
+                                  }
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="function-type-fields">
                             <label>
-                              Result
+                              Result name
+                              <input
+                                value={resultName}
+                                pattern={"[A-Za-z0-9_.\\-]{1,128}"}
+                                required
+                                onChange={(event) =>
+                                  setResultName(event.target.value)
+                                }
+                              />
+                            </label>
+                            <label>
+                              Result type
                               <select
                                 value={resultType}
                                 onChange={(event) =>
@@ -518,8 +622,14 @@ export function NodePalette({
                                   key={template.templateId}
                                   value={template.templateId}
                                 >
-                                  {template.templateId} ·{" "}
-                                  {coreTypeLabel(template.parameterType)} →{" "}
+                                  {template.displayName} ·{" "}
+                                  {template.parameters
+                                    .map(
+                                      (parameter) =>
+                                        `${parameter.name}: ${coreTypeLabel(parameter.type)}`,
+                                    )
+                                    .join(", ")}{" "}
+                                  → {template.resultName}:{" "}
                                   {coreTypeLabel(template.resultType)}
                                   {template.captures.length > 0
                                     ? ` · ${template.captures.length} capture(s)`
@@ -528,10 +638,23 @@ export function NodePalette({
                               ))}
                             </select>
                           </label>
+                          {selectedCallable && (
+                            <section className="readout">
+                              <h3>Named arguments</h3>
+                              {selectedCallable.parameters.map(
+                                (parameter, index) => (
+                                  <code key={parameter.name}>
+                                    {index + 1}. {parameter.name}:{" "}
+                                    {coreTypeLabel(parameter.type)}
+                                  </code>
+                                ),
+                              )}
+                            </section>
+                          )}
                           <p className="function-authoring-note">
-                            The editor adds Function, Apply, temporary inputs,
-                            a result Drop, and the template dependency as one
-                            undoable action.
+                            The editor adds Function capture inputs, Apply,
+                            temporary argument values, a result Drop, and the
+                            template dependency as one undoable action.
                           </p>
                           <button type="submit" className="function-create">
                             Create call

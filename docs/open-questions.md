@@ -595,7 +595,11 @@ Still open:
 - Impact on future compatibility: Entry signatures affect stored programs and
   test fixtures.
 - Recommendation: Do not add product types now; keep the exact multi-input
-  story open.
+  story open. The current browser editor provides a limited named-function
+  authoring flow using Project JSON `surfaceFunctions` metadata: earlier
+  arguments are edited as Function capture ports and the final argument remains
+  the template Parameter boundary. This is an editor integration slice, not the
+  final Surface shape grammar.
 
 ## 17. What remains open for Completed, Stuck, and error schemas?
 

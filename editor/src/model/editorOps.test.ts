@@ -163,12 +163,12 @@ describe("editor operations", () => {
     if ("error" in result) throw new Error(result.error);
 
     expect(result.element.properties.captures).toEqual([
-      { key: "marker", type: "unit" },
       { key: "offset", type: "nat" },
+      { key: "marker", type: "unit" },
     ]);
     expect(result.element.portAnchors.map((anchor) => anchor.port)).toEqual([
-      "marker",
       "offset",
+      "marker",
       "value",
     ]);
     expect(
@@ -178,13 +178,13 @@ describe("editor operations", () => {
     ).toEqual([
       expect.objectContaining({
         role: "capture",
-        captureKey: "marker",
-        type: "unit",
+        captureKey: "offset",
+        type: "nat",
       }),
       expect.objectContaining({
         role: "capture",
-        captureKey: "offset",
-        type: "nat",
+        captureKey: "marker",
+        type: "unit",
       }),
     ]);
 
@@ -225,6 +225,73 @@ describe("editor operations", () => {
     expect(() =>
       parseProjectJson(exportProjectJson(result.document)),
     ).not.toThrow();
+  });
+
+  it("authors a named two-argument Surface function and preserves metadata", () => {
+    const project = parseProjectJson(exampleJson);
+    const result = addFunctionTemplate(project, "entry", {
+      templateId: "choose_right",
+      parameters: [
+        { name: "left", type: "nat" },
+        { name: "right", type: "nat" },
+      ],
+      resultName: "selected",
+      resultType: "nat",
+    });
+    if ("error" in result) throw new Error(result.error);
+
+    expect(result.element.properties.captures).toEqual([
+      { key: "left", type: "nat" },
+    ]);
+    expect(result.container.kind).toMatchObject({
+      kind: "template",
+      templateId: "choose_right",
+      parameterType: "nat",
+      resultType: "nat",
+    });
+    expect(result.document.surfaceFunctions).toEqual([
+      {
+        name: "choose_right",
+        templateId: "choose_right",
+        bodyContainerId: result.container.id,
+        parameters: [
+          { name: "left", type: "nat" },
+          { name: "right", type: "nat" },
+        ],
+        result: { name: "selected", type: "nat" },
+      },
+    ]);
+    expect(result.document.currentContainerId).toBe(result.container.id);
+    expect(
+      parseProjectJson(exportProjectJson(result.document)).surfaceFunctions,
+    ).toEqual(result.document.surfaceFunctions);
+  });
+
+  it("rejects duplicate function names and duplicate argument names", () => {
+    const project = parseProjectJson(exampleJson);
+    const result = addFunctionTemplate(project, "entry", {
+      templateId: "choose_right",
+      parameters: [
+        { name: "left", type: "nat" },
+        { name: "left", type: "nat" },
+      ],
+      resultType: "nat",
+    });
+    expect(result).toEqual({ error: "Argument left is duplicated." });
+
+    const authored = addFunctionTemplate(project, "entry", {
+      templateId: "choose_right",
+      parameters: [{ name: "value", type: "nat" }],
+      resultType: "nat",
+    });
+    if ("error" in authored) throw new Error(authored.error);
+    expect(
+      addFunctionTemplate(authored.document, "entry", {
+        templateId: "choose_right",
+        parameters: [{ name: "value", type: "nat" }],
+        resultType: "nat",
+      }),
+    ).toEqual({ error: "Function choose_right already exists." });
   });
 
   it("rejects duplicate, invalid, and reserved capture keys atomically", () => {
@@ -276,6 +343,9 @@ describe("editor operations", () => {
     expect(callableFunctionTemplates(authored.document, "entry")).toEqual([
       {
         templateId: "add_offset",
+        displayName: "add_offset",
+        parameters: [{ name: "value", type: "nat" }],
+        resultName: "result",
         parameterType: "nat",
         resultType: "nat",
         captures: [{ key: "offset", type: "nat" }],
@@ -323,6 +393,46 @@ describe("editor operations", () => {
     ).not.toThrow();
   });
 
+  it("creates a call with named arguments in declaration order", () => {
+    const project = parseProjectJson(exampleJson);
+    const authored = addFunctionTemplate(project, "entry", {
+      templateId: "choose_right",
+      parameters: [
+        { name: "left", type: "nat" },
+        { name: "right", type: "nat" },
+      ],
+      resultType: "nat",
+    });
+    if ("error" in authored) throw new Error(authored.error);
+    expect(callableFunctionTemplates(authored.document, "entry")).toEqual([
+      expect.objectContaining({
+        templateId: "choose_right",
+        displayName: "choose_right",
+        parameters: [
+          { name: "left", type: "nat" },
+          { name: "right", type: "nat" },
+        ],
+        captures: [{ key: "left", type: "nat" }],
+      }),
+    ]);
+
+    const called = addFunctionCall(
+      authored.document,
+      "entry",
+      "choose_right",
+    );
+    if ("error" in called) throw new Error(called.error);
+    expect(called.functionElement.portAnchors.map((anchor) => anchor.port)).toEqual([
+      "left",
+      "value",
+    ]);
+    expect(called.applyElement.portAnchors.map((anchor) => anchor.port)).toEqual([
+      "function",
+      "argument",
+      "result",
+    ]);
+  });
+
   it("excludes calls that would create a template dependency cycle", () => {
     const project = parseProjectJson(exampleJson);
     const first = addFunctionTemplate(project, "entry", {
@@ -365,7 +475,7 @@ describe("editor operations", () => {
       }),
     ).toEqual({
       error:
-        "Template ID must use 1–128 ASCII letters, digits, underscores, hyphens, or periods.",
+        "Function name must use 1-128 ASCII letters, digits, underscores, hyphens, or periods.",
     });
     expect(
       addFunctionTemplate(project, "entry", {
@@ -373,7 +483,7 @@ describe("editor operations", () => {
         parameterType: "unit",
         resultType: "unit",
       }),
-    ).toEqual({ error: "Template ID entry_template already exists." });
+    ).toEqual({ error: "Function entry_template already exists." });
 
     const blocked = {
       ...project,

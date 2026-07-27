@@ -124,6 +124,44 @@ describe("Project JSON v1 import and export", () => {
     expect(exported).not.toContain(`"value": ${huge}`);
   });
 
+  it("round-trips Surface function authoring metadata", () => {
+    const input = JSON.parse(exampleJson);
+    input.surfaceFunctions = [
+      {
+        name: "choose_right",
+        templateId: "entry_template",
+        bodyContainerId: "entry",
+        parameters: [
+          { name: "left", type: "nat" },
+          { name: "right", type: "nat" },
+        ],
+        result: { name: "selected", type: "nat" },
+      },
+    ];
+    input.currentContainerId = "entry";
+
+    const project = parseProjectJson(JSON.stringify(input));
+    const reparsed = parseProjectJson(exportProjectJson(project));
+    expect(reparsed.surfaceFunctions).toEqual(input.surfaceFunctions);
+    expect(reparsed.currentContainerId).toBe("entry");
+  });
+
+  it("rejects broken Surface function metadata references", () => {
+    const input = JSON.parse(exampleJson);
+    input.surfaceFunctions = [
+      {
+        name: "broken",
+        templateId: "missing_template",
+        bodyContainerId: "entry",
+        parameters: [{ name: "value", type: "nat" }],
+        result: { name: "result", type: "nat" },
+      },
+    ];
+    expect(() => parseProjectJson(JSON.stringify(input))).toThrow(
+      "$.surfaceFunctions[0].templateId",
+    );
+  });
+
   it("does not export editor-only state", () => {
     const project = parseProjectJson(exampleJson);
     const editorState = {

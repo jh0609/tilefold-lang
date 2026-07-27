@@ -406,6 +406,30 @@ export function App() {
       return;
     }
     setSelection({ type: "container", id: container.id });
+    setHistory((current) => ({
+      ...current,
+      present: { ...current.present, currentContainerId: container.id },
+    }));
+    setInspectorError(null);
+    setViewBox(
+      formatViewBox(fitViewBoxToBounds(container.bounds, reference)),
+    );
+  }
+
+  function focusEntry() {
+    const container = document.geometry.containers.find(
+      (candidate) => candidate.kind.kind === "entry",
+    );
+    const reference = parseViewBox(referenceViewBox);
+    if (!container || !reference) {
+      setInspectorError("Entry graph is not available.");
+      return;
+    }
+    setSelection({ type: "container", id: container.id });
+    setHistory((current) => ({
+      ...current,
+      present: { ...current.present, currentContainerId: container.id },
+    }));
     setInspectorError(null);
     setViewBox(
       formatViewBox(fitViewBoxToBounds(container.bounds, reference)),
@@ -428,11 +452,23 @@ export function App() {
         candidate.kind === "function" &&
         candidate.properties.templateId === draft.templateId,
     );
-    if (element) setSelection({ type: "element", id: element.id });
-    setConnectionMessage(
-      `Created ${draft.templateId}; its closure is safely connected to Drop until rewired.`,
+    const container = nextDocument.geometry.containers.find(
+      (candidate) =>
+        candidate.kind.kind === "template" &&
+        candidate.kind.templateId === draft.templateId,
     );
-    fitViewToDocument(nextDocument);
+    if (container) {
+      setSelection({ type: "container", id: container.id });
+      const reference = parseViewBox(referenceViewBox);
+      if (reference) {
+        setViewBox(
+          formatViewBox(fitViewBoxToBounds(container.bounds, reference)),
+        );
+      }
+    } else if (element) setSelection({ type: "element", id: element.id });
+    setConnectionMessage(
+      `Created ${draft.templateId}; edit its function body, then return to entry to call it.`,
+    );
     return true;
   }
 
@@ -670,6 +706,7 @@ export function App() {
           canDelete={selectionCanBeDeleted(selection)}
           onDelete={removeSelected}
           onFocusTemplate={focusTemplate}
+          onFocusEntry={focusEntry}
           onError={setInspectorError}
         />
         <ExecutionPanel

@@ -135,6 +135,22 @@ export interface SavedView {
   zoom: number;
 }
 
+export interface SurfaceFunctionParameter {
+  name: StableId;
+  type: CoreType;
+}
+
+export interface SurfaceFunctionMetadata {
+  name: StableId;
+  templateId: StableId;
+  bodyContainerId: StableId;
+  parameters: SurfaceFunctionParameter[];
+  result: {
+    name: StableId;
+    type: CoreType;
+  };
+}
+
 export interface ProjectDocument {
   format: "tilefold-project";
   version: 1;
@@ -145,6 +161,8 @@ export interface ProjectDocument {
     wires: ProjectWire[];
     junctions: ProjectJunction[];
   };
+  surfaceFunctions?: SurfaceFunctionMetadata[];
+  currentContainerId?: StableId;
   view?: SavedView;
 }
 

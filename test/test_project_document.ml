@@ -84,6 +84,43 @@ let () =
          match element.kind with P.Nat_literal value -> value = huge | _ -> false)
        huge_round_trip.elements);
   let checked = validate project in
+  let with_surface_metadata =
+    Yojson.Safe.from_string (P.encode_json project)
+    |> function
+    | `Assoc fields ->
+        `Assoc
+          (fields
+          @ [
+              ( "surfaceFunctions",
+                `List
+                  [
+                    `Assoc
+                      [
+                        ("name", `String "choose_right");
+                        ("templateId", `String "entry_template");
+                        ("bodyContainerId", `String "entry");
+                        ( "parameters",
+                          `List
+                            [
+                              `Assoc
+                                [
+                                  ("name", `String "left");
+                                  ("type", `String "nat");
+                                ];
+                            ] );
+                        ( "result",
+                          `Assoc
+                            [
+                              ("name", `String "selected");
+                              ("type", `String "nat");
+                            ] );
+                      ];
+                  ] );
+              ("currentContainerId", `String "entry");
+            ])
+    | _ -> assert false
+  in
+  ignore (decode (Yojson.Safe.to_string with_surface_metadata));
   let raw =
     match P.to_raw_scene checked with
     | Ok value -> value

@@ -82,16 +82,21 @@ describe("NodePalette", () => {
       name: "Create function template",
     });
     expect(form).toHaveTextContent("Closure host: entry");
-    expect(screen.getByLabelText("Template ID")).toHaveValue("template_4");
-    await user.selectOptions(screen.getByLabelText("Parameter"), "nat");
-    await user.selectOptions(screen.getByLabelText("Result"), "unit");
+    expect(screen.getByLabelText("Function name")).toHaveValue("template_4");
+    await user.clear(screen.getByLabelText("Argument 1 name"));
+    await user.type(screen.getByLabelText("Argument 1 name"), "input");
+    await user.selectOptions(screen.getByLabelText("Argument 1 type"), "nat");
+    await user.clear(screen.getByLabelText("Result name"));
+    await user.type(screen.getByLabelText("Result name"), "done");
+    await user.selectOptions(screen.getByLabelText("Result type"), "unit");
     await user.click(
       screen.getByRole("button", { name: "Create total function" }),
     );
 
     expect(onAddFunction).toHaveBeenCalledWith({
       templateId: "template_4",
-      parameterType: "nat",
+      parameters: [{ name: "input", type: "nat" }],
+      resultName: "done",
       resultType: "unit",
       captures: [],
     });
@@ -106,6 +111,11 @@ describe("NodePalette", () => {
     renderPalette({ onAddFunction });
 
     await user.click(screen.getByRole("button", { name: "Add Function" }));
+    await user.click(screen.getByRole("button", { name: "Add argument" }));
+    await user.clear(screen.getByLabelText("Argument 1 name"));
+    await user.type(screen.getByLabelText("Argument 1 name"), "left");
+    await user.clear(screen.getByLabelText("Argument 2 name"));
+    await user.type(screen.getByLabelText("Argument 2 name"), "right");
     await user.click(screen.getByRole("button", { name: "Add capture" }));
     await user.clear(screen.getByLabelText("Capture 1 key"));
     await user.type(screen.getByLabelText("Capture 1 key"), "offset");
@@ -116,8 +126,12 @@ describe("NodePalette", () => {
 
     expect(onAddFunction).toHaveBeenCalledWith({
       templateId: "template_1",
-      parameterType: "unit",
+      parameters: [
+        { name: "left", type: "unit" },
+        { name: "right", type: "nat" },
+      ],
       resultType: "unit",
+      resultName: "result",
       captures: [{ key: "offset", type: "nat" }],
     });
   });
@@ -129,6 +143,12 @@ describe("NodePalette", () => {
       callableTemplates: [
         {
           templateId: "add_offset",
+          displayName: "add_offset",
+          parameters: [
+            { name: "offset", type: "nat" },
+            { name: "value", type: "nat" },
+          ],
+          resultName: "result",
           parameterType: "nat",
           resultType: "nat",
           captures: [{ key: "offset", type: "nat" }],
@@ -140,7 +160,9 @@ describe("NodePalette", () => {
     await user.click(screen.getByRole("button", { name: "Add Call" }));
     expect(
       screen.getByRole("form", { name: "Create function call" }),
-    ).toHaveTextContent("add_offset · Nat → Nat · 1 capture(s)");
+    ).toHaveTextContent("add_offset · offset: Nat, value: Nat → result: Nat");
+    expect(screen.getByText("1. offset: Nat")).toBeInTheDocument();
+    expect(screen.getByText("2. value: Nat")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Create call" }));
 
     expect(onAddCall).toHaveBeenCalledWith("add_offset");

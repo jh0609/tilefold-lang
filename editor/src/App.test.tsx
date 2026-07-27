@@ -63,18 +63,18 @@ describe("Tilefold editor UI", () => {
     render(<App />);
 
     await user.click(screen.getByRole("button", { name: "Add Function" }));
-    await user.selectOptions(screen.getByLabelText("Parameter"), "nat");
-    await user.selectOptions(screen.getByLabelText("Result"), "unit");
+    await user.selectOptions(screen.getByLabelText("Argument 1 type"), "nat");
+    await user.selectOptions(screen.getByLabelText("Result type"), "unit");
     await user.click(
       screen.getByRole("button", { name: "Create total function" }),
     );
 
     expect(screen.getByText(/2 containers/)).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "node_function_1" }),
+      screen.getByRole("heading", { name: "container_template_1" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("template_1")).toBeInTheDocument();
-    expect(screen.getByText(/safely connected to Drop/)).toBeInTheDocument();
+    expect(screen.getByText(/function template_1/)).toBeInTheDocument();
+    expect(screen.getByText(/edit its function body/)).toBeInTheDocument();
     expect(screen.getByText(/1 undo · 0 redo/)).toBeInTheDocument();
 
     await user.click(screen.getByTitle("Undo Add Function template_1"));
@@ -88,14 +88,16 @@ describe("Tilefold editor UI", () => {
 
     expect(screen.getByRole("button", { name: "Add Call" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "Add Function" }));
-    await user.selectOptions(screen.getByLabelText("Parameter"), "nat");
-    await user.selectOptions(screen.getByLabelText("Result"), "nat");
+    await user.selectOptions(screen.getByLabelText("Argument 1 type"), "nat");
+    await user.selectOptions(screen.getByLabelText("Result type"), "nat");
     await user.click(
       screen.getByRole("button", { name: "Create total function" }),
     );
+    await user.click(screen.getByRole("button", { name: "Return to entry graph" }));
 
     await user.click(screen.getByRole("button", { name: "Add Call" }));
     expect(screen.getByLabelText("Template to call")).toHaveValue("template_1");
+    expect(screen.getByText("1. value: Nat")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Create call" }));
 
     expect(screen.getByText(/Created a call to template_1/)).toBeInTheDocument();
@@ -103,20 +105,85 @@ describe("Tilefold editor UI", () => {
     expect(screen.getByText(/2 undo · 0 redo/)).toBeInTheDocument();
   });
 
+  it("creates, calls, exports, and reopens a named two-argument Surface function", async () => {
+    const user = userEvent.setup();
+    let exportedBlob: Blob | undefined;
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn((blob: Blob) => {
+        exportedBlob = blob;
+        return "blob:function-round-trip";
+      }),
+      revokeObjectURL: vi.fn(),
+    });
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Add Function" }));
+    await user.clear(screen.getByLabelText("Function name"));
+    await user.type(screen.getByLabelText("Function name"), "choose_right");
+    await user.click(screen.getByRole("button", { name: "Add argument" }));
+    await user.clear(screen.getByLabelText("Argument 1 name"));
+    await user.type(screen.getByLabelText("Argument 1 name"), "left");
+    await user.selectOptions(screen.getByLabelText("Argument 1 type"), "nat");
+    await user.clear(screen.getByLabelText("Argument 2 name"));
+    await user.type(screen.getByLabelText("Argument 2 name"), "right");
+    await user.selectOptions(screen.getByLabelText("Argument 2 type"), "nat");
+    await user.clear(screen.getByLabelText("Result name"));
+    await user.type(screen.getByLabelText("Result name"), "selected");
+    await user.selectOptions(screen.getByLabelText("Result type"), "nat");
+    await user.click(
+      screen.getByRole("button", { name: "Create total function" }),
+    );
+
+    expect(screen.getByText(/choose_right\(left: "nat", right: "nat"\)/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Return to entry graph" }));
+    await user.click(screen.getByRole("button", { name: "Add Call" }));
+    expect(screen.getByText("1. left: Nat")).toBeInTheDocument();
+    expect(screen.getByText("2. right: Nat")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Create call" }));
+    expect(screen.getByText(/Created a call to choose_right/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Export JSON" }));
+    const exported = JSON.parse(await readBlobText(exportedBlob!));
+    expect(exported.surfaceFunctions).toEqual([
+      expect.objectContaining({
+        name: "choose_right",
+        parameters: [
+          { name: "left", type: "nat" },
+          { name: "right", type: "nat" },
+        ],
+        result: { name: "selected", type: "nat" },
+      }),
+    ]);
+
+    await user.upload(
+      screen.getByLabelText("Open JSON file"),
+      new File([JSON.stringify(exported)], "function.tilefold.json", {
+        type: "application/json",
+      }),
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: "template container container_template_1",
+      }),
+    );
+    expect(screen.getByText(/choose_right\(left: "nat", right: "nat"\)/)).toBeInTheDocument();
+    click.mockRestore();
+  });
+
   it("opens a Function template and only deletes it after references are removed", async () => {
     const user = userEvent.setup();
     render(<App />);
 
     await user.click(screen.getByRole("button", { name: "Add Function" }));
-    await user.selectOptions(screen.getByLabelText("Parameter"), "nat");
-    await user.selectOptions(screen.getByLabelText("Result"), "nat");
+    await user.selectOptions(screen.getByLabelText("Argument 1 type"), "nat");
+    await user.selectOptions(screen.getByLabelText("Result type"), "nat");
     await user.click(
       screen.getByRole("button", { name: "Create total function" }),
     );
 
-    await user.click(
-      screen.getByRole("button", { name: "Open template template_1" }),
-    );
     expect(
       screen.getByRole("heading", { name: "container_template_1" }),
     ).toBeInTheDocument();

@@ -27,10 +27,17 @@ export interface FunctionCaptureDraft {
   type: PrimitiveCoreType;
 }
 
+export interface FunctionParameterDraft {
+  name: string;
+  type: PrimitiveCoreType;
+}
+
 export interface FunctionTemplateDraft {
   templateId: string;
-  parameterType: PrimitiveCoreType;
+  parameterType?: PrimitiveCoreType;
   resultType: PrimitiveCoreType;
+  resultName?: string;
+  parameters?: FunctionParameterDraft[];
   captures?: FunctionCaptureDraft[];
 }
 
@@ -42,6 +49,9 @@ export interface AddFunctionTemplateResult {
 
 export interface CallableFunctionTemplate {
   templateId: string;
+  displayName: string;
+  parameters: FunctionParameterDraft[];
+  resultName: string;
   parameterType: PrimitiveCoreType;
   resultType: CoreType;
   captures: FunctionCaptureDraft[];
@@ -242,6 +252,55 @@ function primitiveCoreType(type: CoreType): type is PrimitiveCoreType {
   return type === "unit" || type === "nat";
 }
 
+function functionMetadata(document: ProjectDocument, templateId: string) {
+  return document.surfaceFunctions?.find(
+    (functionInfo) => functionInfo.templateId === templateId,
+  );
+}
+
+function defaultParameterName(templateId: string): string {
+  return templateId === "entry" ? "unit" : "value";
+}
+
+function normalizeFunctionDraft(
+  draft: FunctionTemplateDraft,
+): {
+  templateId: string;
+  parameters: FunctionParameterDraft[];
+  parameterType: PrimitiveCoreType;
+  resultName: string;
+  resultType: PrimitiveCoreType;
+  captures: FunctionCaptureDraft[];
+} {
+  const parameters =
+    draft.parameters && draft.parameters.length > 0
+      ? draft.parameters.map((parameter) => ({ ...parameter }))
+      : [
+          {
+            name: defaultParameterName(draft.templateId),
+            type: draft.parameterType ?? "unit",
+          },
+        ];
+  const lastParameter = parameters[parameters.length - 1]!;
+  return {
+    templateId: draft.templateId,
+    parameters,
+    parameterType: lastParameter.type,
+    resultName: draft.resultName ?? "result",
+    resultType: draft.resultType,
+    captures:
+      draft.parameters && draft.parameters.length > 0
+        ? [
+            ...parameters.slice(0, -1).map((parameter) => ({
+              key: parameter.name,
+              type: parameter.type,
+            })),
+            ...(draft.captures ?? []),
+          ]
+        : (draft.captures ?? []),
+  };
+}
+
 function templateCaptures(
   container: ProjectContainer,
 ): FunctionCaptureDraft[] | null {
@@ -301,10 +360,27 @@ export function callableFunctionTemplates(
         return [];
       }
       const captures = templateCaptures(container);
+      const metadata = functionMetadata(document, container.kind.templateId);
       return captures
         ? [
             {
               templateId: container.kind.templateId,
+              displayName: metadata?.name ?? container.kind.templateId,
+              parameters:
+                metadata?.parameters.map((parameter) => ({
+                  name: parameter.name,
+                  type: parameter.type as PrimitiveCoreType,
+                })) ?? [
+                  ...captures.map((capture) => ({
+                    name: capture.key,
+                    type: capture.type,
+                  })),
+                  {
+                    name: defaultParameterName(container.kind.templateId),
+                    type: container.kind.parameterType,
+                  },
+                ],
+              resultName: metadata?.result.name ?? "result",
               parameterType: container.kind.parameterType,
               resultType: container.kind.resultType,
               captures,
@@ -320,21 +396,48 @@ export function addFunctionTemplate(
   hostContainerId: string,
   draft: FunctionTemplateDraft,
 ): AddFunctionTemplateResult | { error: string } {
-  const captures = [...(draft.captures ?? [])].sort((left, right) =>
-    left.key.localeCompare(right.key),
-  );
-  if (!validProjectId(draft.templateId)) {
+  const normalized = normalizeFunctionDraft(draft);
+  const { templateId, parameters, parameterType, resultName, resultType } =
+    normalized;
+  const captures = normalized.captures;
+  if (!validProjectId(templateId)) {
     return {
       error:
-        "Template ID must use 1–128 ASCII letters, digits, underscores, hyphens, or periods.",
+        "Function name must use 1-128 ASCII letters, digits, underscores, hyphens, or periods.",
     };
   }
   if (
     document.geometry.containers.some(
-      (container) => container.kind.templateId === draft.templateId,
+      (container) => container.kind.templateId === templateId,
     )
   ) {
-    return { error: `Template ID ${draft.templateId} already exists.` };
+    return { error: `Function ${templateId} already exists.` };
+  }
+  if (parameters.length === 0) {
+    return { error: "A Surface function needs at least one argument." };
+  }
+  const invalidParameter = parameters.find(
+    (parameter) => !validProjectId(parameter.name),
+  );
+  if (invalidParameter) {
+    return {
+      error:
+        "Argument names must use 1-128 ASCII letters, digits, underscores, hyphens, or periods.",
+    };
+  }
+  const duplicateParameter = parameters.find(
+    (parameter, index) =>
+      parameters.findIndex((candidate) => candidate.name === parameter.name) !==
+      index,
+  );
+  if (duplicateParameter) {
+    return { error: `Argument ${duplicateParameter.name} is duplicated.` };
+  }
+  if (!validProjectId(resultName)) {
+    return {
+      error:
+        "Result name must use 1-128 ASCII letters, digits, underscores, hyphens, or periods.",
+    };
   }
   const invalidCapture = captures.find(
     (capture) => !validProjectId(capture.key),
@@ -426,9 +529,9 @@ export function addFunctionTemplate(
     kind: "function",
     bounds: functionBounds,
     properties: {
-      templateId: draft.templateId,
-      parameterType: draft.parameterType,
-      resultType: draft.resultType,
+      templateId,
+      parameterType,
+      resultType,
       captures,
     },
     portAnchors: [
@@ -505,7 +608,7 @@ export function addFunctionTemplate(
     });
   });
   const functionType: CoreType = {
-    arrow: [draft.parameterType, draft.resultType],
+    arrow: [parameterType, resultType],
   };
   const hostDrop: ProjectElement = {
     id: hostDropId,
@@ -560,13 +663,13 @@ export function addFunctionTemplate(
   const parameterBoundary: BoundaryPort = {
     id: parameterBoundaryId,
     role: "parameter",
-    type: draft.parameterType,
+    type: parameterType,
     anchor: { x: 0, y: 60 },
   };
   const resultBoundary: BoundaryPort = {
     id: resultBoundaryId,
     role: "result",
-    type: draft.resultType,
+    type: resultType,
     anchor: { x: templateBounds.width, y: 60 },
   };
   const captureBoundaries: BoundaryPort[] = captures.map((capture, index) => ({
@@ -580,9 +683,9 @@ export function addFunctionTemplate(
     id: containerId,
     kind: {
       kind: "template",
-      templateId: draft.templateId,
-      parameterType: draft.parameterType,
-      resultType: draft.resultType,
+      templateId,
+      parameterType,
+      resultType,
       dependencies: [],
     },
     bounds: templateBounds,
@@ -649,7 +752,7 @@ export function addFunctionTemplate(
       },
     });
   });
-  if (draft.parameterType === draft.resultType) {
+  if (parameterType === resultType) {
     const copyBounds: Bounds = {
       x: templateBounds.x + 100,
       y: templateBounds.y + 24,
@@ -660,7 +763,7 @@ export function addFunctionTemplate(
       id: allocate("node_copy_"),
       kind: "copy",
       bounds: copyBounds,
-      properties: { type: draft.parameterType },
+      properties: { type: parameterType },
       portAnchors: [
         {
           port: "input",
@@ -689,7 +792,7 @@ export function addFunctionTemplate(
       id: allocate("node_drop_"),
       kind: "drop",
       bounds: identityDropBounds,
-      properties: { type: draft.parameterType },
+      properties: { type: parameterType },
       portAnchors: [
         {
           port: "input",
@@ -769,7 +872,7 @@ export function addFunctionTemplate(
       id: bodyDropId,
       kind: "drop",
       bounds: bodyDropBounds,
-      properties: { type: draft.parameterType },
+      properties: { type: parameterType },
       portAnchors: [
         {
           port: "input",
@@ -781,11 +884,11 @@ export function addFunctionTemplate(
     const literalBounds: Bounds = {
       x: templateBounds.x + 220,
       y: templateBounds.y + 32,
-      width: draft.resultType === "nat" ? 96 : 88,
+      width: resultType === "nat" ? 96 : 88,
       height: 56,
     };
     const literal: ProjectElement =
-      draft.resultType === "nat"
+      resultType === "nat"
         ? {
             id: allocate("node_nat_"),
             kind: "nat_literal",
@@ -850,7 +953,17 @@ export function addFunctionTemplate(
     bounds: expandedHostBounds,
     kind: {
       ...host.kind,
-      dependencies: [...host.kind.dependencies, draft.templateId],
+      dependencies: [...host.kind.dependencies, templateId],
+    },
+  };
+  const surfaceFunction = {
+    name: templateId,
+    templateId,
+    bodyContainerId: containerId,
+    parameters,
+    result: {
+      name: resultName,
+      type: resultType,
     },
   };
   return {
@@ -880,6 +993,11 @@ export function addFunctionTemplate(
           ...templateWires,
         ],
       },
+      surfaceFunctions: [
+        ...(document.surfaceFunctions ?? []),
+        surfaceFunction,
+      ],
+      currentContainerId: containerId,
     },
   };
 }
@@ -1930,6 +2048,17 @@ export function deleteSelection(
             (junction) => !junctionIds.has(junction.id),
           ),
         },
+        surfaceFunctions: document.surfaceFunctions?.filter(
+          (functionInfo) =>
+            functionInfo.templateId !== container.kind.templateId &&
+            functionInfo.bodyContainerId !== container.id,
+        ),
+        currentContainerId:
+          document.currentContainerId === container.id
+            ? document.geometry.containers.find(
+                (candidate) => candidate.kind.kind === "entry",
+              )?.id
+            : document.currentContainerId,
       },
     };
   }

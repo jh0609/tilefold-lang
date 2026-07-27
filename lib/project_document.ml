@@ -514,7 +514,11 @@ let decode_json text =
   in
   let* json = parsed in
   let* fields = object_at "$" json in
-  let* () = reject_unknown "$" [ "format"; "version"; "geometry"; "view" ] fields in
+  let* () =
+    reject_unknown "$"
+      [ "format"; "version"; "geometry"; "view"; "surfaceFunctions"; "currentContainerId" ]
+      fields
+  in
   let* format_json = field "$" "format" fields in
   let* format = string_at "$.format" format_json in
   let* () =

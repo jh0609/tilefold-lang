@@ -24,6 +24,7 @@ interface InspectorProps {
   canDelete: boolean;
   onDelete: () => void;
   onFocusTemplate: (templateId: string) => void;
+  onFocusEntry: () => void;
   onError: (error: string | null) => void;
 }
 
@@ -106,6 +107,7 @@ function NumberField({
 function ElementInspector({
   element,
   connectedWires,
+  surfaceFunction,
   onBoundsChange,
   onNatValueChange,
   onElementTypeChange,
@@ -115,6 +117,7 @@ function ElementInspector({
 }: {
   element: ProjectElement;
   connectedWires: string[];
+  surfaceFunction?: NonNullable<ProjectDocument["surfaceFunctions"]>[number];
   onBoundsChange: (id: string, bounds: Bounds) => void;
   onNatValueChange: (id: string, value: string) => void;
   onElementTypeChange: (id: string, type: CoreType) => void;
@@ -218,7 +221,21 @@ function ElementInspector({
       {element.kind === "function" && (
         <section className="readout">
           <h3>Function template</h3>
-          <code>{element.properties.templateId}</code>
+          <code>
+            {surfaceFunction?.name ?? element.properties.templateId}
+          </code>
+          {surfaceFunction && (
+            <span>
+              {surfaceFunction.parameters
+                .map(
+                  (parameter) =>
+                    `${parameter.name}: ${coreTypeKey(parameter.type)}`,
+                )
+                .join(", ")}{" "}
+              → {surfaceFunction.result.name}:{" "}
+              {coreTypeKey(surfaceFunction.result.type)}
+            </span>
+          )}
           <span>
             {coreTypeKey(element.properties.parameterType)} →{" "}
             {coreTypeKey(element.properties.resultType)}
@@ -281,6 +298,7 @@ export function Inspector({
   canDelete,
   onDelete,
   onFocusTemplate,
+  onFocusEntry,
   onError,
 }: InspectorProps) {
   let content = (
@@ -312,6 +330,14 @@ export function Inspector({
         <ElementInspector
           element={element}
           connectedWires={connectedWires}
+          surfaceFunction={
+            element.kind === "function"
+              ? document.surfaceFunctions?.find(
+                  (candidate) =>
+                    candidate.templateId === element.properties.templateId,
+                )
+              : undefined
+          }
           onBoundsChange={onBoundsChange}
           onNatValueChange={onNatValueChange}
           onElementTypeChange={onElementTypeChange}
@@ -360,6 +386,9 @@ export function Inspector({
         container.kind.templateId,
         container.id,
       );
+      const surfaceFunction = document.surfaceFunctions?.find(
+        (candidate) => candidate.templateId === container.kind.templateId,
+      );
       content = (
         <>
           <div className="inspector-heading">
@@ -367,7 +396,30 @@ export function Inspector({
             <h2>{container.id}</h2>
           </div>
           <p>{container.kind.kind} container</p>
-          <code>template {container.kind.templateId}</code>
+          <code>
+            {surfaceFunction
+              ? `function ${surfaceFunction.name}`
+              : `template ${container.kind.templateId}`}
+          </code>
+          {surfaceFunction && (
+            <section className="readout">
+              <h3>Surface signature</h3>
+              <span>
+                {surfaceFunction.name}(
+                {surfaceFunction.parameters
+                  .map(
+                    (parameter) =>
+                      `${parameter.name}: ${coreTypeKey(parameter.type)}`,
+                  )
+                  .join(", ")}
+                ) → {surfaceFunction.result.name}:{" "}
+                {coreTypeKey(surfaceFunction.result.type)}
+              </span>
+              <button type="button" onClick={onFocusEntry}>
+                Return to entry graph
+              </button>
+            </section>
+          )}
           {container.kind.kind === "template" && (
             <span>
               {coreTypeKey(container.kind.parameterType)} →{" "}

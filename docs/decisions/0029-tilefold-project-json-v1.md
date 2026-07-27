@@ -25,8 +25,12 @@ Introduce the public `Project_document` domain and strict
 - Container boundary anchors are relative to container origins.
 - Wires are ordered polylines and hints are checked but non-authoritative.
 - Branch outlets store stable IDs and explicit integer order.
+- Top-level `surfaceFunctions` and `currentContainerId` are optional
+  editor-facing metadata for named function authoring and reopening the current
+  graph context. They do not enter geometry inference or Core execution.
 - Canonical encoding sorts every non-semantic collection.
-- Unknown fields are rejected in v1.
+- Unknown fields are rejected in v1, except for explicitly specified optional
+  top-level metadata fields.
 - `yojson` supplies only JSON syntax/tree handling; domain decoding and
   validation remain in Tilefold.
 
@@ -41,8 +45,10 @@ applications now depend on `yojson`; this adds a small pure-OCaml runtime
 dependency and no platform library or service.
 
 Strict unknown-field handling makes mistakes visible but means extensions must
-be versioned deliberately. Relative boundary anchors make container movement
+be specified deliberately. Relative boundary anchors make container movement
 convenient while requiring one deterministic translation during conversion.
+The named function metadata is intentionally non-semantic: dropping it preserves
+the executable geometry but loses editor labels and reopen context.
 
 ## Deferred
 
