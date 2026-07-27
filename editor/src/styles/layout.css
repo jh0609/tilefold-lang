@@ -178,6 +178,71 @@
   color: var(--error);
 }
 
+.diagnostics-panel {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.diagnostics-panel h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.diagnostics-panel ol {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.diagnostic-item {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: start;
+  gap: 7px;
+  border: 1px solid #fda29b;
+  border-radius: 6px;
+  color: #7a271a;
+  background: #fff5f4;
+  padding: 7px;
+  text-align: left;
+}
+
+.diagnostic-item:focus-visible {
+  outline: 2px solid var(--select);
+  outline-offset: 2px;
+}
+
+.diagnostic-index {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--error);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.diagnostic-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.diagnostic-copy strong {
+  color: #7a271a;
+}
+
+.diagnostic-copy span {
+  color: #912018;
+}
+
 .execution-canceled {
   color: var(--text-muted);
   font-weight: 600;
