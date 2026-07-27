@@ -4,6 +4,8 @@
     not change Project JSON v1 or Core execution semantics. Only validated
     programs can be serialized canonically or passed to later lowering stages. *)
 
+open Tilefold
+
 module Function_id : sig
   type t
 
@@ -106,7 +108,7 @@ type validation_error =
 
 type t
 
-val validate : Raw.t -> (t, validation_error list) result
+val validate : Raw.t -> (t, validation_error list) Stdlib.result
 val functions : t -> function_decl list
 val canonical_serialization : t -> string
 val render_validation_error : validation_error -> string
@@ -136,6 +138,6 @@ type lowering_error =
 val lower_to_program_package :
   entry_function_id:Function_id.t ->
   t ->
-  (Program_package.t, lowering_error list) result
+  (Program_package.t, lowering_error list) Stdlib.result
 
 val render_lowering_error : lowering_error -> string

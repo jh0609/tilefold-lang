@@ -15,8 +15,19 @@ vm.runInContext(
 );
 const { TilefoldRunner } = browserContext;
 
+function shellQuote(value) {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function toWslPath(value) {
+  const normalized = value.replaceAll("\\", "/");
+  const match = /^([A-Za-z]):\/(.*)$/.exec(normalized);
+  if (!match) return normalized;
+  return `/mnt/${match[1].toLowerCase()}/${match[2]}`;
+}
+
 function nativeRun(projectJson) {
-  const result = spawnSync(
+  let result = spawnSync(
     "opam",
     [
       "exec",
@@ -29,6 +40,23 @@ function nativeRun(projectJson) {
     ],
     { cwd: repositoryRoot, input: projectJson, encoding: "utf8" },
   );
+  if (
+    result.status !== 0 &&
+    process.platform === "win32" &&
+    /does not appear to be a valid opam root/.test(result.stderr || "")
+  ) {
+    const wslRepositoryRoot = toWslPath(repositoryRoot);
+    const command = [
+      `cd ${shellQuote(wslRepositoryRoot)}`,
+      `eval "$(opam env --shell=sh --switch=.)"`,
+      `dune exec --root ${shellQuote(wslRepositoryRoot)} bin/project_runner.exe`,
+    ].join(" && ");
+    result = spawnSync("wsl", ["bash", "-lc", command], {
+      cwd: repositoryRoot,
+      input: projectJson,
+      encoding: "utf8",
+    });
+  }
   if (result.status !== 0) {
     throw new Error(result.stderr || `native runner failed (${result.status})`);
   }

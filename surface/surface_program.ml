@@ -1,3 +1,5 @@
+open Tilefold
+
 module Make_id (Description : sig
   val description : string
 end) =
@@ -742,7 +744,7 @@ let rec compile_expression functions built bindings state expression =
                     ^ Function_id.to_string target.id);
                 ]
           | Some target_template ->
-              let state, argument_sources =
+              let state, (argument_sources : (parameter option * CG.port_ref) list) =
                 match List.rev argument_sources_rev with
                 | [] ->
                     let state, unit_id =
@@ -762,7 +764,9 @@ let rec compile_expression functions built bindings state expression =
                   (CG.Function (function_signature target_template))
                   true state
               in
-              let rec apply_arguments state function_source = function
+              let rec apply_arguments state function_source
+                  (arguments : (parameter option * CG.port_ref) list) =
+                match arguments with
                 | [] -> Ok (state, bindings, function_source)
                 | (parameter, argument_source) :: rest ->
                     let parameter_type, result_type =

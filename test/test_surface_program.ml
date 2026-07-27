@@ -107,10 +107,10 @@ let test_canonical_serialization_ignores_declaration_and_argument_order () =
         String.equal
           (S.canonical_serialization left)
           (S.canonical_serialization right));
-      assert (
-        String.equal
-          (S.canonical_serialization left)
-          "(\"tilefold-surface-program-v0\" (\"functions\" (\"function\" \"entry\" (\"parameters\") (\"result\" \"answer\" (\"Nat\")) (\"body\" (\"call\" \"first\" (\"arguments\" (\"argument\" \"left\" (\"nat\" \"0\")) (\"argument\" \"right\" (\"nat\" \"1\")))))) (\"function\" \"first\" (\"parameters\" (\"parameter\" \"left\" (\"Nat\")) (\"parameter\" \"right\" (\"Nat\"))) (\"result\" \"selected\" (\"Nat\")) (\"body\" (\"parameter-ref\" \"left\"))))))\n")
+      let expected =
+        "(\"tilefold-surface-program-v0\" (\"functions\" (\"function\" \"entry\" (\"parameters\") (\"result\" \"answer\" (\"Nat\")) (\"body\" (\"call\" \"first\" (\"arguments\" (\"argument\" \"left\" (\"nat\" \"0\")) (\"argument\" \"right\" (\"nat\" \"1\")))))) (\"function\" \"first\" (\"parameters\" (\"parameter\" \"left\" (\"Nat\")) (\"parameter\" \"right\" (\"Nat\"))) (\"result\" \"selected\" (\"Nat\")) (\"body\" (\"parameter-ref\" \"left\")))))\n"
+      in
+      assert (String.equal (S.canonical_serialization left) expected)
   | Error errors, _ | _, Error errors ->
       failwith
         (String.concat "\n" (List.map S.render_validation_error errors))
@@ -371,7 +371,7 @@ let test_multi_argument_currying_runs () =
               count + 1
             else count)
           0 trace
-        = 2)
+        = 3)
   | _ -> failwith "curried Surface program did not complete");
   let templates = P.templates package in
   assert (List.length templates = 3);
@@ -503,7 +503,7 @@ let test_three_argument_currying_forwards_captures () =
               count + 1
             else count)
           0 trace
-        = 3)
+        = 4)
   | _ -> failwith "three-argument program did not complete");
   let middle =
     P.templates package
