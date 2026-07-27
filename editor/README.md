@@ -122,6 +122,27 @@ traces, screenshots, videos, and build output are local test artifacts and are
 not committed. The editor has no canvas/graph framework, global state library,
 or UI framework.
 
+### Protected Vercel preview verification
+
+Vercel previews may be protected by Vercel Authentication. If a Playwright run
+against `PLAYWRIGHT_BASE_URL=https://...vercel.app` times out waiting for
+Tilefold selectors such as `Example project`, first inspect the captured page:
+it may be the Vercel login page rather than the editor.
+
+Use the supported share-link flow before rerunning browser verification:
+
+1. Create a temporary Vercel share URL for the preview deployment.
+2. Launch Chromium once against that share URL so Vercel sets the preview auth
+   cookie.
+3. Save Playwright storage state outside `test-results`, for example
+   `.tmp/vercel-share-storage.json`.
+4. Rerun Playwright with both `PLAYWRIGHT_BASE_URL` and
+   `PLAYWRIGHT_STORAGE_STATE=.tmp/vercel-share-storage.json`.
+
+Do not put the storage-state file under `test-results`. Playwright owns that
+directory and clears it at the start of a run, which makes every test fail before
+navigation with `ENOENT: no such file or directory`.
+
 ## Visual direction
 
 The first version borrows only a restrained subset of three familiar tools:
