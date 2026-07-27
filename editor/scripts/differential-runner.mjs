@@ -106,6 +106,20 @@ const fixtures = new Map([
   ["malformed-json", "{"],
   ["invalid-bounds", invalidBounds],
 ]);
+const naturalNumberExpectations = new Map([
+  ["successor", { result: "Nat(3)", rewriteCount: 5 }],
+  ["addition", { result: "Nat(5)", rewriteCount: 34 }],
+  ["multiplication", { result: "Nat(12)", rewriteCount: 205 }],
+]);
+for (const [name] of naturalNumberExpectations) {
+  fixtures.set(
+    name,
+    await readFile(
+      resolve(repositoryRoot, `examples/${name}.tilefold.json`),
+      "utf8",
+    ),
+  );
+}
 const fixtureDirectory = resolve(editorRoot, ".tmp");
 for (const name of await readdir(fixtureDirectory)) {
   if (name.endsWith(".tilefold.json")) {
@@ -122,6 +136,17 @@ for (const [name, projectJson] of fixtures) {
   if (JSON.stringify(native) !== JSON.stringify(browser)) {
     throw new Error(
       `${name}: native/browser mismatch\n${JSON.stringify(native)}\n${JSON.stringify(browser)}`,
+    );
+  }
+  const expectation = naturalNumberExpectations.get(name);
+  if (
+    expectation &&
+    (native.status !== "completed" ||
+      native.result !== expectation.result ||
+      native.rewriteCount !== expectation.rewriteCount)
+  ) {
+    throw new Error(
+      `${name}: expected completed ${expectation.result} with ${expectation.rewriteCount} rewrites, got ${JSON.stringify(native)}`,
     );
   }
   console.log(`${name}: ${native.status}`);

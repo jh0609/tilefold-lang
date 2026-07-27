@@ -6,10 +6,12 @@
   "scripts": {
     "dev": "vite",
     "preview": "vite preview",
-    "build": "npm run runner:check && tsc -b && vite build",
+    "build": "npm run examples:check && npm run runner:check && tsc -b && vite build",
     "runner:build": "node scripts/build-browser-runner.mjs",
     "runner:check": "node scripts/build-browser-runner.mjs --check",
     "runner:differential": "node scripts/differential-runner.mjs",
+    "examples:build": "node scripts/build-natural-number-examples.mjs",
+    "examples:check": "node scripts/build-natural-number-examples.mjs --check",
     "export:fixture": "tsx src/test/exportFixture.ts",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",

@@ -1,3 +1,8 @@
+import type {
+  EXAMPLE_PROJECTS,
+  ExampleProjectId,
+} from "../model/exampleProjects";
+
 interface ToolbarProps {
   projectName: string;
   format: string;
@@ -5,6 +10,9 @@ interface ToolbarProps {
   canDelete: boolean;
   undoLabel: string | null;
   redoLabel: string | null;
+  examples: typeof EXAMPLE_PROJECTS;
+  selectedExampleId: ExampleProjectId;
+  onSelectExample: (id: ExampleProjectId) => void;
   onOpenExample: () => void;
   onOpenFile: (file: File) => void;
   onExport: () => void;
@@ -23,6 +31,9 @@ export function Toolbar({
   canDelete,
   undoLabel,
   redoLabel,
+  examples,
+  selectedExampleId,
+  onSelectExample,
   onOpenExample,
   onOpenFile,
   onExport,
@@ -48,6 +59,22 @@ export function Toolbar({
         </div>
       </div>
       <div className="toolbar-group" aria-label="Project files">
+        <label className="example-picker">
+          <span>Example</span>
+          <select
+            aria-label="Example project"
+            value={selectedExampleId}
+            onChange={(event) =>
+              onSelectExample(event.target.value as ExampleProjectId)
+            }
+          >
+            {examples.map((example) => (
+              <option key={example.id} value={example.id}>
+                {example.name}
+              </option>
+            ))}
+          </select>
+        </label>
         <button type="button" onClick={onOpenExample}>
           Open example
         </button>

@@ -18,3 +18,8 @@ npm run dev
 
 See [`editor/README.md`](editor/README.md) for supported editing operations,
 tests, production builds, and current limitations.
+
+The editor's **Example** picker includes executable natural-number projects for
+`Succ(2) = 3`, `2 + 3 = 5`, and `3 × 4 = 12`. Addition and multiplication are
+defined with Tilefold's total `NatRec` primitive recursion; multiplication
+reuses its included addition template.

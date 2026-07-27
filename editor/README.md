@@ -154,9 +154,28 @@ kind and port-type colors, spacing, and radius.
 decimal strings. UI selection, inspector drafts, camera reset state, and drag
 state are separate from `ProjectDocument` and are never exported.
 
-The example is imported directly from
-`../examples/nat-succ.tilefold.json?raw`; there is no manually maintained
-browser copy. Local imports perform only a protective structure check:
+The example registry imports Project JSON directly from `../examples/` through
+Vite raw imports; there is no manually maintained browser copy. Local imports
+perform only a protective structure check:
+
+The toolbar **Example** picker opens the original project and three independent
+Project JSON v1 natural-number examples:
+
+- **Successor — 2 → 3** evaluates `Succ(2)` to `Nat(3)`;
+- **Addition — 2 + 3 = 5** applies a captured-operand addition template whose
+  `NatRec[Nat]` step explicitly drops the predecessor and applies `Succ` to the
+  accumulator;
+- **Multiplication — 3 × 4 = 12** uses `NatRec[Nat]` to accumulate four
+  applications of the included addition template.
+
+These are total primitive-recursive graphs, not general recursion or
+hard-coded result displays. Each file contains its own templates, captures,
+dependencies, boundaries, and entry graph, and **Run** obtains the displayed
+result only from the OCaml worker. Opening an example resets selection,
+execution output, and undo/redo history, then fits the complete graph.
+
+The checked-in files are generated deterministically and can be verified with
+`npm run examples:check`.
 
 - object, format, and version;
 - required geometry arrays;
