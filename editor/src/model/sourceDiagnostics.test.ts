@@ -1,6 +1,7 @@
 import exampleJson from "../../../examples/nat-succ.tilefold.json?raw";
 import { describe, expect, it } from "vitest";
 import {
+  addElement,
   addFunctionCall,
   addFunctionTemplate,
   deleteSelection,
@@ -105,6 +106,74 @@ describe("source-mapped diagnostics", () => {
     expect(diagnosticSourceSelection(missing?.primarySource)).toEqual({
       type: "element",
       id: functionElement.id,
+    });
+  });
+
+  it("maps a missing Arrow-typed Call argument without a generated default", () => {
+    const project = parseProjectJson(exampleJson);
+    const functionType = { arrow: ["nat", "nat"] } as const;
+    const authored = addFunctionTemplate(project, "entry", {
+      templateId: "apply_once",
+      parameters: [
+        { name: "f", type: functionType },
+        { name: "value", type: "nat" },
+      ],
+      resultType: "nat",
+    });
+    if ("error" in authored) throw new Error(authored.error);
+    const called = addFunctionCall(authored.document, "entry", "apply_once");
+    if ("error" in called) throw new Error(called.error);
+
+    const missing = preflightProjectDiagnostics(called.document).find(
+      (diagnostic) =>
+        diagnostic.code === "surface.missing-call-argument" &&
+        diagnostic.summary.includes('"f"'),
+    );
+    expect(missing).toMatchObject({
+      summary: 'Call "apply_once" is missing a value for argument "f".',
+      primarySource: {
+        kind: "element",
+        elementId: called.functionElement.id,
+        port: "f",
+      },
+    });
+  });
+
+  it("reports imported or mutated wire type mismatches with structured sources", () => {
+    const project = parseProjectJson(exampleJson);
+    const withUnit = addElement(project, "unit_literal", { x: 420, y: 120 }).document;
+    const badWire = {
+      id: "wire_bad_type",
+      points: [
+        { x: 420, y: 120 },
+        { x: 520, y: 120 },
+      ],
+      sourceHint: {
+        kind: "element_port" as const,
+        elementId: "node_unit_1",
+        port: "value",
+      },
+      targetHint: {
+        kind: "element_port" as const,
+        elementId: "node_succ",
+        port: "input",
+      },
+    };
+    const broken = {
+      ...withUnit,
+      geometry: {
+        ...withUnit.geometry,
+        wires: [...withUnit.geometry.wires, badWire],
+      },
+    };
+
+    const mismatch = preflightProjectDiagnostics(broken).find(
+      (diagnostic) => diagnostic.code === "surface.type-mismatch",
+    );
+    expect(mismatch).toMatchObject({
+      phase: "surface-validation",
+      summary: expect.stringContaining("Nat"),
+      primarySource: { kind: "wire", wireId: "wire_bad_type" },
     });
   });
 

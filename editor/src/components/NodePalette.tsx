@@ -3,9 +3,10 @@ import type {
   AddableElementKind,
   CallableFunctionTemplate,
   FunctionTemplateDraft,
-  PrimitiveCoreType,
 } from "../model/editorOps";
 import type { CoreType } from "../model/project";
+import { formatCoreType } from "../model/coreTypes";
+import { CoreTypeEditor } from "./CoreTypeEditor";
 
 type PaletteAction =
   | { kind: "element"; elementKind: AddableElementKind }
@@ -31,13 +32,13 @@ interface PaletteGroup {
 interface FunctionCaptureRow {
   draftId: number;
   key: string;
-  type: PrimitiveCoreType;
+  type: CoreType;
 }
 
 interface FunctionParameterRow {
   draftId: number;
   name: string;
-  type: PrimitiveCoreType;
+  type: CoreType;
 }
 
 const PALETTE_GROUPS: PaletteGroup[] = [
@@ -158,12 +159,6 @@ const PALETTE_GROUPS: PaletteGroup[] = [
   },
 ];
 
-function coreTypeLabel(type: CoreType): string {
-  if (type === "unit") return "Unit";
-  if (type === "nat") return "Nat";
-  return `${coreTypeLabel(type.arrow[0])} → ${coreTypeLabel(type.arrow[1])}`;
-}
-
 export function NodePalette({
   onAddElement,
   onAddResult,
@@ -189,7 +184,7 @@ export function NodePalette({
     { draftId: 1, name: "value", type: "unit" },
   ]);
   const [resultName, setResultName] = useState("result");
-  const [resultType, setResultType] = useState<PrimitiveCoreType>("unit");
+  const [resultType, setResultType] = useState<CoreType>("unit");
   const nextCaptureDraftId = useRef(1);
   const [captures, setCaptures] = useState<FunctionCaptureRow[]>([]);
   const [authoringCall, setAuthoringCall] = useState(false);
@@ -410,31 +405,19 @@ export function NodePalette({
                                     }
                                   />
                                 </label>
-                                <label>
-                                  <span className="visually-hidden">
-                                    Argument {index + 1} type
-                                  </span>
-                                  <select
-                                    aria-label={`Argument ${index + 1} type`}
-                                    value={parameter.type}
-                                    onChange={(event) =>
-                                      setParameters((current) =>
-                                        current.map((candidate, candidateIndex) =>
-                                          candidateIndex === index
-                                            ? {
-                                                ...candidate,
-                                                type: event.target
-                                                  .value as PrimitiveCoreType,
-                                              }
-                                            : candidate,
-                                        ),
-                                      )
-                                    }
-                                  >
-                                    <option value="unit">Unit</option>
-                                    <option value="nat">Nat</option>
-                                  </select>
-                                </label>
+                                <CoreTypeEditor
+                                  label={`Argument ${index + 1} type`}
+                                  value={parameter.type}
+                                  onChange={(type) =>
+                                    setParameters((current) =>
+                                      current.map((candidate, candidateIndex) =>
+                                        candidateIndex === index
+                                          ? { ...candidate, type }
+                                          : candidate,
+                                      ),
+                                    )
+                                  }
+                                />
                                 <button
                                   type="button"
                                   aria-label={`Remove argument ${index + 1}`}
@@ -465,20 +448,11 @@ export function NodePalette({
                                 }
                               />
                             </label>
-                            <label>
-                              Result type
-                              <select
-                                value={resultType}
-                                onChange={(event) =>
-                                  setResultType(
-                                    event.target.value as PrimitiveCoreType,
-                                  )
-                                }
-                              >
-                                <option value="unit">Unit</option>
-                                <option value="nat">Nat</option>
-                              </select>
-                            </label>
+                            <CoreTypeEditor
+                              label="Result type"
+                              value={resultType}
+                              onChange={setResultType}
+                            />
                           </div>
                           <div className="function-captures">
                             <div className="function-captures-heading">
@@ -530,31 +504,19 @@ export function NodePalette({
                                       }
                                     />
                                   </label>
-                                  <label>
-                                    <span className="visually-hidden">
-                                      Capture {index + 1} type
-                                    </span>
-                                    <select
-                                      aria-label={`Capture ${index + 1} type`}
-                                      value={capture.type}
-                                      onChange={(event) =>
-                                        setCaptures((current) =>
-                                          current.map((candidate, candidateIndex) =>
-                                            candidateIndex === index
-                                              ? {
-                                                  ...candidate,
-                                                  type: event.target
-                                                    .value as PrimitiveCoreType,
-                                                }
-                                              : candidate,
-                                          ),
-                                        )
-                                      }
-                                    >
-                                      <option value="unit">Unit</option>
-                                      <option value="nat">Nat</option>
-                                    </select>
-                                  </label>
+                                  <CoreTypeEditor
+                                    label={`Capture ${index + 1} type`}
+                                    value={capture.type}
+                                    onChange={(type) =>
+                                      setCaptures((current) =>
+                                        current.map((candidate, candidateIndex) =>
+                                          candidateIndex === index
+                                            ? { ...candidate, type }
+                                            : candidate,
+                                        ),
+                                      )
+                                    }
+                                  />
                                   <button
                                     type="button"
                                     aria-label={`Remove capture ${index + 1}`}
@@ -575,8 +537,9 @@ export function NodePalette({
                           </div>
                           <p className="function-authoring-note">
                             The generated closure is connected to an explicit
-                            Drop. Capture inputs receive temporary literals;
-                            rewire them when ready.
+                            Drop. Unit and Nat capture inputs receive temporary
+                            literals; function-typed captures are left
+                            unconnected for explicit wiring.
                           </p>
                           <button type="submit" className="function-create">
                             Create total function
@@ -626,11 +589,11 @@ export function NodePalette({
                                   {template.parameters
                                     .map(
                                       (parameter) =>
-                                        `${parameter.name}: ${coreTypeLabel(parameter.type)}`,
+                                        `${parameter.name}: ${formatCoreType(parameter.type)}`,
                                     )
                                     .join(", ")}{" "}
                                   → {template.resultName}:{" "}
-                                  {coreTypeLabel(template.resultType)}
+                                  {formatCoreType(template.resultType)}
                                   {template.captures.length > 0
                                     ? ` · ${template.captures.length} capture(s)`
                                     : ""}
@@ -645,7 +608,7 @@ export function NodePalette({
                                 (parameter, index) => (
                                   <code key={parameter.name}>
                                     {index + 1}. {parameter.name}:{" "}
-                                    {coreTypeLabel(parameter.type)}
+                                    {formatCoreType(parameter.type)}
                                   </code>
                                 ),
                               )}
@@ -653,8 +616,8 @@ export function NodePalette({
                           )}
                           <p className="function-authoring-note">
                             The editor adds Function capture inputs, Apply,
-                            temporary argument values, a result Drop, and the
-                            template dependency as one undoable action.
+                            temporary Unit/Nat argument values, a result Drop,
+                            and the template dependency as one undoable action.
                           </p>
                           <button type="submit" className="function-create">
                             Create call

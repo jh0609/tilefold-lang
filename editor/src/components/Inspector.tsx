@@ -8,13 +8,13 @@ import type {
   SurfaceFunctionMetadata,
 } from "../model/project";
 import {
-  primitiveCoreType,
   templateFunctionReferences,
   validProjectId,
-  type PrimitiveCoreType,
   type SurfaceFunctionSignatureEdit,
 } from "../model/editorOps";
 import { wireEndpointAvailability } from "../model/portConnections";
+import { formatCoreType } from "../model/coreTypes";
+import { CoreTypeEditor } from "./CoreTypeEditor";
 
 interface InspectorProps {
   document: ProjectDocument;
@@ -36,24 +36,11 @@ interface InspectorProps {
   onError: (error: string | null) => void;
 }
 
-const CORE_TYPE_PRESETS: Array<{ label: string; value: CoreType }> = [
-  { label: "Unit", value: "unit" },
-  { label: "Nat", value: "nat" },
-  { label: "Unit → Unit", value: { arrow: ["unit", "unit"] } },
-  { label: "Unit → Nat", value: { arrow: ["unit", "nat"] } },
-  { label: "Nat → Unit", value: { arrow: ["nat", "unit"] } },
-  { label: "Nat → Nat", value: { arrow: ["nat", "nat"] } },
-];
-
-function coreTypeKey(type: CoreType): string {
-  return JSON.stringify(type);
-}
-
 interface SignatureParameterRow {
   draftId: number;
   originalName?: string;
   name: string;
-  type: PrimitiveCoreType;
+  type: CoreType;
 }
 
 function signatureValidation(
@@ -101,10 +88,6 @@ function signatureValidation(
         "Argument names must be unique";
     }
     seen.add(parameter.name);
-    if (index === parameters.length - 1 && !primitiveCoreType(parameter.type)) {
-      errors[`parameter-${parameter.draftId}`] =
-        "Only Unit and Nat arguments are supported here.";
-    }
   });
   return errors;
 }
@@ -122,24 +105,16 @@ function SignatureEditDialog({
 }) {
   const [name, setName] = useState(surfaceFunction.name);
   const [parameters, setParameters] = useState<SignatureParameterRow[]>(() =>
-    surfaceFunction.parameters.flatMap((parameter, index) =>
-      primitiveCoreType(parameter.type)
-        ? [
-            {
-              draftId: index + 1,
-              originalName: parameter.name,
-              name: parameter.name,
-              type: parameter.type,
-            },
-          ]
-        : [],
-    ),
+    surfaceFunction.parameters.map((parameter, index) => ({
+      draftId: index + 1,
+      originalName: parameter.name,
+      name: parameter.name,
+      type: parameter.type,
+    })),
   );
   const [resultName, setResultName] = useState(surfaceFunction.result.name);
-  const [resultType, setResultType] = useState<PrimitiveCoreType>(
-    primitiveCoreType(surfaceFunction.result.type)
-      ? surfaceFunction.result.type
-      : "unit",
+  const [resultType, setResultType] = useState<CoreType>(
+    surfaceFunction.result.type,
   );
   const nextDraftId = useRef(surfaceFunction.parameters.length + 1);
   const errors = signatureValidation(
@@ -279,23 +254,13 @@ function SignatureEditDialog({
                   }
                 />
               </label>
-              <label>
-                <span className="visually-hidden">
-                  Parameter {index + 1} type
-                </span>
-                <select
-                  aria-label={`Parameter ${index + 1} type`}
-                  value={parameter.type}
-                  onChange={(event) =>
-                    updateParameter(parameter.draftId, {
-                      type: event.target.value as PrimitiveCoreType,
-                    })
-                  }
-                >
-                  <option value="unit">Unit</option>
-                  <option value="nat">Nat</option>
-                </select>
-              </label>
+              <CoreTypeEditor
+                label={`Parameter ${index + 1} type`}
+                value={parameter.type}
+                onChange={(type) =>
+                  updateParameter(parameter.draftId, { type })
+                }
+              />
               <button
                 type="button"
                 aria-label={`Move parameter ${index + 1} up`}
@@ -346,18 +311,11 @@ function SignatureEditDialog({
               onChange={(event) => setResultName(event.target.value)}
             />
           </label>
-          <label>
-            Result type
-            <select
-              value={resultType}
-              onChange={(event) =>
-                setResultType(event.target.value as PrimitiveCoreType)
-              }
-            >
-              <option value="unit">Unit</option>
-              <option value="nat">Nat</option>
-            </select>
-          </label>
+          <CoreTypeEditor
+            label="Result type"
+            value={resultType}
+            onChange={setResultType}
+          />
         </div>
         {errors.resultName && (
           <p className="inline-error">{errors.resultName}</p>
@@ -391,25 +349,12 @@ function CoreTypeField({
   onChange: (type: CoreType) => void;
 }) {
   return (
-    <label>
-      {label}
-      <select
-        value={coreTypeKey(value)}
-        disabled={disabled}
-        onChange={(event) => {
-          const preset = CORE_TYPE_PRESETS.find(
-            (candidate) => coreTypeKey(candidate.value) === event.target.value,
-          );
-          if (preset) onChange(preset.value);
-        }}
-      >
-        {CORE_TYPE_PRESETS.map((preset) => (
-          <option key={preset.label} value={coreTypeKey(preset.value)}>
-            {preset.label}
-          </option>
-        ))}
-      </select>
-    </label>
+    <CoreTypeEditor
+      label={label}
+      value={value}
+      disabled={disabled}
+      onChange={onChange}
+    />
   );
 }
 
@@ -567,16 +512,16 @@ function ElementInspector({
               {surfaceFunction.parameters
                 .map(
                   (parameter) =>
-                    `${parameter.name}: ${coreTypeKey(parameter.type)}`,
+                    `${parameter.name}: ${formatCoreType(parameter.type)}`,
                 )
                 .join(", ")}{" "}
-              → {surfaceFunction.result.name}:{" "}
-              {coreTypeKey(surfaceFunction.result.type)}
+              {"->"} {surfaceFunction.result.name}:{" "}
+              {formatCoreType(surfaceFunction.result.type)}
             </span>
           )}
           <span>
-            {coreTypeKey(element.properties.parameterType)} →{" "}
-            {coreTypeKey(element.properties.resultType)}
+            {formatCoreType(element.properties.parameterType)} {"->"}{" "}
+            {formatCoreType(element.properties.resultType)}
           </span>
           <span>
             {element.properties.captures.length === 0
@@ -750,11 +695,11 @@ export function Inspector({
                 {surfaceFunction.parameters
                   .map(
                     (parameter) =>
-                      `${parameter.name}: ${coreTypeKey(parameter.type)}`,
+                      `${parameter.name}: ${formatCoreType(parameter.type)}`,
                   )
                   .join(", ")}
-                ) → {surfaceFunction.result.name}:{" "}
-                {coreTypeKey(surfaceFunction.result.type)}
+                ) {"->"} {surfaceFunction.result.name}:{" "}
+                {formatCoreType(surfaceFunction.result.type)}
               </span>
               <button type="button" onClick={onFocusEntry}>
                 Return to entry graph
@@ -769,8 +714,8 @@ export function Inspector({
           )}
           {container.kind.kind === "template" && (
             <span>
-              {coreTypeKey(container.kind.parameterType)} →{" "}
-              {coreTypeKey(container.kind.resultType)}
+              {formatCoreType(container.kind.parameterType)} {"->"}{" "}
+              {formatCoreType(container.kind.resultType)}
             </span>
           )}
           <span>

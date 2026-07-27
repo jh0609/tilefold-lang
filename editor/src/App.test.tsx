@@ -236,7 +236,7 @@ describe("Tilefold editor UI", () => {
       screen.getByRole("button", { name: "Create total function" }),
     );
 
-    expect(screen.getByText(/choose_right\(left: "nat", right: "nat"\)/)).toBeInTheDocument();
+    expect(screen.getByText(/choose_right\(left: Nat, right: Nat\)/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Return to entry graph" }));
     await user.click(screen.getByRole("button", { name: "Add Call" }));
     expect(screen.getByText("1. left: Nat")).toBeInTheDocument();
@@ -268,7 +268,7 @@ describe("Tilefold editor UI", () => {
         name: "template container container_template_1",
       }),
     );
-    expect(screen.getByText(/choose_right\(left: "nat", right: "nat"\)/)).toBeInTheDocument();
+    expect(screen.getByText(/choose_right\(left: Nat, right: Nat\)/)).toBeInTheDocument();
     click.mockRestore();
   });
 
@@ -321,15 +321,15 @@ describe("Tilefold editor UI", () => {
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(
-      screen.getByText(/renamed\(ignored: "nat", value: "nat", extra: "unit"\)/),
+      screen.getByText(/renamed\(ignored: Nat, value: Nat, extra: Unit\)/),
     ).toBeInTheDocument();
     expect(screen.getByText(/2 undo · 0 redo/)).toBeInTheDocument();
 
     await user.click(screen.getByTitle("Undo Edit signature for rename_me"));
-    expect(screen.getByText(/rename_me\(left: "nat", right: "nat"\)/)).toBeInTheDocument();
+    expect(screen.getByText(/rename_me\(left: Nat, right: Nat\)/)).toBeInTheDocument();
     await user.click(screen.getByTitle("Redo Edit signature for rename_me"));
     expect(
-      screen.getByText(/renamed\(ignored: "nat", value: "nat", extra: "unit"\)/),
+      screen.getByText(/renamed\(ignored: Nat, value: Nat, extra: Unit\)/),
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Export JSON" }));
@@ -355,7 +355,7 @@ describe("Tilefold editor UI", () => {
       }),
     );
     expect(
-      screen.getByText(/renamed\(ignored: "nat", value: "nat", extra: "unit"\)/),
+      screen.getByText(/renamed\(ignored: Nat, value: Nat, extra: Unit\)/),
     ).toBeInTheDocument();
     click.mockRestore();
   });
@@ -1396,12 +1396,12 @@ describe("Tilefold editor UI", () => {
     render(<App />);
     await user.click(screen.getByRole("button", { name: "Add Drop" }));
     const type = screen.getByLabelText("Value type");
-    expect(type).toHaveValue('"nat"');
-    await user.selectOptions(type, '{"arrow":["nat","nat"]}');
-    expect(type).toHaveValue('{"arrow":["nat","nat"]}');
+    expect(type).toHaveValue("nat");
+    await user.selectOptions(type, "function");
+    expect(screen.getAllByText("Nat -> Nat").length).toBeGreaterThan(0);
     expect(screen.getByText("2 undo · 0 redo")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Undo" }));
-    expect(screen.getByLabelText("Value type")).toHaveValue('"nat"');
+    expect(screen.getByLabelText("Value type")).toHaveValue("nat");
   });
 
   it("deletes a Result boundary and its wire directly, then restores both", async () => {

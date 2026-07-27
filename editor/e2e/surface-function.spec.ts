@@ -90,7 +90,7 @@ async function addCapturedSuccFunction(page: Page) {
 
   await expect(page.getByText(/Created capturedSucc/)).toBeVisible();
   await expect(page.getByText(/function capturedSucc/)).toBeVisible();
-  await expect(page.getByText(/capturedSucc\(ignored: "nat", value: "nat"\)/)).toBeVisible();
+  await expect(page.getByText(/capturedSucc\(ignored: Nat, value: Nat\)/)).toBeVisible();
   const templateContainerId = await page
     .locator('[data-container-kind="template"][data-template-id="capturedSucc"]')
     .getAttribute("data-container-id");

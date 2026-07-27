@@ -255,6 +255,23 @@ for (const [name, parameterType, resultType] of [
   );
 }
 
+const natToNat = { arrow: ["nat", "nat"] } as const;
+const arrowFunction = addFunctionTemplate(
+  parseProjectJson(await readFile(source, "utf8")),
+  "entry",
+  {
+    templateId: "fixture_arrow_identity",
+    parameterType: natToNat,
+    resultType: natToNat,
+  },
+);
+if ("error" in arrowFunction) throw new Error(arrowFunction.error);
+await writeFile(
+  resolve(".tmp/exported-function-arrow-identity.tilefold.json"),
+  exportProjectJson(arrowFunction.document),
+  "utf8",
+);
+
 const capturedFunction = addFunctionTemplate(
   parseProjectJson(await readFile(source, "utf8")),
   "entry",

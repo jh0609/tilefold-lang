@@ -20,24 +20,27 @@ import {
   type ConnectablePort,
   type WireEndpoint,
 } from "./portConnections";
+import {
+  primitiveCoreType,
+  type PrimitiveCoreType,
+} from "./coreTypes";
 
 export type AddableElementKind = Exclude<ElementKind, "function">;
-export type PrimitiveCoreType = Extract<CoreType, "unit" | "nat">;
 
 export interface FunctionCaptureDraft {
   key: string;
-  type: PrimitiveCoreType;
+  type: CoreType;
 }
 
 export interface FunctionParameterDraft {
   name: string;
-  type: PrimitiveCoreType;
+  type: CoreType;
 }
 
 export interface FunctionTemplateDraft {
   templateId: string;
-  parameterType?: PrimitiveCoreType;
-  resultType: PrimitiveCoreType;
+  parameterType?: CoreType;
+  resultType: CoreType;
   resultName?: string;
   parameters?: FunctionParameterDraft[];
   captures?: FunctionCaptureDraft[];
@@ -46,7 +49,7 @@ export interface FunctionTemplateDraft {
 export interface SurfaceFunctionParameterEdit {
   originalName?: string;
   name: string;
-  type: PrimitiveCoreType;
+  type: CoreType;
 }
 
 export interface SurfaceFunctionSignatureEdit {
@@ -54,7 +57,7 @@ export interface SurfaceFunctionSignatureEdit {
   name: string;
   parameters: SurfaceFunctionParameterEdit[];
   resultName: string;
-  resultType: PrimitiveCoreType;
+  resultType: CoreType;
 }
 
 export interface AddFunctionTemplateResult {
@@ -68,7 +71,7 @@ export interface CallableFunctionTemplate {
   displayName: string;
   parameters: FunctionParameterDraft[];
   resultName: string;
-  parameterType: PrimitiveCoreType;
+  parameterType: CoreType;
   resultType: CoreType;
   captures: FunctionCaptureDraft[];
 }
@@ -264,10 +267,6 @@ export function validProjectId(value: string): boolean {
   return /^[A-Za-z0-9_.-]{1,128}$/.test(value);
 }
 
-export function primitiveCoreType(type: CoreType): type is PrimitiveCoreType {
-  return type === "unit" || type === "nat";
-}
-
 function functionMetadata(document: ProjectDocument, templateId: string) {
   return document.surfaceFunctions?.find(
     (functionInfo) => functionInfo.templateId === templateId,
@@ -283,9 +282,9 @@ function normalizeFunctionDraft(
 ): {
   templateId: string;
   parameters: FunctionParameterDraft[];
-  parameterType: PrimitiveCoreType;
+  parameterType: CoreType;
   resultName: string;
-  resultType: PrimitiveCoreType;
+  resultType: CoreType;
   captures: FunctionCaptureDraft[];
 } {
   const parameters =
@@ -323,7 +322,6 @@ function templateCaptures(
   const captures: FunctionCaptureDraft[] = [];
   for (const boundary of container.boundaryPorts) {
     if (boundary.role !== "capture") continue;
-    if (!primitiveCoreType(boundary.type)) return null;
     captures.push({ key: boundary.captureKey, type: boundary.type });
   }
   return captures;
@@ -365,7 +363,6 @@ export function callableFunctionTemplates(
       } => container.kind.kind === "template",
     )
     .flatMap((container) => {
-      if (!primitiveCoreType(container.kind.parameterType)) return [];
       if (
         dependencyReaches(
           document,
@@ -385,7 +382,7 @@ export function callableFunctionTemplates(
               parameters:
                 metadata?.parameters.map((parameter) => ({
                   name: parameter.name,
-                  type: parameter.type as PrimitiveCoreType,
+                  type: parameter.type,
                 })) ?? [
                   ...captures.map((capture) => ({
                     name: capture.key,
@@ -566,6 +563,7 @@ export function addFunctionTemplate(
   const hostCaptureElements: ProjectElement[] = [];
   const hostCaptureWires: ProjectWire[] = [];
   captures.forEach((capture, index) => {
+    if (!primitiveCoreType(capture.type)) return;
     const literalBounds: Bounds = {
       x: host.bounds.x + 4,
       y: functionBounds.y + index * 64,
@@ -768,7 +766,7 @@ export function addFunctionTemplate(
       },
     });
   });
-  if (parameterType === resultType) {
+  if (coreTypeEqual(parameterType, resultType)) {
     const copyBounds: Bounds = {
       x: templateBounds.x + 100,
       y: templateBounds.y + 24,
@@ -876,7 +874,7 @@ export function addFunctionTemplate(
         },
       },
     );
-  } else {
+  } else if (primitiveCoreType(resultType)) {
     const bodyDropId = allocate("node_drop_");
     const bodyDropBounds: Bounds = {
       x: templateBounds.x + 80,
@@ -962,6 +960,42 @@ export function addFunctionTemplate(
         },
       },
     );
+  } else {
+    const bodyDropId = allocate("node_drop_");
+    const bodyDropBounds: Bounds = {
+      x: templateBounds.x + 80,
+      y: templateBounds.y + 32,
+      width: 88,
+      height: 56,
+    };
+    const bodyDrop: ProjectElement = {
+      id: bodyDropId,
+      kind: "drop",
+      bounds: bodyDropBounds,
+      properties: { type: parameterType },
+      portAnchors: [
+        {
+          port: "input",
+          x: bodyDropBounds.x,
+          y: bodyDropBounds.y + bodyDropBounds.height / 2,
+        },
+      ],
+    };
+    templateElements.push(bodyDrop);
+    templateWires.push({
+      id: allocate("wire_"),
+      points: [parameterPoint, pointOf(bodyDrop.portAnchors[0]!)],
+      sourceHint: {
+        kind: "boundary_port",
+        containerId,
+        boundaryId: parameterBoundaryId,
+      },
+      targetHint: {
+        kind: "element_port",
+        elementId: bodyDrop.id,
+        port: "input",
+      },
+    });
   }
 
   const updatedHost: ProjectContainer = {
@@ -1037,12 +1071,6 @@ export function addFunctionCall(
   if (!template || template.kind.kind !== "template") {
     return { error: `Callable template ${templateId} does not exist.` };
   }
-  if (!primitiveCoreType(template.kind.parameterType)) {
-    return {
-      error:
-        "Call authoring currently supports only Unit or Nat parameters.",
-    };
-  }
   const captures = templateCaptures(template);
   if (!captures) {
     return {
@@ -1106,6 +1134,7 @@ export function addFunctionCall(
   const captureElements: ProjectElement[] = [];
   const captureWires: ProjectWire[] = [];
   captures.forEach((capture, index) => {
+    if (!primitiveCoreType(capture.type)) return;
     const bounds: Bounds = {
       x: host.bounds.x + 4,
       y: functionBounds.y + index * 64,
@@ -1201,11 +1230,12 @@ export function addFunctionCall(
   const argumentBounds: Bounds = {
     x: host.bounds.x + 4,
     y: applyBounds.y + 32,
-    width: template.kind.parameterType === "nat" ? 96 : 88,
+    width: primitiveCoreType(template.kind.parameterType) && template.kind.parameterType === "nat" ? 96 : 88,
     height: 56,
   };
-  const argument: ProjectElement =
-    template.kind.parameterType === "nat"
+  const argument: ProjectElement | null =
+    primitiveCoreType(template.kind.parameterType)
+      ? template.kind.parameterType === "nat"
       ? {
           id: allocate("node_nat_"),
           kind: "nat_literal",
@@ -1231,7 +1261,8 @@ export function addFunctionCall(
               y: argumentBounds.y + argumentBounds.height / 2,
             },
           ],
-        };
+        }
+      : null;
 
   const resultDropBounds: Bounds = {
     x: host.bounds.x + 100,
@@ -1277,7 +1308,6 @@ export function addFunctionCall(
   const applyFunction = applyElement.portAnchors.find(
     (anchor) => anchor.port === "function",
   )!;
-  const argumentOutput = argument.portAnchors[0]!;
   const applyArgument = applyElement.portAnchors.find(
     (anchor) => anchor.port === "argument",
   )!;
@@ -1310,23 +1340,6 @@ export function addFunctionCall(
     {
       id: allocate("wire_"),
       points: [
-        { x: argumentOutput.x, y: argumentOutput.y },
-        { x: applyArgument.x, y: applyArgument.y },
-      ],
-      sourceHint: {
-        kind: "element_port",
-        elementId: argument.id,
-        port: "value",
-      },
-      targetHint: {
-        kind: "element_port",
-        elementId: applyElement.id,
-        port: "argument",
-      },
-    },
-    {
-      id: allocate("wire_"),
-      points: [
         { x: applyResult.x, y: applyResult.y },
         {
           x: host.bounds.x + host.bounds.width - 4,
@@ -1350,6 +1363,26 @@ export function addFunctionCall(
       },
     },
   ];
+  if (argument) {
+    const argumentOutput = argument.portAnchors[0]!;
+    callWires.splice(1, 0, {
+      id: allocate("wire_"),
+      points: [
+        { x: argumentOutput.x, y: argumentOutput.y },
+        { x: applyArgument.x, y: applyArgument.y },
+      ],
+      sourceHint: {
+        kind: "element_port",
+        elementId: argument.id,
+        port: "value",
+      },
+      targetHint: {
+        kind: "element_port",
+        elementId: applyElement.id,
+        port: "argument",
+      },
+    });
+  }
 
   const updatedHost: ProjectContainer = {
     ...host,
@@ -1373,7 +1406,7 @@ export function addFunctionCall(
           functionElement,
           ...captureElements,
           applyElement,
-          argument,
+          ...(argument ? [argument] : []),
           resultDrop,
         ],
         containers: document.geometry.containers.map((container) =>
@@ -1770,7 +1803,7 @@ export function editSurfaceFunctionSignature(
   };
   const newCaptureSpecs: Array<{
     key: string;
-    type: PrimitiveCoreType;
+    type: CoreType;
     originalName?: string;
   }> = [
     ...newCaptures.map((parameter) => ({
@@ -1993,7 +2026,10 @@ export function editSurfaceFunctionSignature(
             ? retargetWireTarget(wire, targetHint!, targetPoint!)
             : wire,
         );
-      } else if (updatedApply || parameter.name !== newFinal.name) {
+      } else if (
+        primitiveCoreType(parameter.type) &&
+        (updatedApply || parameter.name !== newFinal.name)
+      ) {
         ensureLiteralWire(addedElements, addedWires, {
           hint: targetHint,
           point: targetPoint,

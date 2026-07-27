@@ -180,7 +180,7 @@
 }
 
 .signature-dialog .function-capture-row {
-  grid-template-columns: minmax(0, 1fr) 76px 28px 28px 28px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) 28px 28px 28px;
 }
 
 .signature-dialog .inline-error {

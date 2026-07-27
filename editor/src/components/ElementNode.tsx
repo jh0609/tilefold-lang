@@ -1,6 +1,7 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
 import type { CoreType, ProjectElement } from "../model/project";
 import type { ConnectablePort } from "../model/portConnections";
+import { formatCoreType } from "../model/coreTypes";
 
 interface ElementNodeProps {
   element: ProjectElement;
@@ -34,12 +35,6 @@ const KIND_LABELS: Record<ProjectElement["kind"], string> = {
 
 const COMPACT_PORT_HIT_OFFSET = 8;
 
-function typeLabel(type: CoreType): string {
-  if (type === "nat") return "Nat";
-  if (type === "unit") return "Unit";
-  return `${typeLabel(type.arrow[0])} → ${typeLabel(type.arrow[1])}`;
-}
-
 function typeClass(type: CoreType): string {
   if (type === "nat") return "type-nat";
   if (type === "unit") return "type-unit";
@@ -60,26 +55,26 @@ function nodeSignature(element: ProjectElement, ports: ConnectablePort[]) {
       return "Nat → Nat";
     case "drop": {
       const value = input("input");
-      return value ? `${typeLabel(value)} → ∅` : "";
+      return value ? `${formatCoreType(value)} -> empty` : "";
     }
     case "copy": {
       const value = input("input");
-      return value ? `${typeLabel(value)} → 2 outputs` : "";
+      return value ? `${formatCoreType(value)} -> 2 outputs` : "";
     }
     case "apply": {
       const argument = input("argument");
       const result = output("result");
       return argument && result
-        ? `${typeLabel(argument)} → ${typeLabel(result)}`
+        ? `${formatCoreType(argument)} -> ${formatCoreType(result)}`
         : "";
     }
     case "nat_rec": {
       const result = output("result");
-      return result ? `Nat fold → ${typeLabel(result)}` : "";
+      return result ? `Nat fold -> ${formatCoreType(result)}` : "";
     }
     case "function": {
       const value = output("value");
-      return value ? typeLabel(value) : "";
+      return value ? formatCoreType(value) : "";
     }
   }
 }
@@ -244,7 +239,7 @@ export function ElementNode({
               </text>
             )}
             {port && (
-              <title>{`${anchor.port} · ${port.direction} · ${typeLabel(port.type)}`}</title>
+              <title>{`${anchor.port} · ${port.direction} · ${formatCoreType(port.type)}`}</title>
             )}
           </g>
         );

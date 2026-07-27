@@ -434,6 +434,80 @@ describe("editor operations", () => {
     ]);
   });
 
+  it("authors Arrow-typed function signatures and leaves Arrow call inputs explicit", () => {
+    const project = parseProjectJson(exampleJson);
+    const functionType = { arrow: ["nat", "nat"] } as const;
+    const authored = addFunctionTemplate(project, "entry", {
+      templateId: "apply_once",
+      parameters: [
+        { name: "f", type: functionType },
+        { name: "value", type: "nat" },
+      ],
+      resultType: "nat",
+    });
+    if ("error" in authored) throw new Error(authored.error);
+
+    expect(callableFunctionTemplates(authored.document, "entry")).toEqual([
+      expect.objectContaining({
+        templateId: "apply_once",
+        parameters: [
+          { name: "f", type: functionType },
+          { name: "value", type: "nat" },
+        ],
+        captures: [{ key: "f", type: functionType }],
+      }),
+    ]);
+
+    const called = addFunctionCall(authored.document, "entry", "apply_once");
+    if ("error" in called) throw new Error(called.error);
+    expect(called.functionElement.properties.captures).toEqual([
+      { key: "f", type: functionType },
+    ]);
+    expect(
+      called.document.geometry.wires.some(
+        (wire) =>
+          wire.targetHint?.kind === "element_port" &&
+          wire.targetHint.elementId === called.functionElement.id &&
+          wire.targetHint.port === "f",
+      ),
+    ).toBe(false);
+    expect(
+      called.document.geometry.wires.some(
+        (wire) =>
+          wire.targetHint?.kind === "element_port" &&
+          wire.targetHint.elementId === called.applyElement.id &&
+          wire.targetHint.port === "argument",
+      ),
+    ).toBe(true);
+  });
+
+  it("leaves an Arrow final argument unconnected instead of creating a fake literal", () => {
+    const project = parseProjectJson(exampleJson);
+    const functionType = { arrow: ["nat", "nat"] } as const;
+    const authored = addFunctionTemplate(project, "entry", {
+      templateId: "use_function",
+      parameterType: functionType,
+      resultType: "nat",
+    });
+    if ("error" in authored) throw new Error(authored.error);
+
+    const called = addFunctionCall(authored.document, "entry", "use_function");
+    if ("error" in called) throw new Error(called.error);
+    expect(
+      called.document.geometry.wires.some(
+        (wire) =>
+          wire.targetHint?.kind === "element_port" &&
+          wire.targetHint.elementId === called.applyElement.id &&
+          wire.targetHint.port === "argument",
+      ),
+    ).toBe(false);
+    expect(
+      called.document.geometry.elements.filter(
+        (element) => element.kind === "nat_literal" || element.kind === "unit_literal",
+      ),
+    ).not.toContainEqual(expect.objectContaining({ id: "node_unit_1" }));
+  });
+
   it("edits a Surface function signature while preserving template identity and call wires", () => {
     const project = parseProjectJson(exampleJson);
     const authored = addFunctionTemplate(project, "entry", {

@@ -6,6 +6,8 @@ import type {
   ProjectElement,
   ProjectWire,
 } from "./project";
+export { coreTypeEqual } from "./coreTypes";
+import { coreTypeEqual } from "./coreTypes";
 
 export type PortDirection = "input" | "output";
 
@@ -101,16 +103,6 @@ function elementPortType(
         : null;
     }
   }
-}
-
-export function coreTypeEqual(left: CoreType, right: CoreType): boolean {
-  if (typeof left === "string" || typeof right === "string") {
-    return left === right;
-  }
-  return (
-    coreTypeEqual(left.arrow[0], right.arrow[0]) &&
-    coreTypeEqual(left.arrow[1], right.arrow[1])
-  );
 }
 
 export function collectConnectablePorts(

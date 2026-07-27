@@ -557,7 +557,7 @@ export function App() {
     );
     if (apply) setSelection({ type: "element", id: apply.id });
     setConnectionMessage(
-      `Created a call to ${templateId} with temporary inputs and a result Drop.`,
+      `Created a call to ${templateId}; Unit and Nat arguments get temporary inputs, while function arguments wait for explicit wiring.`,
     );
     fitViewToDocument(nextDocument);
     return true;

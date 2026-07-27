@@ -1,4 +1,9 @@
-import { collectConnectablePorts, endpointHintEqual } from "./portConnections";
+import {
+  collectConnectablePorts,
+  coreTypeEqual,
+  endpointHintEqual,
+} from "./portConnections";
+import { formatCoreType } from "./coreTypes";
 import type {
   BoundaryPort,
   EndpointHint,
@@ -268,6 +273,41 @@ export function preflightProjectDiagnostics(
   const diagnostics: SourceDiagnostic[] = [];
   const availablePorts = collectConnectablePorts(document);
   const portKeys = new Set(availablePorts.map((port) => port.key));
+  const portForHint = (hint: EndpointHint | undefined) =>
+    availablePorts.find((port) => endpointHintEqual(hint, port.hint));
+
+  for (const wire of [...document.geometry.wires].sort((left, right) =>
+    left.id.localeCompare(right.id),
+  )) {
+    const source = portForHint(wire.sourceHint);
+    const target = portForHint(wire.targetHint);
+    if (!source || !target) continue;
+    if (coreTypeEqual(source.type, target.type)) continue;
+    const sourceHint = wire.sourceHint;
+    const sourceElement =
+      sourceHint?.kind === "element_port"
+        ? document.geometry.elements.find(
+            (element) => element.id === sourceHint.elementId,
+          )
+        : null;
+    diagnostics.push(
+      diagnostic({
+        id: `diag:type-mismatch:${wire.id}`,
+        code: "surface.type-mismatch",
+        phase: "surface-validation",
+        severity: "error",
+        summary: `Wire "${wire.id}" connects ${formatCoreType(source.type)} to ${formatCoreType(target.type)}.`,
+        detail: "Reconnect the wire between ports with the same Core type.",
+        primarySource: {
+          kind: "wire",
+          containerId: sourceElement ? elementOwnerId(document, sourceElement) : "entry",
+          wireId: wire.id,
+        },
+        relatedSources: [],
+        coreReferences: [`surface-wire:${wire.id}`],
+      }),
+    );
+  }
 
   for (const container of [...document.geometry.containers].sort((left, right) =>
     left.id.localeCompare(right.id),

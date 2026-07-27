@@ -206,7 +206,7 @@ test("edits, undoes, redoes, exports, and reloads a referenced Surface function 
   await page.getByRole("button", { name: "Apply signature" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(
-    page.getByText(/incrementLater\(input: "nat", unused: "nat"\)/),
+    page.getByText(/incrementLater\(input: Nat, unused: Nat\)/),
   ).toBeVisible();
   await expect(page.getByText(/\d+ undo · 0 redo/)).toBeVisible();
 
@@ -225,11 +225,11 @@ test("edits, undoes, redoes, exports, and reloads a referenced Surface function 
   await page.getByRole("button", { name: "Undo" }).click();
   await openTemplate(page, templateContainerId);
   await expect(
-    page.getByText(/capturedSucc\(ignored: "nat", value: "nat"\)/),
+    page.getByText(/capturedSucc\(ignored: Nat, value: Nat\)/),
   ).toBeVisible();
   await page.getByRole("button", { name: "Redo" }).click();
   await expect(
-    page.getByText(/incrementLater\(input: "nat", unused: "nat"\)/),
+    page.getByText(/incrementLater\(input: Nat, unused: Nat\)/),
   ).toBeVisible();
   await page.getByRole("button", { name: "Return to entry graph" }).click();
   await runAndExpectNat3(page);
@@ -252,7 +252,7 @@ test("edits, undoes, redoes, exports, and reloads a referenced Surface function 
   await reloaded.getByRole("button", { name: "Fit view" }).click();
   await openTemplate(reloaded, templateContainerId);
   await expect(
-    reloaded.getByText(/incrementLater\(input: "nat", unused: "nat"\)/),
+    reloaded.getByText(/incrementLater\(input: Nat, unused: Nat\)/),
   ).toBeVisible();
   await runAndExpectNat3(reloaded);
 
@@ -292,7 +292,7 @@ test("blocks unsafe signature edits and keeps the function runnable", async ({
   await expect(page.getByRole("button", { name: "Apply signature" })).toBeDisabled();
   await page.keyboard.press("Escape");
   await expect(
-    page.getByText(/capturedSucc\(ignored: "nat", value: "nat"\)/),
+    page.getByText(/capturedSucc\(ignored: Nat, value: Nat\)/),
   ).toBeVisible();
 
   await expectNoBrowserIssues(issues);

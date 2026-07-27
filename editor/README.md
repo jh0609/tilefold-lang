@@ -152,16 +152,16 @@ kind and port-type colors, spacing, and radius.
   primary Run/Cancel action.
 - The persistent left palette searches and explains Unit, Nat, Succ, Drop,
   Copy, Function, Call, Apply, and NatRec creation plus the Result boundary action.
-  Function asks for a user-facing function name, ordered Unit/Nat arguments,
-  a named Unit/Nat result, and optional explicit captures before creating the
-  editable body template.
+  Function asks for a user-facing function name, ordered Core arguments, a named
+  Core result, and optional explicit captures before creating the editable body
+  template. Core type fields support `Unit`, `Nat`, and nested function types.
 - The SVG canvas renders containers, relative boundary anchors, elements,
   absolute port anchors, wire polylines, junctions, and explicit outlets. The
   wheel zooms around the pointer and a middle-button drag pans the camera.
   Floating controls provide Zoom in/out, Fit, and Reset without competing with
   project commands in the top toolbar.
-- The Inspector edits element integer bounds, canonical Nat strings, and the
-  exposed Core type presets for Drop/Copy/Apply/NatRec. It shows read-only
+- The Inspector edits element integer bounds, canonical Nat strings, and
+  recursive Core types for Drop/Copy/Apply/NatRec. It shows read-only
   information for containers, boundaries, wires, junctions, and saved view.
 - The status bar distinguishes the editor structure check from the unavailable
   Tilefold semantic validation.
@@ -219,10 +219,11 @@ need not match the OCaml canonical byte layout.
 New IDs use the smallest unused positive integer for a stable prefix such as
 `node_nat_1`; array length is never used. Unit, Nat, Succ, Drop, Copy, Apply,
 and NatRec prefer the current viewport center with fixed v1 port schemas.
-Drop, Copy, and NatRec default to `Nat`; Apply defaults to `Nat → Nat`.
-The Inspector can select Unit, Nat, or the four first-order Unit/Nat arrow
-presets. Type edits are blocked while the element has connected wires so a
-valid connection cannot silently become ill-typed.
+Drop, Copy, and NatRec default to `Nat`; Apply defaults to `Nat -> Nat`.
+The shared Core type editor can build arbitrary nested `Unit`, `Nat`, and
+`A -> B` types, with quick presets for common first-order arrows. Type edits
+are blocked while the element has connected wires so a valid connection cannot
+silently become ill-typed.
 
 If new bounds would overlap an existing element or leave less than 12 project
 units of clearance, the editor checks a deterministic 120×80 grid around the
@@ -233,12 +234,15 @@ obstacles. Result means a container Result boundary, since v1 has no `result`
 element kind; adding it is blocked when the first container already has one.
 
 Function authoring creates a referenced template container, Parameter and
-Result boundaries, a total starter body, a closure element in the selected
+Result boundaries, a starter body, a closure element in the selected
 container (or the entry container by default), the exact template dependency,
 and optional `surfaceFunctions` metadata for the user-facing function name,
-argument names, result name, and body container. Equal Unit/Nat signatures use
-explicit Copy and Drop nodes to form an identity body; cross-type signatures
-explicitly Drop the parameter and produce `Unit` or `Nat(0)`. The new closure is
+argument names, result name, and body container. Equal signatures, including
+function-valued signatures, use explicit Copy and Drop nodes to form an
+identity body. Cross-type signatures explicitly Drop the parameter and produce
+`Unit` or `Nat(0)` when the result is materializable. Cross-type function
+results are left for explicit user wiring and source diagnostics report the
+missing result before execution. The new closure is
 connected to an arrow-typed Drop so adding it does not invalidate an otherwise
 executable program. Users can remove that safety connection when wiring the
 closure to Apply. All generated containers, elements, boundaries, dependencies,
@@ -251,40 +255,44 @@ argument becomes both a template Capture boundary and an input port on the host
 Function. The final argument remains the template Parameter boundary. This keeps
 the UI focused on one named function while the saved geometry still lowers
 through existing Function and Apply semantics. Additional explicit captures are
-also supported. The generated template explicitly Drops each unused capture; the
-host supplies deterministic temporary `Unit` or `Nat(0)` literals so the project
-remains executable until those inputs are rewired. Capture keys must be unique
-v1 identifiers and cannot use the reserved Function output key `value`.
+also supported. The generated template explicitly Drops each unused capture.
+The host supplies deterministic temporary `Unit` or `Nat(0)` literals for
+materializable capture types. Function-typed captures are left unconnected
+instead of receiving a fake closure, and Run reports a source-mapped diagnostic
+until the user wires a real function value. Capture keys must be unique v1
+identifiers and cannot use the reserved Function output key `value`.
 
 Call authoring lists compatible existing templates for the selected host and
 shows the user-facing function name and named arguments in declaration order.
-It adds the Function closure, capture literals for earlier arguments, Apply
-node, final argument literal, result Drop, wires, and missing dependency as one
-Undo/Redo step. Templates that would introduce a self or transitive dependency
-cycle are excluded and the typed command performs the same cycle check again.
-The compact two-column starter layout keeps capture and argument literals next
-to their consumer. Connecting named arguments in a different visual order does
-not change the canonical lowering because the underlying ports are stable.
+It adds the Function closure, capture inputs, Apply node, result Drop, wires,
+and missing dependency as one Undo/Redo step. Unit and Nat arguments receive
+temporary literals; function-typed arguments stay unconnected for explicit
+wiring. Templates that would introduce a self or transitive dependency cycle
+are excluded and the typed command performs the same cycle check again. The
+compact two-column starter layout keeps materialized argument literals next to
+their consumer. Connecting named arguments in a different visual order does not
+change the canonical lowering because the underlying ports are stable.
 
 Existing named Surface function signatures can be edited from the template
 Inspector. The template ID remains the stable semantic reference while the
-user-facing name, argument labels, argument order, and Unit/Nat result type are
+user-facing name, argument labels, argument order, and result type are
 updated across the body boundaries, Function closure ports, Call Apply nodes,
 and saved `surfaceFunctions` metadata as one Undo/Redo command. Argument
 identity is carried through the edit from the previous argument name, so
 renaming or reordering preserves existing body wires, Call wires, and temporary
 literal values. Adding an argument creates the matching body boundary and Call
-input state deterministically. Removing an argument or changing a connected
-argument/result type is blocked until the user disconnects the affected body or
-Call wiring; the editor does not silently delete those wires or coerce values.
+input state deterministically; new function-typed inputs start disconnected.
+Removing an argument or changing a connected argument/result type is blocked
+until the user disconnects the affected body or Call wiring; the editor does
+not silently delete those wires or coerce values.
 
 Function names and template IDs use the v1 identifier alphabet and must be
 unique among containers. Generated stable IDs use the normal smallest-unused
 policy. Authoring refuses to expand the host container when doing so would
-overlap another container. The current form intentionally supports only Unit and
-Nat parameters, results, and captures; inferred captures, nested arrow
-authoring, source-mapped lowering errors, and destructive signature migrations
-remain future work.
+overlap another container. The editor supports the Core type grammar
+`Unit | Nat | Type -> Type` without changing Project JSON v1. It does not infer
+captures, synthesize default function values, expose generated Core graphs, or
+perform destructive signature migrations; those remain future work.
 
 Pointer positions are transformed through the SVG current transformation matrix
 and rounded to project integers. Element movement translates its bounds and
