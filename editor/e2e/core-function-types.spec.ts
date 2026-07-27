@@ -27,6 +27,49 @@ async function setTypeToNatArrowNat(page: Page, label: string) {
   await expect(page.getByText("Nat -> Nat").first()).toBeVisible();
 }
 
+async function center(locator: ReturnType<Page["locator"]>) {
+  await expect(locator).toBeVisible();
+  const box = await locator.boundingBox();
+  expect(box).not.toBeNull();
+  return { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 };
+}
+
+async function dragTo(
+  page: Page,
+  source: ReturnType<Page["locator"]>,
+  target: ReturnType<Page["locator"]>,
+) {
+  const from = await center(source);
+  const to = await center(target);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(to.x, to.y, { steps: 16 });
+  await page.mouse.up();
+}
+
+function port(page: Page, id: string, name: string, direction: string) {
+  return page.locator(
+    `[data-node-id="${id}"][data-port-name="${name}"][data-port-direction="${direction}"]`,
+  );
+}
+
+async function selectAndDelete(
+  page: Page,
+  locator: ReturnType<Page["locator"]>,
+) {
+  await expect(locator).toBeVisible();
+  await locator.focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: "Delete selected" }).click();
+}
+
+async function setSelectedBounds(page: Page, x: string, y: string) {
+  await page.locator("#inspector-x").fill(x);
+  await page.locator("#inspector-x").blur();
+  await page.locator("#inspector-y").fill(y);
+  await page.locator("#inspector-y").blur();
+}
+
 test("authors and round-trips a function type parameter through the UI", async ({
   page,
 }, testInfo) => {
@@ -95,7 +138,115 @@ test("leaves function-typed Call arguments explicit and source-maps the diagnost
   await expect(diagnostic).toBeVisible();
   await diagnostic.click();
   await expect(
-    page.locator('g.element-node.selected[data-node-kind="function"]'),
+    page.locator('g.element-node.selected[data-node-kind="apply"]'),
   ).toBeVisible();
+  await expectNoBrowserIssues(issues);
+});
+
+test("keeps Apply signature arguments separate from captures for NatRec step functions", async ({
+  page,
+}, testInfo) => {
+  const issues = watchBrowserIssues(page);
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Add Function" }).click();
+  await page.getByLabel("Function name").fill("isZeroStep");
+  await page.getByLabel("Argument 1 name").fill("index");
+  await page.getByLabel("Argument 1 type").selectOption("nat");
+  await page.getByRole("button", { name: "Add argument" }).click();
+  await page.getByLabel("Argument 2 name").fill("previous");
+  await page.getByLabel("Argument 2 type").selectOption("nat");
+  await page.getByLabel("Result name").fill("result");
+  await page.getByLabel("Result type").selectOption("nat");
+  await page.getByRole("button", { name: "Create total function" }).click();
+
+  await expect(
+    page.getByText(/isZeroStep\(index: Nat, previous: Nat\)/),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Return to entry graph" }).click();
+
+  const functionNode = page
+    .locator('g.element-node[data-node-kind="function"][data-template-id="isZeroStep"]')
+    .first();
+  await expect(functionNode).toBeVisible();
+  const functionNodeId = await functionNode.getAttribute("data-node-id");
+  expect(functionNodeId).not.toBeNull();
+  await expect(functionNode.locator("text.element-signature")).toContainText(
+    /Nat -> \(?Nat -> Nat\)?/,
+  );
+  await functionNode.click();
+  await setSelectedBounds(page, "0", "180");
+  await expect(
+    functionNode.locator('[data-port-direction="input"]'),
+  ).toHaveCount(0);
+  await expect(
+    page.locator(
+      `polyline[data-target-node-id="${functionNodeId}"][data-target-node-kind="function"]`,
+    ),
+  ).toHaveCount(0);
+
+  await selectAndDelete(
+    page,
+    page.locator(
+      `polyline[data-source-node-id="${functionNodeId}"][data-source-port-name="value"][data-target-node-kind="drop"]`,
+    ),
+  );
+  await page.getByRole("button", { name: "Add NatRec" }).click();
+  const natRecNode = page.locator('g.element-node.selected[data-node-kind="nat_rec"]');
+  await expect(natRecNode).toBeVisible();
+  const natRecId = await natRecNode.getAttribute("data-node-id");
+  expect(natRecId).not.toBeNull();
+  await setSelectedBounds(page, "240", "160");
+  await dragTo(
+    page,
+    port(page, functionNodeId!, "value", "output"),
+    port(page, natRecId!, "step", "input"),
+  );
+  await expect(
+    page.locator(
+      `polyline[data-source-node-id="${functionNodeId}"][data-source-port-name="value"][data-target-node-id="${natRecId}"][data-target-port-name="step"]`,
+    ),
+  ).toHaveCount(1);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export JSON" }).click();
+  const download = await downloadPromise;
+  const savedPath = testInfo.outputPath("isZeroStep.tilefold.json");
+  await download.saveAs(savedPath);
+  const savedJson = readFileSync(savedPath, "utf8");
+  const project = JSON.parse(savedJson) as {
+    surfaceFunctions: Array<{
+      id: string;
+      name: string;
+      parameters: Array<{ name: string; type: unknown }>;
+      result: { name: string; type: unknown };
+    }>;
+    geometry: {
+      elements: Array<{
+        kind: string;
+        properties?: { templateId?: string; captures?: unknown[] };
+      }>;
+    };
+  };
+  const surfaceFunction = project.surfaceFunctions.find(
+    (candidate) => candidate.name === "isZeroStep",
+  );
+  expect(surfaceFunction?.parameters.map((parameter) => parameter.name)).toEqual([
+    "index",
+    "previous",
+  ]);
+  expect(surfaceFunction?.result.name).toBe("result");
+  const functionElement = project.geometry.elements.find(
+    (element) =>
+      element.kind === "function" &&
+      element.properties?.templateId === surfaceFunction?.id,
+  );
+  expect(functionElement?.properties?.captures ?? []).toEqual([]);
+
+  await page.reload();
+  await page.getByLabel("Open JSON file").setInputFiles(savedPath);
+  await page.getByRole("button", { name: "Add Call" }).click();
+  await expect(page.getByText("1. index: Nat")).toBeVisible();
+  await expect(page.getByText("2. previous: Nat")).toBeVisible();
   await expectNoBrowserIssues(issues);
 });

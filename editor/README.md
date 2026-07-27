@@ -143,6 +143,20 @@ Do not put the storage-state file under `test-results`. Playwright owns that
 directory and clears it at the start of a run, which makes every test fail before
 navigation with `ENOENT: no such file or directory`.
 
+When refreshing local browser verification, do not stop every `node` process.
+Codex, browser tooling, and Vercel helpers can also run through Node, so a broad
+`Get-Process node | Stop-Process` can interrupt the agent itself. If a stale
+Vite preview is occupying a port, identify that port owner first, for example
+with `Get-NetTCPConnection -LocalPort 4173`, and stop only the confirmed preview
+process. Prefer using a fresh port or letting Playwright manage its configured
+web server when the owner is unclear.
+
+On Windows, do not start multiple Playwright suites at the same time against the
+same editor checkout. Each suite builds and refreshes `dist/`; parallel
+`vite build` processes can race while copying `public/tilefold_runner.js` and
+fail with `EBUSY`. Run Playwright verification sequentially, or use isolated
+worktrees when parallel browser checks are necessary.
+
 ## Visual direction
 
 The first version borrows only a restrained subset of three familiar tools:

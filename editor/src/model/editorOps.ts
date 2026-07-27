@@ -300,6 +300,7 @@ function normalizeFunctionDraft(
   parameterType: CoreType;
   resultName: string;
   resultType: CoreType;
+  templateResultType: CoreType;
   captures: FunctionCaptureDraft[];
 } {
   const parameters =
@@ -311,24 +312,30 @@ function normalizeFunctionDraft(
             type: draft.parameterType ?? "unit",
           },
         ];
-  const lastParameter = parameters[parameters.length - 1]!;
+  const firstParameter = parameters[0]!;
+  const templateResultType = curriedResultType(
+    parameters.slice(1),
+    draft.resultType,
+  );
   return {
     templateId: draft.templateId,
     parameters,
-    parameterType: lastParameter.type,
+    parameterType: firstParameter.type,
     resultName: draft.resultName ?? "result",
     resultType: draft.resultType,
-    captures:
-      draft.parameters && draft.parameters.length > 0
-        ? [
-            ...parameters.slice(0, -1).map((parameter) => ({
-              key: parameter.name,
-              type: parameter.type,
-            })),
-            ...(draft.captures ?? []),
-          ]
-        : (draft.captures ?? []),
+    templateResultType,
+    captures: draft.captures ?? [],
   };
+}
+
+function curriedResultType(
+  parameters: readonly FunctionParameterDraft[],
+  resultType: CoreType,
+): CoreType {
+  return parameters.reduceRight<CoreType>(
+    (result, parameter) => ({ arrow: [parameter.type, result] }),
+    resultType,
+  );
 }
 
 function templateCaptures(
@@ -389,26 +396,17 @@ export function callableFunctionTemplates(
       }
       const captures = templateCaptures(container);
       const metadata = functionMetadata(document, container.kind.templateId);
+      if (!metadata) return [];
       return captures
         ? [
             {
               templateId: container.kind.templateId,
-              displayName: metadata?.name ?? container.kind.templateId,
-              parameters:
-                metadata?.parameters.map((parameter) => ({
-                  name: parameter.name,
-                  type: parameter.type,
-                })) ?? [
-                  ...captures.map((capture) => ({
-                    name: capture.key,
-                    type: capture.type,
-                  })),
-                  {
-                    name: defaultParameterName(container.kind.templateId),
-                    type: container.kind.parameterType,
-                  },
-                ],
-              resultName: metadata?.result.name ?? "result",
+              displayName: metadata.name,
+              parameters: metadata.parameters.map((parameter) => ({
+                name: parameter.name,
+                type: parameter.type,
+              })),
+              resultName: metadata.result.name,
               parameterType: container.kind.parameterType,
               resultType: container.kind.resultType,
               captures,
@@ -425,8 +423,14 @@ export function addFunctionTemplate(
   draft: FunctionTemplateDraft,
 ): AddFunctionTemplateResult | { error: string } {
   const normalized = normalizeFunctionDraft(draft);
-  const { templateId, parameters, parameterType, resultName, resultType } =
-    normalized;
+  const {
+    templateId,
+    parameters,
+    parameterType,
+    resultName,
+    resultType,
+    templateResultType,
+  } = normalized;
   const captures = normalized.captures;
   if (!validProjectId(templateId)) {
     return {
@@ -487,6 +491,14 @@ export function addFunctionTemplate(
   if (captures.some((capture) => capture.key === "value")) {
     return {
       error: "Capture key value is reserved for the Function output port.",
+    };
+  }
+  const captureCollidingWithParameter = captures.find((capture) =>
+    parameters.some((parameter) => parameter.name === capture.key),
+  );
+  if (captureCollidingWithParameter) {
+    return {
+      error: `Capture key ${captureCollidingWithParameter.key} duplicates an argument name.`,
     };
   }
   const host = document.geometry.containers.find(
@@ -559,7 +571,7 @@ export function addFunctionTemplate(
     properties: {
       templateId,
       parameterType,
-      resultType,
+      resultType: templateResultType,
       captures,
     },
     portAnchors: [
@@ -637,7 +649,7 @@ export function addFunctionTemplate(
     });
   });
   const functionType: CoreType = {
-    arrow: [parameterType, resultType],
+    arrow: [parameterType, templateResultType],
   };
   const hostDrop: ProjectElement = {
     id: hostDropId,
@@ -698,7 +710,7 @@ export function addFunctionTemplate(
   const resultBoundary: BoundaryPort = {
     id: resultBoundaryId,
     role: "result",
-    type: resultType,
+    type: templateResultType,
     anchor: { x: templateBounds.width, y: 60 },
   };
   const captureBoundaries: BoundaryPort[] = captures.map((capture, index) => ({
@@ -714,7 +726,7 @@ export function addFunctionTemplate(
       kind: "template",
       templateId,
       parameterType,
-      resultType,
+      resultType: templateResultType,
       dependencies: [],
     },
     bounds: templateBounds,
@@ -727,6 +739,8 @@ export function addFunctionTemplate(
 
   const templateElements: ProjectElement[] = [];
   const templateWires: ProjectWire[] = [];
+  const templateDependencies: string[] = [];
+  const additionalTemplateContainers: ProjectContainer[] = [];
   const pointOf = (point: Point) => ({ x: point.x, y: point.y });
   const parameterPoint = {
     x: templateBounds.x + parameterBoundary.anchor.x,
@@ -781,7 +795,7 @@ export function addFunctionTemplate(
       },
     });
   });
-  if (coreTypeEqual(parameterType, resultType)) {
+  if (coreTypeEqual(parameterType, templateResultType)) {
     const copyBounds: Bounds = {
       x: templateBounds.x + 100,
       y: templateBounds.y + 24,
@@ -889,7 +903,7 @@ export function addFunctionTemplate(
         },
       },
     );
-  } else if (primitiveCoreType(resultType)) {
+  } else if (primitiveCoreType(templateResultType)) {
     const bodyDropId = allocate("node_drop_");
     const bodyDropBounds: Bounds = {
       x: templateBounds.x + 80,
@@ -913,11 +927,11 @@ export function addFunctionTemplate(
     const literalBounds: Bounds = {
       x: templateBounds.x + 220,
       y: templateBounds.y + 32,
-      width: resultType === "nat" ? 96 : 88,
+      width: templateResultType === "nat" ? 96 : 88,
       height: 56,
     };
     const literal: ProjectElement =
-      resultType === "nat"
+      templateResultType === "nat"
         ? {
             id: allocate("node_nat_"),
             kind: "nat_literal",
@@ -1011,7 +1025,319 @@ export function addFunctionTemplate(
         port: "input",
       },
     });
+    if (typeof templateResultType !== "string") {
+      const nestedTemplateId = allocate(`${templateId}_curried_`);
+      const nestedContainerId = allocate("container_template_");
+      const nestedParameterBoundaryId = allocate("boundary_parameter_");
+      const nestedResultBoundaryId = allocate("boundary_result_");
+      const nestedParameterType = templateResultType.arrow[0];
+      const nestedResultType = templateResultType.arrow[1];
+      const nestedBounds: Bounds = {
+        x: templateBounds.x + templateBounds.width + 80,
+        y: templateBounds.y,
+        width: 360,
+        height: 220,
+      };
+      const nestedParameterBoundary: BoundaryPort = {
+        id: nestedParameterBoundaryId,
+        role: "parameter",
+        type: nestedParameterType,
+        anchor: { x: 0, y: 60 },
+      };
+      const nestedResultBoundary: BoundaryPort = {
+        id: nestedResultBoundaryId,
+        role: "result",
+        type: nestedResultType,
+        anchor: { x: nestedBounds.width, y: 60 },
+      };
+      const nestedDependencies: string[] = [];
+      templateDependencies.push(nestedTemplateId);
+
+      const nestedFunctionBounds: Bounds = {
+        x: templateBounds.x + 220,
+        y: templateBounds.y + 32,
+        width: 128,
+        height: 72,
+      };
+      const nestedFunction: ProjectElement = {
+        id: allocate("node_function_"),
+        kind: "function",
+        bounds: nestedFunctionBounds,
+        properties: {
+          templateId: nestedTemplateId,
+          parameterType: nestedParameterType,
+          resultType: nestedResultType,
+          captures: [],
+        },
+        portAnchors: [
+          {
+            port: "value",
+            x: nestedFunctionBounds.x + nestedFunctionBounds.width,
+            y: nestedFunctionBounds.y + nestedFunctionBounds.height / 2,
+          },
+        ],
+      };
+      const nestedFunctionValue = pointOf(nestedFunction.portAnchors[0]!);
+      templateElements.push(nestedFunction);
+      templateWires.push({
+        id: allocate("wire_"),
+        points: [nestedFunctionValue, resultPoint],
+        sourceHint: {
+          kind: "element_port",
+          elementId: nestedFunction.id,
+          port: "value",
+        },
+        targetHint: {
+          kind: "boundary_port",
+          containerId,
+          boundaryId: resultBoundaryId,
+        },
+      });
+
+      const nestedParameterPoint = {
+        x: nestedBounds.x + nestedParameterBoundary.anchor.x,
+        y: nestedBounds.y + nestedParameterBoundary.anchor.y,
+      };
+      const nestedResultPoint = {
+        x: nestedBounds.x + nestedResultBoundary.anchor.x,
+        y: nestedBounds.y + nestedResultBoundary.anchor.y,
+      };
+      const nestedDropBounds: Bounds = {
+        x: nestedBounds.x + 80,
+        y: nestedBounds.y + 32,
+        width: 88,
+        height: 56,
+      };
+      const nestedDrop: ProjectElement = {
+        id: allocate("node_drop_"),
+        kind: "drop",
+        bounds: nestedDropBounds,
+        properties: { type: nestedParameterType },
+        portAnchors: [
+          {
+            port: "input",
+            x: nestedDropBounds.x,
+            y: nestedDropBounds.y + nestedDropBounds.height / 2,
+          },
+        ],
+      };
+      templateElements.push(nestedDrop);
+      templateWires.push({
+        id: allocate("wire_"),
+        points: [nestedParameterPoint, pointOf(nestedDrop.portAnchors[0]!)],
+        sourceHint: {
+          kind: "boundary_port",
+          containerId: nestedContainerId,
+          boundaryId: nestedParameterBoundaryId,
+        },
+        targetHint: {
+          kind: "element_port",
+          elementId: nestedDrop.id,
+          port: "input",
+        },
+      });
+      if (primitiveCoreType(nestedResultType)) {
+        const literalBounds: Bounds = {
+          x: nestedBounds.x + 220,
+          y: nestedBounds.y + 32,
+          width: nestedResultType === "nat" ? 96 : 88,
+          height: 56,
+        };
+        const literal = makeLiteralForType(
+          allocate(nestedResultType === "nat" ? "node_nat_" : "node_unit_"),
+          nestedResultType,
+          literalBounds,
+        );
+        templateElements.push(literal);
+        templateWires.push({
+          id: allocate("wire_"),
+          points: [pointOf(literal.portAnchors[0]!), nestedResultPoint],
+          sourceHint: {
+            kind: "element_port",
+            elementId: literal.id,
+            port: "value",
+          },
+          targetHint: {
+            kind: "boundary_port",
+            containerId: nestedContainerId,
+            boundaryId: nestedResultBoundaryId,
+          },
+        });
+      } else {
+        const deeperTemplateId = allocate(`${nestedTemplateId}_curried_`);
+        const deeperContainerId = allocate("container_template_");
+        const deeperParameterBoundaryId = allocate("boundary_parameter_");
+        const deeperResultBoundaryId = allocate("boundary_result_");
+        const deeperParameterType = nestedResultType.arrow[0];
+        const deeperResultType = nestedResultType.arrow[1];
+        const deeperBounds: Bounds = {
+          x: nestedBounds.x + nestedBounds.width + 80,
+          y: nestedBounds.y,
+          width: 360,
+          height: 220,
+        };
+        const deeperParameterBoundary: BoundaryPort = {
+          id: deeperParameterBoundaryId,
+          role: "parameter",
+          type: deeperParameterType,
+          anchor: { x: 0, y: 60 },
+        };
+        const deeperResultBoundary: BoundaryPort = {
+          id: deeperResultBoundaryId,
+          role: "result",
+          type: deeperResultType,
+          anchor: { x: deeperBounds.width, y: 60 },
+        };
+        additionalTemplateContainers.push({
+          id: deeperContainerId,
+          kind: {
+            kind: "template",
+            templateId: deeperTemplateId,
+            parameterType: deeperParameterType,
+            resultType: deeperResultType,
+            dependencies: [],
+          },
+          bounds: deeperBounds,
+          boundaryPorts: [deeperParameterBoundary, deeperResultBoundary],
+        });
+        nestedDependencies.push(deeperTemplateId);
+
+        const deeperFunctionBounds: Bounds = {
+          x: nestedBounds.x + 220,
+          y: nestedBounds.y + 32,
+          width: 128,
+          height: 72,
+        };
+        const deeperFunction: ProjectElement = {
+          id: allocate("node_function_"),
+          kind: "function",
+          bounds: deeperFunctionBounds,
+          properties: {
+            templateId: deeperTemplateId,
+            parameterType: deeperParameterType,
+            resultType: deeperResultType,
+            captures: [],
+          },
+          portAnchors: [
+            {
+              port: "value",
+              x: deeperFunctionBounds.x + deeperFunctionBounds.width,
+              y: deeperFunctionBounds.y + deeperFunctionBounds.height / 2,
+            },
+          ],
+        };
+        templateElements.push(deeperFunction);
+        templateWires.push({
+          id: allocate("wire_"),
+          points: [pointOf(deeperFunction.portAnchors[0]!), nestedResultPoint],
+          sourceHint: {
+            kind: "element_port",
+            elementId: deeperFunction.id,
+            port: "value",
+          },
+          targetHint: {
+            kind: "boundary_port",
+            containerId: nestedContainerId,
+            boundaryId: nestedResultBoundaryId,
+          },
+        });
+
+        const deeperParameterPoint = {
+          x: deeperBounds.x + deeperParameterBoundary.anchor.x,
+          y: deeperBounds.y + deeperParameterBoundary.anchor.y,
+        };
+        const deeperResultPoint = {
+          x: deeperBounds.x + deeperResultBoundary.anchor.x,
+          y: deeperBounds.y + deeperResultBoundary.anchor.y,
+        };
+        const deeperDropBounds: Bounds = {
+          x: deeperBounds.x + 80,
+          y: deeperBounds.y + 32,
+          width: 88,
+          height: 56,
+        };
+        const deeperDrop: ProjectElement = {
+          id: allocate("node_drop_"),
+          kind: "drop",
+          bounds: deeperDropBounds,
+          properties: { type: deeperParameterType },
+          portAnchors: [
+            {
+              port: "input",
+              x: deeperDropBounds.x,
+              y: deeperDropBounds.y + deeperDropBounds.height / 2,
+            },
+          ],
+        };
+        templateElements.push(deeperDrop);
+        templateWires.push({
+          id: allocate("wire_"),
+          points: [deeperParameterPoint, pointOf(deeperDrop.portAnchors[0]!)],
+          sourceHint: {
+            kind: "boundary_port",
+            containerId: deeperContainerId,
+            boundaryId: deeperParameterBoundaryId,
+          },
+          targetHint: {
+            kind: "element_port",
+            elementId: deeperDrop.id,
+            port: "input",
+          },
+        });
+        if (primitiveCoreType(deeperResultType)) {
+          const literalBounds: Bounds = {
+            x: deeperBounds.x + 220,
+            y: deeperBounds.y + 32,
+            width: deeperResultType === "nat" ? 96 : 88,
+            height: 56,
+          };
+          const literal = makeLiteralForType(
+            allocate(deeperResultType === "nat" ? "node_nat_" : "node_unit_"),
+            deeperResultType,
+            literalBounds,
+          );
+          templateElements.push(literal);
+          templateWires.push({
+            id: allocate("wire_"),
+            points: [pointOf(literal.portAnchors[0]!), deeperResultPoint],
+            sourceHint: {
+              kind: "element_port",
+              elementId: literal.id,
+              port: "value",
+            },
+            targetHint: {
+              kind: "boundary_port",
+              containerId: deeperContainerId,
+              boundaryId: deeperResultBoundaryId,
+            },
+          });
+        }
+      }
+      additionalTemplateContainers.push({
+        id: nestedContainerId,
+        kind: {
+          kind: "template",
+          templateId: nestedTemplateId,
+          parameterType: nestedParameterType,
+          resultType: nestedResultType,
+          dependencies: nestedDependencies,
+        },
+        bounds: nestedBounds,
+        boundaryPorts: [nestedParameterBoundary, nestedResultBoundary],
+      });
+    }
   }
+
+  const finalTemplateContainer: ProjectContainer =
+    templateDependencies.length > 0
+      ? {
+          ...templateContainer,
+          kind: {
+            ...templateContainer.kind,
+            dependencies: templateDependencies,
+          },
+        }
+      : templateContainer;
 
   const updatedHost: ProjectContainer = {
     ...host,
@@ -1032,7 +1358,7 @@ export function addFunctionTemplate(
     },
   };
   return {
-    container: templateContainer,
+    container: finalTemplateContainer,
     element: functionElement,
     document: {
       ...document,
@@ -1049,7 +1375,8 @@ export function addFunctionTemplate(
           ...document.geometry.containers.map((container) =>
             container.id === host.id ? updatedHost : container,
           ),
-          templateContainer,
+          finalTemplateContainer,
+          ...additionalTemplateContainers,
         ],
         wires: [
           ...document.geometry.wires,
@@ -1633,9 +1960,12 @@ export function editSurfaceFunctionSignature(
   if (!template || template.kind.kind !== "template") {
     return { error: `Template ${edit.templateId} does not exist.` };
   }
-  const oldFinal = current.parameters.at(-1);
-  const newFinal = edit.parameters.at(-1)!;
-  const newCaptures = edit.parameters.slice(0, -1);
+  const oldFirst = current.parameters[0];
+  const newFirst = edit.parameters[0]!;
+  const newTemplateResultType = curriedResultType(
+    edit.parameters.slice(1),
+    edit.resultType,
+  );
   const existingTemplateCaptures = templateCaptures(template);
   if (!existingTemplateCaptures) {
     return {
@@ -1643,8 +1973,8 @@ export function editSurfaceFunctionSignature(
         "Signature editing currently supports only Unit and Nat template captures.",
     };
   }
-  const oldCaptureNames = new Set(
-    current.parameters.slice(0, -1).map((parameter) => parameter.name),
+  const oldArgumentNames = new Set(
+    current.parameters.map((parameter) => parameter.name),
   );
   const newParameterForOriginal = new Map(
     edit.parameters
@@ -1655,8 +1985,17 @@ export function editSurfaceFunctionSignature(
   for (const oldParameter of current.parameters) {
     const retained = newParameterForOriginal.get(oldParameter.name);
     const connectedWires = document.geometry.wires.filter((wire) => {
-      if (oldParameter.name === oldFinal?.name) {
-        return document.geometry.elements.some(
+      if (oldParameter.name === oldFirst?.name) {
+        return (
+          (wire.sourceHint?.kind === "boundary_port" &&
+            wire.sourceHint.containerId === template.id &&
+            template.boundaryPorts.some(
+              (boundary) =>
+                wire.sourceHint?.kind === "boundary_port" &&
+                boundary.id === wire.sourceHint.boundaryId &&
+                boundary.role === "parameter",
+            )) ||
+          document.geometry.elements.some(
           (element) =>
             element.kind === "apply" &&
             wire.targetHint?.kind === "element_port" &&
@@ -1679,7 +2018,8 @@ export function editSurfaceFunctionSignature(
                     );
                   },
                 ),
-            ),
+            )
+          )
         );
       }
       return document.geometry.wires.some(
@@ -1765,37 +2105,29 @@ export function editSurfaceFunctionSignature(
   const oldParameterBoundary = template.boundaryPorts.find(
     (boundary) => boundary.role === "parameter",
   );
-  if (oldFinal && oldParameterBoundary) {
-    oldBoundaryByParameter.set(oldFinal.name, oldParameterBoundary);
+  if (oldFirst && oldParameterBoundary) {
+    oldBoundaryByParameter.set(oldFirst.name, oldParameterBoundary);
   }
   for (const boundary of template.boundaryPorts) {
-    if (boundary.role === "capture" && oldCaptureNames.has(boundary.captureKey)) {
+    if (boundary.role === "capture" && oldArgumentNames.has(boundary.captureKey)) {
       oldBoundaryByParameter.set(boundary.captureKey, boundary);
     }
   }
   const explicitCaptureBoundaries = template.boundaryPorts.filter(
     (boundary) =>
-      boundary.role === "capture" && !oldCaptureNames.has(boundary.captureKey),
+      boundary.role === "capture" && !oldArgumentNames.has(boundary.captureKey),
   );
   const newBoundaryPorts: BoundaryPort[] = [];
   edit.parameters.forEach((parameter, index) => {
     const existing = parameter.originalName
       ? oldBoundaryByParameter.get(parameter.originalName)
       : undefined;
-    if (index === edit.parameters.length - 1) {
+    if (index === 0) {
       newBoundaryPorts.push({
         id: existing?.id ?? allocate("boundary_parameter_"),
         role: "parameter",
         type: parameter.type,
         anchor: { x: 0, y: 60 },
-      });
-    } else {
-      newBoundaryPorts.push({
-        id: existing?.id ?? allocate("boundary_capture_"),
-        role: "capture",
-        captureKey: parameter.name,
-        type: parameter.type,
-        anchor: { x: 0, y: 156 + index * 64 },
       });
     }
   });
@@ -1811,8 +2143,8 @@ export function editSurfaceFunctionSignature(
     ...template,
     kind: {
       ...template.kind,
-      parameterType: newFinal.type,
-      resultType: edit.resultType,
+      parameterType: newFirst.type,
+      resultType: newTemplateResultType,
     },
     boundaryPorts: newBoundaryPorts,
   };
@@ -1821,13 +2153,8 @@ export function editSurfaceFunctionSignature(
     type: CoreType;
     originalName?: string;
   }> = [
-    ...newCaptures.map((parameter) => ({
-      key: parameter.name,
-      type: parameter.type,
-      originalName: parameter.originalName,
-    })),
     ...existingTemplateCaptures.filter(
-      (capture) => !oldCaptureNames.has(capture.key),
+      (capture) => !oldArgumentNames.has(capture.key),
     ),
   ];
   const functionElements = document.geometry.elements.filter(
@@ -1849,7 +2176,7 @@ export function editSurfaceFunctionSignature(
     const captureAnchors = newCaptureSpecs.map((capture, index) => {
       const retained =
         (capture.originalName &&
-          oldCaptureNames.has(capture.originalName) &&
+          oldArgumentNames.has(capture.originalName) &&
           oldAnchorsByPort.get(capture.originalName)) ||
         oldAnchorsByPort.get(capture.key);
       return {
@@ -1862,8 +2189,8 @@ export function editSurfaceFunctionSignature(
       ...element,
       properties: {
         ...element.properties,
-        parameterType: newFinal.type,
-        resultType: edit.resultType,
+        parameterType: newFirst.type,
+        resultType: newTemplateResultType,
         captures: newCaptureSpecs.map(({ key, type }) => ({ key, type })),
       },
       portAnchors: [
@@ -1886,8 +2213,8 @@ export function editSurfaceFunctionSignature(
       ? {
           ...element,
           properties: {
-            parameterType: newFinal.type,
-            resultType: edit.resultType,
+            parameterType: newFirst.type,
+            resultType: newTemplateResultType,
           },
         }
       : element,
@@ -1971,7 +2298,19 @@ export function editSurfaceFunctionSignature(
     });
   };
 
-  let wires = updateBoundaryWireEndpoints(document.geometry.wires, nextTemplate);
+  const nextTemplateBoundaryIds = new Set(
+    nextTemplate.boundaryPorts.map((boundary) => boundary.id),
+  );
+  let wires = updateBoundaryWireEndpoints(document.geometry.wires, nextTemplate)
+    .filter((wire) => {
+      const boundaryHints = [wire.sourceHint, wire.targetHint].filter(
+        (hint): hint is Extract<NonNullable<ProjectWire["sourceHint"]>, { kind: "boundary_port" }> =>
+          hint?.kind === "boundary_port" && hint.containerId === nextTemplate.id,
+      );
+      return boundaryHints.every((hint) =>
+        nextTemplateBoundaryIds.has(hint.boundaryId),
+      );
+    });
   const addedElements: ProjectElement[] = [];
   const addedWires: ProjectWire[] = [];
   const removedElementIds = new Set<string>();
@@ -1986,7 +2325,7 @@ export function editSurfaceFunctionSignature(
         : null;
     const oldSourceWireByParameter = new Map<string, ProjectWire>();
     for (const oldParameter of current.parameters) {
-      if (oldParameter.name === oldFinal?.name && apply) {
+      if (oldParameter.name === oldFirst?.name && apply) {
         const wire = wires.find(
           (candidate) =>
             candidate.targetHint?.kind === "element_port" &&
@@ -2011,7 +2350,7 @@ export function editSurfaceFunctionSignature(
         oldSourceWireByParameter.get(parameter.originalName);
       let targetHint: NonNullable<ProjectWire["targetHint"]> | null = null;
       let targetPoint: Point | null = null;
-      if (parameter.name === newFinal.name) {
+      if (parameter.name === newFirst.name) {
         if (!updatedApply) continue;
         const anchor = updatedApply.portAnchors.find(
           (candidate) => candidate.port === "argument",
@@ -2023,16 +2362,7 @@ export function editSurfaceFunctionSignature(
         };
         targetPoint = anchor;
       } else {
-        const anchor = updatedFunction.portAnchors.find(
-          (candidate) => candidate.port === parameter.name,
-        );
-        if (!anchor) continue;
-        targetHint = {
-          kind: "element_port",
-          elementId: updatedFunction.id,
-          port: parameter.name,
-        };
-        targetPoint = anchor;
+        continue;
       }
       if (existingWire) {
         consumedWireIds.add(existingWire.id);
@@ -2043,7 +2373,7 @@ export function editSurfaceFunctionSignature(
         );
       } else if (
         primitiveCoreType(parameter.type) &&
-        (updatedApply || parameter.name !== newFinal.name)
+        updatedApply
       ) {
         ensureLiteralWire(addedElements, addedWires, {
           hint: targetHint,

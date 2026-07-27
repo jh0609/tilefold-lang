@@ -66,21 +66,21 @@ describe("source-mapped diagnostics", () => {
     );
   });
 
-  it("maps a missing named Call argument to the referenced Function port", () => {
-    const { document, functionElement } = callableProject();
-    const captureWire = document.geometry.wires.find(
+  it("maps a missing named Call argument to the referenced Apply port", () => {
+    const { document, applyElement } = callableProject();
+    const argumentWire = document.geometry.wires.find(
       (wire) =>
         wire.targetHint?.kind === "element_port" &&
-        wire.targetHint.elementId === functionElement.id &&
-        wire.targetHint.port === "left",
+        wire.targetHint.elementId === applyElement.id &&
+        wire.targetHint.port === "argument",
     );
-    expect(captureWire).toBeDefined();
+    expect(argumentWire).toBeDefined();
     const broken = {
       ...document,
       geometry: {
         ...document.geometry,
         wires: document.geometry.wires.filter(
-          (wire) => wire.id !== captureWire?.id,
+          (wire) => wire.id !== argumentWire?.id,
         ),
       },
     };
@@ -99,13 +99,13 @@ describe("source-mapped diagnostics", () => {
       summary: 'Call "choose_right" is missing a value for argument "left".',
       primarySource: {
         kind: "element",
-        elementId: functionElement.id,
-        port: "left",
+        elementId: applyElement.id,
+        port: "argument",
       },
     });
     expect(diagnosticSourceSelection(missing?.primarySource)).toEqual({
       type: "element",
-      id: functionElement.id,
+      id: applyElement.id,
     });
   });
 
@@ -133,8 +133,8 @@ describe("source-mapped diagnostics", () => {
       summary: 'Call "apply_once" is missing a value for argument "f".',
       primarySource: {
         kind: "element",
-        elementId: called.functionElement.id,
-        port: "f",
+        elementId: called.applyElement.id,
+        port: "argument",
       },
     });
   });
@@ -210,10 +210,10 @@ describe("source-mapped diagnostics", () => {
     const missing = preflightProjectDiagnostics(broken).find(
       (diagnostic) =>
         diagnostic.code === "surface.missing-call-argument" &&
-        diagnostic.summary.includes('"value"'),
+        diagnostic.summary.includes('"ignored"'),
     );
     expect(missing).toMatchObject({
-      summary: 'Call "renamed_choose" is missing a value for argument "value".',
+      summary: 'Call "renamed_choose" is missing a value for argument "ignored".',
       primarySource: {
         kind: "element",
         elementId: applyElement.id,

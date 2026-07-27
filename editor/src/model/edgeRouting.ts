@@ -49,6 +49,19 @@ function endpointElementId(
   return hint?.kind === "element_port" ? hint.elementId : null;
 }
 
+function endpointElement(
+  document: ProjectDocument,
+  wire: ProjectWire,
+  endpoint: "source" | "target",
+): ProjectElement | null {
+  const elementId = endpointElementId(wire, endpoint);
+  return elementId
+    ? (document.geometry.elements.find(
+        (candidate) => candidate.id === elementId,
+      ) ?? null)
+    : null;
+}
+
 function endpointDirection(
   document: ProjectDocument,
   wire: ProjectWire,
@@ -104,6 +117,16 @@ function simplify(points: Point[]): Point[] {
   return result;
 }
 
+function dedupe(points: Point[]): Point[] {
+  const result: Point[] = [];
+  for (const point of points) {
+    if (!result.at(-1) || !samePoint(result.at(-1)!, point)) {
+      result.push(point);
+    }
+  }
+  return result;
+}
+
 function segmentIntersectsRect(a: Point, b: Point, rect: Rect): boolean {
   if (a.x === b.x) {
     const x = a.x;
@@ -139,6 +162,25 @@ function isClear(points: readonly Point[], obstacles: readonly Rect[]): boolean 
       ? obstacles.some((rect) => segmentIntersectsRect(points[index - 1]!, point, rect))
       : false,
   );
+}
+
+function isClearRoutedPath(
+  points: readonly Point[],
+  obstacles: readonly Rect[],
+  sourceElementId: string | null,
+  targetElementId: string | null,
+): boolean {
+  return !points.some((point, index) => {
+    if (index === 0) return false;
+    const previous = points[index - 1]!;
+    return obstacles.some((rect) => {
+      if (index === 1 && rect.elementId === sourceElementId) return false;
+      if (index === points.length - 1 && rect.elementId === targetElementId) {
+        return false;
+      }
+      return segmentIntersectsRect(previous, point, rect);
+    });
+  });
 }
 
 function routeCost(points: readonly Point[]): number {
@@ -186,6 +228,22 @@ function clearHorizontalExit(
   };
 }
 
+function endpointCorridorPoint(
+  document: ProjectDocument,
+  wire: ProjectWire,
+  endpoint: "source" | "target",
+  point: Point,
+  direction: 1 | -1,
+): Point {
+  const element = endpointElement(document, wire, endpoint);
+  if (!element) return { x: point.x + direction * EXIT_LENGTH, y: point.y };
+  const rect = inflated(element.bounds, ROUTE_MARGIN, element.id);
+  return {
+    x: direction > 0 ? rect.x2 + 1 : rect.x1 - 1,
+    y: point.y,
+  };
+}
+
 export function routeWire(
   document: ProjectDocument,
   wire: ProjectWire,
@@ -198,33 +256,66 @@ export function routeWire(
   const targetElementId = endpointElementId(wire, "target");
   const sourceDirection = endpointDirection(document, wire, "source", source);
   const targetDirection = endpointDirection(document, wire, "target", target);
-  const obstacles = document.geometry.elements
-    .filter(
-      (element) =>
-        element.id !== sourceElementId && element.id !== targetElementId,
-    )
-    .map((element) => inflated(element.bounds, ROUTE_MARGIN, element.id));
-  const straight = simplify([source, target]);
-  if ((source.x === target.x || source.y === target.y) && isClear(straight, obstacles)) {
+  const obstacles = document.geometry.elements.map((element) =>
+    inflated(element.bounds, ROUTE_MARGIN, element.id),
+  );
+  const bodyObstacles = document.geometry.elements.map((element) =>
+    inflated(element.bounds, 0, element.id),
+  );
+  const sourceExit = endpointCorridorPoint(
+    document,
+    wire,
+    "source",
+    source,
+    sourceDirection,
+  );
+  const targetEntry = endpointCorridorPoint(
+    document,
+    wire,
+    "target",
+    target,
+    targetDirection,
+  );
+
+  if (
+    source.y === target.y &&
+    sourceDirection === 1 &&
+    targetDirection === -1 &&
+    source.x < target.x
+  ) {
+    const straight = [source, target];
+    const unrelatedObstacles = obstacles.filter(
+      (rect) =>
+        rect.elementId !== sourceElementId && rect.elementId !== targetElementId,
+    );
+    if (isClear(straight, unrelatedObstacles)) return straight;
+  }
+
+  const straight = dedupe([source, sourceExit, targetEntry, target]);
+  if (
+    (sourceExit.x === targetEntry.x || sourceExit.y === targetEntry.y) &&
+    isClearRoutedPath(straight, obstacles, sourceElementId, targetElementId)
+  ) {
     return straight;
   }
-  const sourceExit = clearHorizontalExit(source, sourceDirection, obstacles);
-  const targetEntry = clearHorizontalExit(target, targetDirection, obstacles);
+  const clearSourceExit = clearHorizontalExit(sourceExit, sourceDirection, obstacles);
+  const clearTargetEntry = clearHorizontalExit(targetEntry, targetDirection, obstacles);
 
-  const direct = simplify([
+  const direct = dedupe([
     source,
     sourceExit,
-    { x: targetEntry.x, y: sourceExit.y },
+    clearSourceExit,
+    { x: clearTargetEntry.x, y: clearSourceExit.y },
+    clearTargetEntry,
     targetEntry,
     target,
   ]);
-  if (isClear(direct, obstacles)) return direct;
+  if (isClearRoutedPath(direct, obstacles, sourceElementId, targetElementId)) {
+    return direct;
+  }
 
   const lanes = new Set<number>([source.y, target.y]);
   for (const element of document.geometry.elements) {
-    if (element.id === sourceElementId || element.id === targetElementId) {
-      continue;
-    }
     lanes.add(element.bounds.y - ROUTE_MARGIN);
     lanes.add(element.bounds.y + element.bounds.height + ROUTE_MARGIN);
   }
@@ -237,19 +328,42 @@ export function routeWire(
         left - right,
     )
     .map((lane) =>
-      simplify([
+      dedupe([
         source,
         sourceExit,
-        { x: sourceExit.x, y: lane },
-        { x: targetEntry.x, y: lane },
+        clearSourceExit,
+        { x: clearSourceExit.x, y: lane },
+        { x: clearTargetEntry.x, y: lane },
+        clearTargetEntry,
         targetEntry,
         target,
       ]),
-    )
-    .filter((candidate) => isClear(candidate, obstacles))
-    .sort((left, right) => routeCost(left) - routeCost(right));
+    );
 
-  return candidates[0] ?? direct;
+  const marginClearCandidates = candidates
+    .filter((candidate) =>
+      isClearRoutedPath(candidate, obstacles, sourceElementId, targetElementId),
+    )
+    .sort((left, right) => routeCost(left) - routeCost(right));
+  if (marginClearCandidates[0]) return marginClearCandidates[0];
+
+  const bodyClearCandidates = candidates
+    .filter((candidate) =>
+      isClearRoutedPath(
+        candidate,
+        bodyObstacles,
+        sourceElementId,
+        targetElementId,
+      ),
+    )
+    .sort((left, right) => routeCost(left) - routeCost(right));
+  if (bodyClearCandidates[0]) return bodyClearCandidates[0];
+
+  if (isClearRoutedPath(direct, bodyObstacles, sourceElementId, targetElementId)) {
+    return direct;
+  }
+
+  return dedupe([source, sourceExit, targetEntry, target]);
 }
 
 export function elementObstacleBounds(element: ProjectElement): Bounds {

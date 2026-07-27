@@ -79,18 +79,18 @@ async function selectAndDelete(page: Page, locator: Locator) {
 async function addCapturedSuccFunction(page: Page) {
   await page.getByRole("button", { name: "Add Function" }).click();
   await page.getByLabel("Function name").fill("capturedSucc");
-  await page.getByLabel("Argument 1 name").fill("ignored");
+  await page.getByLabel("Argument 1 name").fill("value");
   await page.getByLabel("Argument 1 type").selectOption("nat");
-  await page.getByRole("button", { name: "Add argument" }).click();
-  await page.getByLabel("Argument 2 name").fill("value");
-  await page.getByLabel("Argument 2 type").selectOption("nat");
   await page.getByLabel("Result name").fill("result");
   await page.getByLabel("Result type").selectOption("nat");
+  await page.getByRole("button", { name: "Add capture" }).click();
+  await page.getByLabel("Capture 1 key").fill("ignored");
+  await page.getByLabel("Capture 1 type").selectOption("nat");
   await page.getByRole("button", { name: "Create total function" }).click();
 
   await expect(page.getByText(/Created capturedSucc/)).toBeVisible();
   await expect(page.getByText(/function capturedSucc/)).toBeVisible();
-  await expect(page.getByText(/capturedSucc\(ignored: Nat, value: Nat\)/)).toBeVisible();
+  await expect(page.getByText(/capturedSucc\(value: Nat\)/)).toBeVisible();
   const templateContainerId = await page
     .locator('[data-container-kind="template"][data-template-id="capturedSucc"]')
     .getAttribute("data-container-id");
@@ -133,8 +133,7 @@ async function removeInitialEntryResultGraph(page: Page) {
 
 async function addCapturedSuccCall(page: Page) {
   await page.getByRole("button", { name: "Add Call" }).click();
-  await expect(page.getByText("1. ignored: Nat")).toBeVisible();
-  await expect(page.getByText("2. value: Nat")).toBeVisible();
+  await expect(page.getByText("1. value: Nat")).toBeVisible();
   await page.getByRole("button", { name: "Create call" }).click();
   await expect(page.getByText(/Created a call to capturedSucc/)).toBeVisible();
 
@@ -213,7 +212,7 @@ test("authors, calls, runs, exports, reloads, and protects a named Surface funct
   await download.saveAs(savedPath);
   const savedJson = readFileSync(savedPath, "utf8");
   expect(savedJson).toContain('"name": "capturedSucc"');
-  expect(savedJson).toContain('"name": "ignored"');
+  expect(savedJson).toContain('"key": "ignored"');
   expect(savedJson).toContain('"name": "value"');
 
   const reloaded = await context.newPage();
@@ -234,8 +233,7 @@ test("authors, calls, runs, exports, reloads, and protects a named Surface funct
     ),
   ).toHaveCount(1);
   await reloaded.getByRole("button", { name: "Add Call" }).click();
-  await expect(reloaded.getByText("1. ignored: Nat")).toBeVisible();
-  await expect(reloaded.getByText("2. value: Nat")).toBeVisible();
+  await expect(reloaded.getByText("1. value: Nat")).toBeVisible();
   await reloaded.getByRole("button", { name: "Cancel function call" }).click();
   await runAndExpectNat3(reloaded);
 

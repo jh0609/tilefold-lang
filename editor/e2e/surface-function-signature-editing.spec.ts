@@ -70,13 +70,13 @@ async function selectAndDelete(page: Page, locator: Locator) {
 async function addCapturedSuccFunction(page: Page) {
   await page.getByRole("button", { name: "Add Function" }).click();
   await page.getByLabel("Function name").fill("capturedSucc");
-  await page.getByLabel("Argument 1 name").fill("ignored");
+  await page.getByLabel("Argument 1 name").fill("value");
   await page.getByLabel("Argument 1 type").selectOption("nat");
-  await page.getByRole("button", { name: "Add argument" }).click();
-  await page.getByLabel("Argument 2 name").fill("value");
-  await page.getByLabel("Argument 2 type").selectOption("nat");
   await page.getByLabel("Result name").fill("result");
   await page.getByLabel("Result type").selectOption("nat");
+  await page.getByRole("button", { name: "Add capture" }).click();
+  await page.getByLabel("Capture 1 key").fill("ignored");
+  await page.getByLabel("Capture 1 type").selectOption("nat");
   await page.getByRole("button", { name: "Create total function" }).click();
 
   await expect(page.getByText(/Created capturedSucc/)).toBeVisible();
@@ -122,8 +122,7 @@ async function removeInitialEntryResultGraph(page: Page) {
 
 async function addCapturedSuccCall(page: Page) {
   await page.getByRole("button", { name: "Add Call" }).click();
-  await expect(page.getByText("1. ignored: Nat")).toBeVisible();
-  await expect(page.getByText("2. value: Nat")).toBeVisible();
+  await expect(page.getByText("1. value: Nat")).toBeVisible();
   await page.getByRole("button", { name: "Create call" }).click();
   await expect(page.getByText(/Created a call to capturedSucc/)).toBeVisible();
 
@@ -200,36 +199,33 @@ test("edits, undoes, redoes, exports, and reloads a referenced Surface function 
     page.getByRole("dialog", { name: "Edit signature" }),
   ).toBeVisible();
   await page.getByLabel("Function name").fill("incrementLater");
-  await page.getByLabel("Parameter 1 name").fill("unused");
-  await page.getByLabel("Parameter 2 name").fill("input");
-  await page.getByLabel("Move parameter 2 up").click();
+  await page.getByLabel("Parameter 1 name").fill("input");
   await page.getByRole("button", { name: "Apply signature" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(
-    page.getByText(/incrementLater\(input: Nat, unused: Nat\)/),
+    page.getByText(/incrementLater\(input: Nat\)/),
   ).toBeVisible();
   await expect(page.getByText(/\d+ undo · 0 redo/)).toBeVisible();
 
   await page.getByRole("button", { name: "Return to entry graph" }).click();
   await page.getByRole("button", { name: "Add Call" }).click();
   await expect(page.getByText("1. input: Nat")).toBeVisible();
-  await expect(page.getByText("2. unused: Nat")).toBeVisible();
   await page.getByRole("button", { name: "Cancel function call" }).click();
   await expect(
     page.locator(
-      'polyline[data-target-node-kind="function"][data-target-port-name="input"]',
+      'polyline[data-target-node-kind="apply"][data-target-port-name="argument"]',
     ),
-  ).toHaveCount(2);
+  ).toHaveCount(1);
   await runAndExpectNat3(page);
 
   await page.getByRole("button", { name: "Undo" }).click();
   await openTemplate(page, templateContainerId);
   await expect(
-    page.getByText(/capturedSucc\(ignored: Nat, value: Nat\)/),
+    page.getByText(/capturedSucc\(value: Nat\)/),
   ).toBeVisible();
   await page.getByRole("button", { name: "Redo" }).click();
   await expect(
-    page.getByText(/incrementLater\(input: Nat, unused: Nat\)/),
+    page.getByText(/incrementLater\(input: Nat\)/),
   ).toBeVisible();
   await page.getByRole("button", { name: "Return to entry graph" }).click();
   await runAndExpectNat3(page);
@@ -242,7 +238,6 @@ test("edits, undoes, redoes, exports, and reloads a referenced Surface function 
   const savedJson = readFileSync(savedPath, "utf8");
   expect(savedJson).toContain('"name": "incrementLater"');
   expect(savedJson).toContain('"name": "input"');
-  expect(savedJson).toContain('"name": "unused"');
 
   const reloaded = await context.newPage();
   const reloadIssues = watchBrowserIssues(reloaded);
@@ -252,7 +247,7 @@ test("edits, undoes, redoes, exports, and reloads a referenced Surface function 
   await reloaded.getByRole("button", { name: "Fit view" }).click();
   await openTemplate(reloaded, templateContainerId);
   await expect(
-    reloaded.getByText(/incrementLater\(input: Nat, unused: Nat\)/),
+    reloaded.getByText(/incrementLater\(input: Nat\)/),
   ).toBeVisible();
   await runAndExpectNat3(reloaded);
 
@@ -275,11 +270,13 @@ test("blocks unsafe signature edits and keeps the function runnable", async ({
 
   await openTemplate(page, templateContainerId);
   await page.getByRole("button", { name: "Edit signature" }).click();
+  await page.getByRole("button", { name: "Add parameter" }).click();
+  await page.getByLabel("Parameter 2 name").fill("spare");
   await page.getByLabel("Remove parameter 1").click();
   await expect(page.getByRole("button", { name: "Apply signature" })).toBeEnabled();
   await page.getByRole("button", { name: "Apply signature" }).click();
   await expect(page.getByRole("alert")).toContainText(
-    'Disconnect 3 connection(s) before removing "ignored".',
+    'Disconnect 2 connection(s) before removing "value".',
   );
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Return to entry graph" }).click();
@@ -292,7 +289,7 @@ test("blocks unsafe signature edits and keeps the function runnable", async ({
   await expect(page.getByRole("button", { name: "Apply signature" })).toBeDisabled();
   await page.keyboard.press("Escape");
   await expect(
-    page.getByText(/capturedSucc\(ignored: Nat, value: Nat\)/),
+    page.getByText(/capturedSucc\(value: Nat\)/),
   ).toBeVisible();
 
   await expectNoBrowserIssues(issues);

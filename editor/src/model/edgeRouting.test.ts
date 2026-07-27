@@ -15,6 +15,87 @@ function element(document: ProjectDocument, id: string): ProjectElement {
   return found;
 }
 
+function withElements(
+  document: ProjectDocument,
+  elements: ProjectElement[],
+  wire: ProjectDocument["geometry"]["wires"][number],
+): ProjectDocument {
+  return {
+    ...document,
+    geometry: {
+      ...document.geometry,
+      elements,
+      wires: [wire],
+    },
+  };
+}
+
+function natNode(
+  id: string,
+  x: number,
+  y: number,
+  width = 96,
+  height = 56,
+): ProjectElement {
+  return {
+    id,
+    kind: "nat_literal",
+    bounds: { x, y, width, height },
+    properties: { value: "2" },
+    portAnchors: [{ port: "value", x: x + width, y: y + height / 2 }],
+  };
+}
+
+function succNode(
+  id: string,
+  x: number,
+  y: number,
+  width = 104,
+  height = 72,
+): ProjectElement {
+  return {
+    id,
+    kind: "succ",
+    bounds: { x, y, width, height },
+    properties: {},
+    portAnchors: [
+      { port: "input", x, y: y + height / 2 },
+      { port: "result", x: x + width, y: y + height / 2 },
+    ],
+  };
+}
+
+function wireBetween(
+  id: string,
+  source: ProjectElement,
+  target: ProjectElement,
+): ProjectDocument["geometry"]["wires"][number] {
+  const sourceAnchor = source.portAnchors.find((anchor) => anchor.port === "value")!;
+  const targetAnchor = target.portAnchors.find((anchor) => anchor.port === "input")!;
+  return {
+    id,
+    points: [sourceAnchor, targetAnchor],
+    sourceHint: {
+      kind: "element_port",
+      elementId: source.id,
+      port: "value",
+    },
+    targetHint: {
+      kind: "element_port",
+      elementId: target.id,
+      port: "input",
+    },
+  };
+}
+
+function routeAfterFirstSegment(points: readonly { x: number; y: number }[]) {
+  return points.slice(1);
+}
+
+function routeBeforeLastSegment(points: readonly { x: number; y: number }[]) {
+  return points.slice(0, -1);
+}
+
 describe("edge routing", () => {
   it("routes around unrelated element obstacles without changing Project JSON points", () => {
     const document = example();
@@ -56,6 +137,45 @@ describe("edge routing", () => {
       { x: 80, y: 70 },
       { x: 120, y: 70 },
     ]);
+  });
+
+  const reverseCases: Array<
+    [string, number, number, number?, number?, number?, number?]
+  > = [
+    ["rightward", 240, 60],
+    ["left-up", -80, 12],
+    ["left-down", -80, 164],
+    ["close reverse", 40, 116],
+    ["different sizes", -120, 160, 160, 88, 72, 112],
+  ];
+
+  it.each(reverseCases)(
+    "routes right output to %s left input through source and target corridors",
+    (_name, targetX, targetY, sourceWidth = 96, sourceHeight = 56, targetWidth = 104, targetHeight = 72) => {
+      const source = natNode("source", 120, 80, sourceWidth, sourceHeight);
+      const target = succNode("target", targetX, targetY, targetWidth, targetHeight);
+      const wire = wireBetween("wire", source, target);
+      const routedDocument = withElements(example(), [source, target], wire);
+
+      const routed = routeWire(routedDocument, wire);
+
+      expect(routed[1]!.x).toBeGreaterThan(routed[0]!.x);
+      expect(routeIntersectsObstacle(routeAfterFirstSegment(routed), source.bounds)).toBe(false);
+      expect(routeIntersectsObstacle(routeBeforeLastSegment(routed), target.bounds)).toBe(false);
+    },
+  );
+
+  it("recalculates reverse routes after moving a node", () => {
+    const source = natNode("source", 220, 40);
+    const target = succNode("target", -60, 140);
+    const wire = wireBetween("wire", source, target);
+    const moved = succNode("target", -120, 210, 144, 96);
+    const routedDocument = withElements(example(), [source, moved], wire);
+
+    const routed = routeWire(routedDocument, wire);
+
+    expect(routeIntersectsObstacle(routeAfterFirstSegment(routed), source.bounds)).toBe(false);
+    expect(routeIntersectsObstacle(routeBeforeLastSegment(routed), moved.bounds)).toBe(false);
   });
 
   it("updates ports and semantic wire endpoints when an element is resized", () => {

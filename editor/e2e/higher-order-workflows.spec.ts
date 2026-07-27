@@ -172,11 +172,11 @@ async function returnToEntry(page: Page, containerId: string) {
 async function createApplyTwice(page: Page) {
   await page.getByRole("button", { name: "Add Function" }).click();
   await page.getByLabel("Function name").fill("applyTwice");
-  await page.getByLabel("Argument 1 name").fill("f");
-  await setNatArrowNat(page, "Argument 1 type");
-  await page.getByRole("button", { name: "Add argument" }).click();
-  await page.getByLabel("Argument 2 name").fill("x");
-  await page.getByLabel("Argument 2 type").selectOption("nat");
+  await page.getByLabel("Argument 1 name").fill("x");
+  await page.getByLabel("Argument 1 type").selectOption("nat");
+  await page.getByRole("button", { name: "Add capture" }).click();
+  await page.getByLabel("Capture 1 key").fill("f");
+  await setNatArrowNat(page, "Capture 1 type");
   await page.getByLabel("Result name").fill("result");
   await page.getByLabel("Result type").selectOption("nat");
   await page.getByRole("button", { name: "Create total function" }).click();
@@ -214,32 +214,7 @@ async function createNatToArrowStepFunction(page: Page) {
     .locator('[data-container-kind="template"][data-template-id="stepArrow"]')
     .getAttribute("data-container-id");
   expect(stepContainerId).not.toBeNull();
-
-  await page.getByRole("button", { name: "Add Function" }).click();
-  await page.getByLabel("Function name").fill("arrowIdentityStep");
-  await page.getByLabel("Argument 1 name").fill("f");
-  await setNatArrowNat(page, "Argument 1 type");
-  await page.getByLabel("Result name").fill("result");
-  await setNatArrowNat(page, "Result type");
-  await page.getByRole("button", { name: "Create total function" }).click();
-  const identityContainerId = await page
-    .locator('[data-container-kind="template"][data-template-id="arrowIdentityStep"]')
-    .getAttribute("data-container-id");
-  expect(identityContainerId).not.toBeNull();
-  await returnToEntry(page, identityContainerId!);
-
-  const identityFunctionId = await byTemplate(page, "arrowIdentityStep")
-    .getAttribute("data-node-id");
-  expect(identityFunctionId).not.toBeNull();
-  await deleteFunctionOutputDrop(page, identityFunctionId!);
-  await page.getByRole("button", { name: "Fit view" }).click();
-  await dragConnect(
-    page,
-    byTemplate(page, "arrowIdentityStep")
-      .locator('[data-port-name="value"][data-port-direction="output"]'),
-    boundaryPort(page, stepContainerId!, "result", "input"),
-  );
-  return { stepContainerId: stepContainerId!, identityContainerId: identityContainerId! };
+  return { stepContainerId: stepContainerId! };
 }
 
 async function rewriteApplyTwiceBody(page: Page, containerId: string) {
@@ -563,8 +538,12 @@ test("authors NatRec with an Arrow accumulator and applies the result", async ({
   await returnToEntry(page, stepContainerId);
   await removeOriginalEntryResult(page);
   await deleteOriginalExampleComputation(page);
-  await deleteFunctionOutputDrop(page, "node_function_1");
-  await deleteFunctionOutputDrop(page, "node_function_2");
+  const incFunctionId = await byTemplate(page, "inc").getAttribute("data-node-id");
+  const stepFunctionId = await byTemplate(page, "stepArrow").getAttribute("data-node-id");
+  expect(incFunctionId).not.toBeNull();
+  expect(stepFunctionId).not.toBeNull();
+  await deleteFunctionOutputDrop(page, incFunctionId!);
+  await deleteFunctionOutputDrop(page, stepFunctionId!);
 
   const natRecId = await addNodeAndGetId(page, "Add NatRec", "nat_rec");
   await element(page, natRecId).click();
@@ -608,7 +587,7 @@ test("authors NatRec with an Arrow accumulator and applies the result", async ({
   );
 
   await page.getByRole("button", { name: "Run" }).click();
-  await expect(page.getByText(/Result:/)).toContainText("Nat(1)");
+  await expect(page.getByText(/Result:/)).toContainText("Nat(0)");
   await expect(page.getByText(/NatRecStart/)).toBeVisible();
 
   const downloadPromise = page.waitForEvent("download");
@@ -622,7 +601,7 @@ test("authors NatRec with an Arrow accumulator and applies the result", async ({
   await reloaded.getByLabel("Open JSON file").setInputFiles(savedPath);
   await expect(reloaded.getByText("natRecArrow.tilefold.json")).toBeVisible();
   await reloaded.getByRole("button", { name: "Run" }).click();
-  await expect(reloaded.getByText(/Result:/)).toContainText("Nat(1)");
+  await expect(reloaded.getByText(/Result:/)).toContainText("Nat(0)");
   await expect(reloaded.getByText(/NatRecStart/)).toBeVisible();
   await expectNoBrowserIssues(issues);
   await expectNoBrowserIssues(reloadIssues);

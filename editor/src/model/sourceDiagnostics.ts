@@ -369,36 +369,36 @@ export function preflightProjectDiagnostics(
     const apply = findCallApply(document, element);
     if (!apply) continue;
     const callContainerId = elementOwnerId(document, element);
-    const captures = surfaceFunction.parameters.slice(0, -1);
-    for (const parameter of captures) {
+    const captures = element.properties.captures;
+    for (const capture of captures) {
       const hint: EndpointHint = {
         kind: "element_port",
         elementId: element.id,
-        port: parameter.name,
+        port: capture.key,
       };
-      if (!portKeys.has(`element:${element.id}:${parameter.name}`)) continue;
+      if (!portKeys.has(`element:${element.id}:${capture.key}`)) continue;
       if (hasIncomingWire(document.geometry.wires, hint)) continue;
       diagnostics.push(
         diagnostic({
-          id: `diag:missing-call-arg:${element.id}:${parameter.name}`,
+          id: `diag:missing-call-arg:${element.id}:${capture.key}`,
           code: "surface.missing-call-argument",
           phase: "surface-validation",
           severity: "error",
-          summary: `Call "${surfaceFunction.name}" is missing a value for argument "${parameter.name}".`,
+          summary: `Call "${surfaceFunction.name}" is missing a value for capture "${capture.key}".`,
           detail: "Connect a value to the named argument port before running.",
           primarySource: {
             kind: "element",
             containerId: callContainerId,
             elementId: element.id,
-            port: parameter.name,
+            port: capture.key,
           },
           relatedSources: callRelatedSources(document, templateId),
-          coreReferences: [`surface-port:${element.id}:${parameter.name}`],
+          coreReferences: [`surface-port:${element.id}:${capture.key}`],
         }),
       );
     }
-    const finalParameter = surfaceFunction.parameters.at(-1);
-    if (finalParameter) {
+    const firstParameter = surfaceFunction.parameters[0];
+    if (firstParameter) {
       const hint: EndpointHint = {
         kind: "element_port",
         elementId: apply.id,
@@ -407,11 +407,11 @@ export function preflightProjectDiagnostics(
       if (!hasIncomingWire(document.geometry.wires, hint)) {
         diagnostics.push(
           diagnostic({
-            id: `diag:missing-call-arg:${apply.id}:${finalParameter.name}`,
+            id: `diag:missing-call-arg:${apply.id}:${firstParameter.name}`,
             code: "surface.missing-call-argument",
             phase: "surface-validation",
             severity: "error",
-            summary: `Call "${surfaceFunction.name}" is missing a value for argument "${finalParameter.name}".`,
+            summary: `Call "${surfaceFunction.name}" is missing a value for argument "${firstParameter.name}".`,
             detail:
               "Connect a value to the final Apply argument before running.",
             primarySource: {

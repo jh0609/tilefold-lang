@@ -241,14 +241,12 @@ describe("editor operations", () => {
     });
     if ("error" in result) throw new Error(result.error);
 
-    expect(result.element.properties.captures).toEqual([
-      { key: "left", type: "nat" },
-    ]);
+    expect(result.element.properties.captures).toEqual([]);
     expect(result.container.kind).toMatchObject({
       kind: "template",
       templateId: "choose_right",
       parameterType: "nat",
-      resultType: "nat",
+      resultType: { arrow: ["nat", "nat"] },
     });
     expect(result.document.surfaceFunctions).toEqual([
       {
@@ -266,6 +264,98 @@ describe("editor operations", () => {
     expect(
       parseProjectJson(exportProjectJson(result.document)).surfaceFunctions,
     ).toEqual(result.document.surfaceFunctions);
+  });
+
+  it("authors one argument without implicit captures", () => {
+    const project = parseProjectJson(exampleJson);
+    const result = addFunctionTemplate(project, "entry", {
+      templateId: "one_arg",
+      parameters: [{ name: "value", type: "nat" }],
+      resultType: "nat",
+    });
+    if ("error" in result) throw new Error(result.error);
+
+    expect(result.element.properties).toMatchObject({
+      parameterType: "nat",
+      resultType: "nat",
+      captures: [],
+    });
+    expect(
+      collectConnectablePorts(result.document).find(
+        (port) =>
+          port.ownerId === result.element.id &&
+          port.name === "value" &&
+          port.direction === "output",
+      )?.type,
+    ).toEqual({ arrow: ["nat", "nat"] });
+  });
+
+  it("keeps arguments and explicit captures separate", () => {
+    const project = parseProjectJson(exampleJson);
+    const result = addFunctionTemplate(project, "entry", {
+      templateId: "with_capture",
+      parameters: [
+        { name: "index", type: "nat" },
+        { name: "previous", type: "nat" },
+      ],
+      resultType: "nat",
+      captures: [{ key: "seed", type: "nat" }],
+    });
+    if ("error" in result) throw new Error(result.error);
+
+    expect(result.element.properties.captures).toEqual([
+      { key: "seed", type: "nat" },
+    ]);
+    expect(result.element.portAnchors.map((anchor) => anchor.port)).toEqual([
+      "seed",
+      "value",
+    ]);
+    expect(result.container.boundaryPorts.filter((port) => port.role === "capture"))
+      .toEqual([
+        expect.objectContaining({
+          role: "capture",
+          captureKey: "seed",
+          type: "nat",
+        }),
+      ]);
+  });
+
+  it("authors isZeroStep as Nat -> Nat -> Nat without capture ports for NatRec.step", () => {
+    const project = parseProjectJson(exampleJson);
+    const result = addFunctionTemplate(project, "entry", {
+      templateId: "isZeroStep",
+      parameters: [
+        { name: "index", type: "nat" },
+        { name: "previous", type: "nat" },
+      ],
+      resultName: "result",
+      resultType: "nat",
+    });
+    if ("error" in result) throw new Error(result.error);
+    const natRec = addElement(result.document, "nat_rec", { x: 500, y: 180 });
+    const document = natRec.document;
+    const ports = collectConnectablePorts(document);
+    const functionValue = ports.find(
+      (port) =>
+        port.ownerId === result.element.id &&
+        port.name === "value" &&
+        port.direction === "output",
+    )!;
+    const step = ports.find(
+      (port) =>
+        port.ownerId === natRec.element.id &&
+        port.name === "step" &&
+        port.direction === "input",
+    )!;
+
+    expect(functionValue.type).toEqual({
+      arrow: ["nat", { arrow: ["nat", "nat"] }],
+    });
+    expect(result.element.properties.captures).toEqual([]);
+    expect(result.element.portAnchors.map((anchor) => anchor.port)).toEqual([
+      "value",
+    ]);
+    expect(step.type).toEqual(functionValue.type);
   });
 
   it("rejects duplicate function names and duplicate argument names", () => {
@@ -413,7 +503,8 @@ describe("editor operations", () => {
           { name: "left", type: "nat" },
           { name: "right", type: "nat" },
         ],
-        captures: [{ key: "left", type: "nat" }],
+        captures: [],
+        resultType: { arrow: ["nat", "nat"] },
       }),
     ]);
 
@@ -424,7 +515,6 @@ describe("editor operations", () => {
     );
     if ("error" in called) throw new Error(called.error);
     expect(called.functionElement.portAnchors.map((anchor) => anchor.port)).toEqual([
-      "left",
       "value",
     ]);
     expect(called.applyElement.portAnchors.map((anchor) => anchor.port)).toEqual([
@@ -454,15 +544,15 @@ describe("editor operations", () => {
           { name: "f", type: functionType },
           { name: "value", type: "nat" },
         ],
-        captures: [{ key: "f", type: functionType }],
+        captures: [],
+        parameterType: functionType,
+        resultType: { arrow: ["nat", "nat"] },
       }),
     ]);
 
     const called = addFunctionCall(authored.document, "entry", "apply_once");
     if ("error" in called) throw new Error(called.error);
-    expect(called.functionElement.properties.captures).toEqual([
-      { key: "f", type: functionType },
-    ]);
+    expect(called.functionElement.properties.captures).toEqual([]);
     expect(
       called.document.geometry.wires.some(
         (wire) =>
@@ -478,7 +568,7 @@ describe("editor operations", () => {
           wire.targetHint.elementId === called.applyElement.id &&
           wire.targetHint.port === "argument",
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("leaves an Arrow final argument unconnected instead of creating a fake literal", () => {
@@ -526,15 +616,8 @@ describe("editor operations", () => {
     }).document;
     const called = addFunctionCall(withoutStarter, "entry", "choose_right");
     if ("error" in called) throw new Error(called.error);
-    const beforeWireIds = called.document.geometry.wires.map((wire) => wire.id);
     const callFunction = called.functionElement;
     const apply = called.applyElement;
-    const oldLeftWire = called.document.geometry.wires.find(
-      (wire) =>
-        wire.targetHint?.kind === "element_port" &&
-        wire.targetHint.elementId === callFunction.id &&
-        wire.targetHint.port === "left",
-    )!;
     const oldRightWire = called.document.geometry.wires.find(
       (wire) =>
         wire.targetHint?.kind === "element_port" &&
@@ -580,34 +663,29 @@ describe("editor operations", () => {
     ).toMatchObject({
       templateId: "choose_right",
       parameterType: "nat",
-      resultType: "nat",
+      resultType: { arrow: ["nat", "nat"] },
     });
     const editedFunction = edited.document.geometry.elements.find(
       (element) => element.id === callFunction.id && element.kind === "function",
     );
     expect(editedFunction?.properties).toMatchObject({
       templateId: "choose_right",
-      captures: [{ key: "ignored", type: "nat" }],
-    });
-    expect(
-      edited.document.geometry.wires.find((wire) => wire.id === oldLeftWire.id)
-        ?.targetHint,
-    ).toEqual({
-      kind: "element_port",
-      elementId: apply.id,
-      port: "argument",
+      parameterType: "nat",
+      resultType: { arrow: ["nat", "nat"] },
+      captures: [],
     });
     expect(
       edited.document.geometry.wires.find((wire) => wire.id === oldRightWire.id)
         ?.targetHint,
-    ).toEqual({
-      kind: "element_port",
-      elementId: callFunction.id,
-      port: "ignored",
-    });
-    expect(edited.document.geometry.wires.map((wire) => wire.id).sort()).toEqual(
-      beforeWireIds.sort(),
-    );
+    ).toBeUndefined();
+    expect(
+      edited.document.geometry.wires.some(
+        (wire) =>
+          wire.targetHint?.kind === "element_port" &&
+          wire.targetHint.elementId === apply.id &&
+          wire.targetHint.port === "argument",
+      ),
+    ).toBe(true);
     expect(() =>
       parseProjectJson(exportProjectJson(edited.document)),
     ).not.toThrow();
@@ -672,7 +750,7 @@ describe("editor operations", () => {
       resultType: "nat",
     });
     expect(removed).toEqual({
-      error: 'Disconnect 2 connection(s) before removing "left".',
+      error: 'Disconnect 1 connection(s) before removing "left".',
     });
 
     const typed = editSurfaceFunctionSignature(authored.document, {
@@ -686,7 +764,7 @@ describe("editor operations", () => {
       resultType: "nat",
     });
     expect(typed).toEqual({
-      error: 'Disconnect 2 connection(s) before changing "left" type.',
+      error: 'Disconnect 1 connection(s) before changing "left" type.',
     });
   });
 
