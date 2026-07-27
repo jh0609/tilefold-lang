@@ -59,6 +59,12 @@ import {
   traceEventAt,
 } from "./model/traceInspector";
 import {
+  diagnosticSourceSelection,
+  preflightProjectDiagnostics,
+  runnerErrorDiagnostic,
+  type SourceDiagnostic,
+} from "./model/sourceDiagnostics";
+import {
   EXAMPLE_PROJECTS,
   exampleProjectById,
   type ExampleProjectId,
@@ -205,12 +211,33 @@ export function App() {
     executionAbort.current = controller;
     setExecutionState({ status: "running" });
     try {
+      const diagnostics = preflightProjectDiagnostics(document);
+      if (diagnostics.length > 0) {
+        if (executionRequest.current !== request) return;
+        setExecutionState({
+          status: "failed",
+          message: `${diagnostics.length} issue${diagnostics.length === 1 ? "" : "s"} must be fixed before running.`,
+          diagnostics,
+        });
+        return;
+      }
       executionBackend.current ??= createBrowserExecutionBackend();
       const projectJson = exportProjectJson(document);
       const response = await executionBackend.current.run(projectJson, {
         signal: controller.signal,
       });
       if (executionRequest.current !== request) return;
+      if (response.status === "error") {
+        setExecutionState({
+          status: "failed",
+          message: "The browser OCaml runner rejected the project.",
+          diagnostics: response.messages.map((message, index) => ({
+            ...runnerErrorDiagnostic(message, response.stage),
+            id: `diag:runner:${response.stage}:${index}`,
+          })),
+        });
+        return;
+      }
       setExecutionState({
         status: "completed",
         response,
@@ -225,6 +252,13 @@ export function App() {
           status: "failed",
           message:
             error instanceof Error ? error.message : "Unknown execution failure.",
+          diagnostics: [
+            runnerErrorDiagnostic(
+              error instanceof Error
+                ? error.message
+                : "Unknown execution failure.",
+            ),
+          ],
         });
       }
     } finally {
@@ -444,6 +478,25 @@ export function App() {
     setViewBox(
       formatViewBox(fitViewBoxToBounds(container.bounds, reference)),
     );
+  }
+
+  function focusDiagnostic(diagnostic: SourceDiagnostic) {
+    const source = diagnostic.primarySource ?? diagnostic.relatedSources[0];
+    const nextSelection = diagnosticSourceSelection(source);
+    if (!source || !nextSelection) return;
+    const container = document.geometry.containers.find(
+      (candidate) => candidate.id === source.containerId,
+    );
+    const reference = parseViewBox(referenceViewBox);
+    if (container && reference) {
+      setHistory((current) => ({
+        ...current,
+        present: { ...current.present, currentContainerId: container.id },
+      }));
+      setViewBox(formatViewBox(fitViewBoxToBounds(container.bounds, reference)));
+    }
+    setSelection(nextSelection);
+    setInspectorError(null);
   }
 
   function addFunction(draft: FunctionTemplateDraft): boolean {
@@ -738,6 +791,7 @@ export function App() {
           state={executionState}
           traceSourceElementId={traceHighlightedElementId}
           onTraceSelect={selectTraceEvent}
+          onDiagnosticSelect={focusDiagnostic}
         />
       </div>
       <StatusBar

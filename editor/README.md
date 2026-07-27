@@ -26,9 +26,10 @@ Project JSON
 → Program_package.run_completed
 ```
 
-The result panel shows the final runtime value and a minimal diagnostic list of
-rewrite index, rule, and subject node. This is not a new public trace
-serialization format. Project JSON never leaves the browser.
+The result panel shows the final runtime value, source-mapped execution
+diagnostics, and a minimal trace list of rewrite index, rule, and subject node.
+This is not a new public trace serialization format. Project JSON never leaves
+the browser.
 
 While execution is active, **Run** becomes **Cancel**. Cancel immediately
 terminates the active Worker, settles the pending request as cancellation, and
@@ -65,6 +66,24 @@ selection and camera-only changes preserve it.
 Trace inspection is not step execution or a new trace protocol. Streaming,
 partial traces, autoplay, filtering, search, breakpoints, and resume remain
 unsupported, and the OCaml Engine and Worker protocol are unchanged.
+
+Failed runs use structured editor diagnostics instead of parsing error strings
+back into graph locations. Before sending a project to the Worker, the editor
+builds a transient lowering source map from Surface elements, ports, wires, and
+boundaries to the Core IDs that lowering will use. Preflight diagnostics
+currently cover missing named Call arguments, incomplete entry or function
+result boundaries, and unconsumed generated Call results. Browser-runner
+failures, including unavailable internal template references, are also wrapped
+in structured diagnostics, but arbitrary OCaml validation and runtime failures
+may still lack a precise Surface source when the Worker does not expose one.
+
+The diagnostics panel is execution state, not project state. Run start clears
+older diagnostics; successful Run removes them; semantic edits, Undo, Redo,
+import, and example changes invalidate them; selection, pan, zoom, Fit, and
+Reset view preserve them. Selecting a diagnostic moves to the referenced entry
+or function workspace and selects the mapped node, boundary, wire, or port
+owner when the source still exists. Diagnostics are never exported to Project
+JSON.
 
 The browser artifact is checked in because static deployment environments may
 provide Node without OCaml. Do not edit `public/tilefold_runner.js` or its
@@ -400,5 +419,5 @@ The next editor layer can add:
 - arbitrary nested Core type editing beyond the current presets;
 - wire bend-point and segment editing;
 - container movement with a specified deterministic group-translation policy;
-- full typed diagnostic presentation;
+- complete source mapping for every OCaml validation and runtime failure;
 - step execution, trace filtering, and trace animation.

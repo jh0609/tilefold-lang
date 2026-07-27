@@ -130,6 +130,33 @@ describe("Tilefold editor UI", () => {
     expect(screen.getByTestId("element-multiplication_natrec")).toBeInTheDocument();
   });
 
+  it("shows source-mapped diagnostics and clears them after a graph edit", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByTestId("wire-wire_result"));
+    await user.click(screen.getByRole("button", { name: "Delete selected" }));
+    await user.click(screen.getByRole("button", { name: "Run" }));
+
+    expect(
+      screen.getByText("1 issue must be fixed before running."),
+    ).toBeInTheDocument();
+    const diagnostic = screen.getByRole("button", {
+      name: /Entry graph does not provide a result value/,
+    });
+    expect(diagnostic).toHaveTextContent("surface.missing-result");
+
+    await user.click(diagnostic);
+    expect(
+      screen.getByRole("heading", { name: "entry_result" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(
+      screen.queryByText("1 issue must be fixed before running."),
+    ).not.toBeInTheDocument();
+  });
+
   it("authors a total Function template and undoes it as one action", async () => {
     const user = userEvent.setup();
     render(<App />);
