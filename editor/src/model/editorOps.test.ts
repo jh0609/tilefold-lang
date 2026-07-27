@@ -6,6 +6,7 @@ import {
   addFunctionTemplate,
   addWire,
   deleteSelection,
+  editSurfaceFunctionSignature,
   findElementOwnerContainer,
   findOpenElementCenter,
   moveElement,
@@ -431,6 +432,188 @@ describe("editor operations", () => {
       "argument",
       "result",
     ]);
+  });
+
+  it("edits a Surface function signature while preserving template identity and call wires", () => {
+    const project = parseProjectJson(exampleJson);
+    const authored = addFunctionTemplate(project, "entry", {
+      templateId: "choose_right",
+      parameters: [
+        { name: "left", type: "nat" },
+        { name: "right", type: "nat" },
+      ],
+      resultName: "selected",
+      resultType: "nat",
+    });
+    if ("error" in authored) throw new Error(authored.error);
+    const withoutStarter = deleteSelection(authored.document, {
+      type: "element",
+      id: authored.element.id,
+    }).document;
+    const called = addFunctionCall(withoutStarter, "entry", "choose_right");
+    if ("error" in called) throw new Error(called.error);
+    const beforeWireIds = called.document.geometry.wires.map((wire) => wire.id);
+    const callFunction = called.functionElement;
+    const apply = called.applyElement;
+    const oldLeftWire = called.document.geometry.wires.find(
+      (wire) =>
+        wire.targetHint?.kind === "element_port" &&
+        wire.targetHint.elementId === callFunction.id &&
+        wire.targetHint.port === "left",
+    )!;
+    const oldRightWire = called.document.geometry.wires.find(
+      (wire) =>
+        wire.targetHint?.kind === "element_port" &&
+        wire.targetHint.elementId === apply.id &&
+        wire.targetHint.port === "argument",
+    )!;
+
+    const edited = editSurfaceFunctionSignature(called.document, {
+      templateId: "choose_right",
+      name: "renamed_choose",
+      parameters: [
+        {
+          originalName: "right",
+          name: "ignored",
+          type: "nat",
+        },
+        {
+          originalName: "left",
+          name: "value",
+          type: "nat",
+        },
+      ],
+      resultName: "answer",
+      resultType: "nat",
+    });
+    if ("error" in edited) throw new Error(edited.error);
+
+    expect(edited.document.surfaceFunctions).toEqual([
+      expect.objectContaining({
+        name: "renamed_choose",
+        templateId: "choose_right",
+        parameters: [
+          { name: "ignored", type: "nat" },
+          { name: "value", type: "nat" },
+        ],
+        result: { name: "answer", type: "nat" },
+      }),
+    ]);
+    expect(
+      edited.document.geometry.containers.find(
+        (container) => container.id === authored.container.id,
+      )?.kind,
+    ).toMatchObject({
+      templateId: "choose_right",
+      parameterType: "nat",
+      resultType: "nat",
+    });
+    const editedFunction = edited.document.geometry.elements.find(
+      (element) => element.id === callFunction.id && element.kind === "function",
+    );
+    expect(editedFunction?.properties).toMatchObject({
+      templateId: "choose_right",
+      captures: [{ key: "ignored", type: "nat" }],
+    });
+    expect(
+      edited.document.geometry.wires.find((wire) => wire.id === oldLeftWire.id)
+        ?.targetHint,
+    ).toEqual({
+      kind: "element_port",
+      elementId: apply.id,
+      port: "argument",
+    });
+    expect(
+      edited.document.geometry.wires.find((wire) => wire.id === oldRightWire.id)
+        ?.targetHint,
+    ).toEqual({
+      kind: "element_port",
+      elementId: callFunction.id,
+      port: "ignored",
+    });
+    expect(edited.document.geometry.wires.map((wire) => wire.id).sort()).toEqual(
+      beforeWireIds.sort(),
+    );
+    expect(() =>
+      parseProjectJson(exportProjectJson(edited.document)),
+    ).not.toThrow();
+  });
+
+  it("adds and safely removes an unconnected argument", () => {
+    const project = parseProjectJson(exampleJson);
+    const authored = addFunctionTemplate(project, "entry", {
+      templateId: "identity",
+      parameters: [{ name: "value", type: "nat" }],
+      resultType: "nat",
+    });
+    if ("error" in authored) throw new Error(authored.error);
+
+    const added = editSurfaceFunctionSignature(authored.document, {
+      templateId: "identity",
+      name: "identity",
+      parameters: [
+        { originalName: "value", name: "value", type: "nat" },
+        { name: "extra", type: "unit" },
+      ],
+      resultName: "result",
+      resultType: "nat",
+    });
+    if ("error" in added) throw new Error(added.error);
+    expect(
+      added.document.surfaceFunctions?.[0]?.parameters.map(
+        (parameter) => parameter.name,
+      ),
+    ).toEqual(["value", "extra"]);
+
+    const removed = editSurfaceFunctionSignature(added.document, {
+      templateId: "identity",
+      name: "identity",
+      parameters: [{ originalName: "value", name: "value", type: "nat" }],
+      resultName: "result",
+      resultType: "nat",
+    });
+    if ("error" in removed) throw new Error(removed.error);
+    expect(removed.document.surfaceFunctions?.[0]?.parameters).toEqual([
+      { name: "value", type: "nat" },
+    ]);
+  });
+
+  it("blocks connected argument removal and type changes without mutating the document", () => {
+    const project = parseProjectJson(exampleJson);
+    const authored = addFunctionTemplate(project, "entry", {
+      templateId: "choose_right",
+      parameters: [
+        { name: "left", type: "nat" },
+        { name: "right", type: "nat" },
+      ],
+      resultType: "nat",
+    });
+    if ("error" in authored) throw new Error(authored.error);
+
+    const removed = editSurfaceFunctionSignature(authored.document, {
+      templateId: "choose_right",
+      name: "choose_right",
+      parameters: [{ originalName: "right", name: "right", type: "nat" }],
+      resultName: "result",
+      resultType: "nat",
+    });
+    expect(removed).toEqual({
+      error: 'Disconnect 2 connection(s) before removing "left".',
+    });
+
+    const typed = editSurfaceFunctionSignature(authored.document, {
+      templateId: "choose_right",
+      name: "choose_right",
+      parameters: [
+        { originalName: "left", name: "left", type: "unit" },
+        { originalName: "right", name: "right", type: "nat" },
+      ],
+      resultName: "result",
+      resultType: "nat",
+    });
+    expect(typed).toEqual({
+      error: 'Disconnect 2 connection(s) before changing "left" type.',
+    });
   });
 
   it("excludes calls that would create a template dependency cycle", () => {

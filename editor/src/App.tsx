@@ -36,6 +36,7 @@ import {
   templateFunctionReferences,
   type AddableElementKind,
   type FunctionTemplateDraft,
+  type SurfaceFunctionSignatureEdit,
 } from "./model/editorOps";
 import type {
   CoreType,
@@ -509,6 +510,17 @@ export function App() {
     return true;
   }
 
+  function editSurfaceFunctionSignature(
+    edit: SurfaceFunctionSignatureEdit,
+  ): boolean {
+    return Boolean(
+      runCommand({
+        type: "edit_surface_function_signature",
+        edit,
+      }),
+    );
+  }
+
   function connectPorts(source: ConnectablePort, target: ConnectablePort) {
     const nextDocument = runCommand({ type: "add_wire", source, target });
     if (!nextDocument) return;
@@ -719,6 +731,7 @@ export function App() {
           onDelete={removeSelected}
           onFocusTemplate={focusTemplate}
           onFocusEntry={focusEntry}
+          onEditSignature={editSurfaceFunctionSignature}
           onError={setInspectorError}
         />
         <ExecutionPanel

@@ -1,12 +1,19 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   Bounds,
   CoreType,
   ProjectDocument,
   ProjectElement,
   Selection,
+  SurfaceFunctionMetadata,
 } from "../model/project";
-import { templateFunctionReferences } from "../model/editorOps";
+import {
+  primitiveCoreType,
+  templateFunctionReferences,
+  validProjectId,
+  type PrimitiveCoreType,
+  type SurfaceFunctionSignatureEdit,
+} from "../model/editorOps";
 import { wireEndpointAvailability } from "../model/portConnections";
 
 interface InspectorProps {
@@ -25,6 +32,7 @@ interface InspectorProps {
   onDelete: () => void;
   onFocusTemplate: (templateId: string) => void;
   onFocusEntry: () => void;
+  onEditSignature: (edit: SurfaceFunctionSignatureEdit) => boolean;
   onError: (error: string | null) => void;
 }
 
@@ -39,6 +47,336 @@ const CORE_TYPE_PRESETS: Array<{ label: string; value: CoreType }> = [
 
 function coreTypeKey(type: CoreType): string {
   return JSON.stringify(type);
+}
+
+interface SignatureParameterRow {
+  draftId: number;
+  originalName?: string;
+  name: string;
+  type: PrimitiveCoreType;
+}
+
+function signatureValidation(
+  document: ProjectDocument,
+  surfaceFunction: SurfaceFunctionMetadata,
+  name: string,
+  parameters: readonly SignatureParameterRow[],
+  resultName: string,
+): Record<string, string> {
+  const errors: Record<string, string> = {};
+  if (!validProjectId(name)) {
+    errors.name =
+      name.trim().length === 0
+        ? "Function name is required"
+        : "Function name must use ASCII letters, digits, underscores, hyphens, or periods.";
+  } else if (
+    document.surfaceFunctions?.some(
+      (candidate) =>
+        candidate.templateId !== surfaceFunction.templateId &&
+        candidate.name === name,
+    )
+  ) {
+    errors.name = `A function named "${name}" already exists`;
+  }
+  if (!validProjectId(resultName)) {
+    errors.resultName =
+      resultName.trim().length === 0
+        ? "Result name is required"
+        : "Result name must use ASCII letters, digits, underscores, hyphens, or periods.";
+  }
+  if (parameters.length === 0) {
+    errors.parameters = "At least one argument is required";
+  }
+  const seen = new Set<string>();
+  parameters.forEach((parameter, index) => {
+    if (!validProjectId(parameter.name)) {
+      errors[`parameter-${parameter.draftId}`] =
+        parameter.name.trim().length === 0
+          ? "Argument name is required"
+          : "Argument name must use ASCII letters, digits, underscores, hyphens, or periods.";
+    }
+    if (seen.has(parameter.name)) {
+      errors.parameters = "Argument names must be unique";
+      errors[`parameter-${parameter.draftId}`] =
+        "Argument names must be unique";
+    }
+    seen.add(parameter.name);
+    if (index === parameters.length - 1 && !primitiveCoreType(parameter.type)) {
+      errors[`parameter-${parameter.draftId}`] =
+        "Only Unit and Nat arguments are supported here.";
+    }
+  });
+  return errors;
+}
+
+function SignatureEditDialog({
+  document,
+  surfaceFunction,
+  onApply,
+  onCancel,
+}: {
+  document: ProjectDocument;
+  surfaceFunction: SurfaceFunctionMetadata;
+  onApply: (edit: SurfaceFunctionSignatureEdit) => boolean;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(surfaceFunction.name);
+  const [parameters, setParameters] = useState<SignatureParameterRow[]>(() =>
+    surfaceFunction.parameters.flatMap((parameter, index) =>
+      primitiveCoreType(parameter.type)
+        ? [
+            {
+              draftId: index + 1,
+              originalName: parameter.name,
+              name: parameter.name,
+              type: parameter.type,
+            },
+          ]
+        : [],
+    ),
+  );
+  const [resultName, setResultName] = useState(surfaceFunction.result.name);
+  const [resultType, setResultType] = useState<PrimitiveCoreType>(
+    primitiveCoreType(surfaceFunction.result.type)
+      ? surfaceFunction.result.type
+      : "unit",
+  );
+  const nextDraftId = useRef(surfaceFunction.parameters.length + 1);
+  const errors = signatureValidation(
+    document,
+    surfaceFunction,
+    name,
+    parameters,
+    resultName,
+  );
+  const hasErrors = Object.keys(errors).length > 0;
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCancel();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onCancel]);
+
+  function updateParameter(
+    draftId: number,
+    patch: Partial<SignatureParameterRow>,
+  ) {
+    setParameters((current) =>
+      current.map((parameter) =>
+        parameter.draftId === draftId ? { ...parameter, ...patch } : parameter,
+      ),
+    );
+  }
+
+  function moveParameter(index: number, delta: -1 | 1) {
+    setParameters((current) => {
+      const next = [...current];
+      const target = index + delta;
+      if (target < 0 || target >= next.length) return current;
+      [next[index], next[target]] = [next[target]!, next[index]!];
+      return next;
+    });
+  }
+
+  return (
+    <div
+      className="signature-dialog-backdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onCancel();
+      }}
+    >
+      <form
+        className="signature-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="signature-dialog-title"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (hasErrors) return;
+          if (
+            onApply({
+              templateId: surfaceFunction.templateId,
+              name,
+              parameters: parameters.map(
+                ({ originalName, name: parameterName, type }) => ({
+                  originalName,
+                  name: parameterName,
+                  type,
+                }),
+              ),
+              resultName,
+              resultType,
+            })
+          ) {
+            onCancel();
+          }
+        }}
+      >
+        <div className="function-authoring-heading">
+          <strong id="signature-dialog-title">Edit signature</strong>
+          <button
+            type="button"
+            aria-label="Cancel signature edit"
+            onClick={onCancel}
+          >
+            ×
+          </button>
+        </div>
+        <label>
+          Function name
+          <input
+            autoFocus
+            value={name}
+            aria-invalid={Boolean(errors.name)}
+            aria-describedby={errors.name ? "signature-name-error" : undefined}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </label>
+        {errors.name && (
+          <p id="signature-name-error" className="inline-error">
+            {errors.name}
+          </p>
+        )}
+        <section className="function-captures">
+          <div className="function-captures-heading">
+            <strong>Arguments</strong>
+            <button
+              type="button"
+              onClick={() =>
+                setParameters((current) => [
+                  ...current,
+                  {
+                    draftId: nextDraftId.current++,
+                    name: `arg_${current.length + 1}`,
+                    type: "nat",
+                  },
+                ])
+              }
+            >
+              Add parameter
+            </button>
+          </div>
+          {parameters.map((parameter, index) => (
+            <div className="function-capture-row" key={parameter.draftId}>
+              <label>
+                <span className="visually-hidden">
+                  Parameter {index + 1} name
+                </span>
+                <input
+                  aria-label={`Parameter ${index + 1} name`}
+                  value={parameter.name}
+                  aria-invalid={Boolean(errors[`parameter-${parameter.draftId}`])}
+                  onChange={(event) =>
+                    updateParameter(parameter.draftId, {
+                      name: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                <span className="visually-hidden">
+                  Parameter {index + 1} type
+                </span>
+                <select
+                  aria-label={`Parameter ${index + 1} type`}
+                  value={parameter.type}
+                  onChange={(event) =>
+                    updateParameter(parameter.draftId, {
+                      type: event.target.value as PrimitiveCoreType,
+                    })
+                  }
+                >
+                  <option value="unit">Unit</option>
+                  <option value="nat">Nat</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                aria-label={`Move parameter ${index + 1} up`}
+                disabled={index === 0}
+                onClick={() => moveParameter(index, -1)}
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                aria-label={`Move parameter ${index + 1} down`}
+                disabled={index === parameters.length - 1}
+                onClick={() => moveParameter(index, 1)}
+              >
+                ↓
+              </button>
+              <button
+                type="button"
+                aria-label={`Remove parameter ${index + 1}`}
+                disabled={parameters.length === 1}
+                onClick={() =>
+                  setParameters((current) =>
+                    current.filter(
+                      (candidate) => candidate.draftId !== parameter.draftId,
+                    ),
+                  )
+                }
+              >
+                ×
+              </button>
+              {errors[`parameter-${parameter.draftId}`] && (
+                <p className="inline-error">
+                  {errors[`parameter-${parameter.draftId}`]}
+                </p>
+              )}
+            </div>
+          ))}
+          {errors.parameters && (
+            <p className="inline-error">{errors.parameters}</p>
+          )}
+        </section>
+        <div className="function-type-fields">
+          <label>
+            Result name
+            <input
+              value={resultName}
+              aria-invalid={Boolean(errors.resultName)}
+              onChange={(event) => setResultName(event.target.value)}
+            />
+          </label>
+          <label>
+            Result type
+            <select
+              value={resultType}
+              onChange={(event) =>
+                setResultType(event.target.value as PrimitiveCoreType)
+              }
+            >
+              <option value="unit">Unit</option>
+              <option value="nat">Nat</option>
+            </select>
+          </label>
+        </div>
+        {errors.resultName && (
+          <p className="inline-error">{errors.resultName}</p>
+        )}
+        <p className="function-authoring-note">
+          Existing connections are preserved by argument identity. Removing or
+          changing the type of a connected argument is blocked.
+        </p>
+        <div className="dialog-actions">
+          <button type="button" onClick={onCancel}>
+            Cancel
+          </button>
+          <button type="submit" className="function-create" disabled={hasErrors}>
+            Apply signature
+          </button>
+        </div>
+      </form>
+    </div>
+  );
 }
 
 function CoreTypeField({
@@ -299,8 +637,11 @@ export function Inspector({
   onDelete,
   onFocusTemplate,
   onFocusEntry,
+  onEditSignature,
   onError,
 }: InspectorProps) {
+  const [editingSignature, setEditingSignature] =
+    useState<SurfaceFunctionMetadata | null>(null);
   let content = (
     <div className="empty-inspector">
       <div className="empty-icon" aria-hidden="true">
@@ -417,6 +758,12 @@ export function Inspector({
               </span>
               <button type="button" onClick={onFocusEntry}>
                 Return to entry graph
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditingSignature(surfaceFunction)}
+              >
+                Edit signature
               </button>
             </section>
           )}
@@ -593,6 +940,14 @@ export function Inspector({
         <p className="inline-error" role="alert">
           {error}
         </p>
+      )}
+      {editingSignature && (
+        <SignatureEditDialog
+          document={document}
+          surfaceFunction={editingSignature}
+          onCancel={() => setEditingSignature(null)}
+          onApply={onEditSignature}
+        />
       )}
     </aside>
   );

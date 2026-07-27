@@ -245,6 +245,94 @@ describe("Tilefold editor UI", () => {
     click.mockRestore();
   });
 
+  it("edits a Surface function signature atomically through the Inspector", async () => {
+    const user = userEvent.setup();
+    let exportedBlob: Blob | undefined;
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn((blob: Blob) => {
+        exportedBlob = blob;
+        return "blob:signature-edit";
+      }),
+      revokeObjectURL: vi.fn(),
+    });
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Add Function" }));
+    await user.clear(screen.getByLabelText("Function name"));
+    await user.type(screen.getByLabelText("Function name"), "rename_me");
+    await user.click(screen.getByRole("button", { name: "Add argument" }));
+    await user.clear(screen.getByLabelText("Argument 1 name"));
+    await user.type(screen.getByLabelText("Argument 1 name"), "left");
+    await user.selectOptions(screen.getByLabelText("Argument 1 type"), "nat");
+    await user.clear(screen.getByLabelText("Argument 2 name"));
+    await user.type(screen.getByLabelText("Argument 2 name"), "right");
+    await user.selectOptions(screen.getByLabelText("Argument 2 type"), "nat");
+    await user.selectOptions(screen.getByLabelText("Result type"), "nat");
+    await user.click(
+      screen.getByRole("button", { name: "Create total function" }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Edit signature" }));
+    expect(
+      screen.getByRole("dialog", { name: "Edit signature" }),
+    ).toBeInTheDocument();
+    await user.clear(screen.getByLabelText("Function name"));
+    await user.type(screen.getByLabelText("Function name"), "renamed");
+    await user.clear(screen.getByLabelText("Parameter 1 name"));
+    await user.type(screen.getByLabelText("Parameter 1 name"), "value");
+    await user.clear(screen.getByLabelText("Parameter 2 name"));
+    await user.type(screen.getByLabelText("Parameter 2 name"), "ignored");
+    await user.click(screen.getByLabelText("Move parameter 2 up"));
+    await user.click(screen.getByRole("button", { name: "Add parameter" }));
+    await user.clear(screen.getByLabelText("Parameter 3 name"));
+    await user.type(screen.getByLabelText("Parameter 3 name"), "extra");
+    await user.selectOptions(screen.getByLabelText("Parameter 3 type"), "unit");
+    await user.click(screen.getByRole("button", { name: "Apply signature" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/renamed\(ignored: "nat", value: "nat", extra: "unit"\)/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/2 undo · 0 redo/)).toBeInTheDocument();
+
+    await user.click(screen.getByTitle("Undo Edit signature for rename_me"));
+    expect(screen.getByText(/rename_me\(left: "nat", right: "nat"\)/)).toBeInTheDocument();
+    await user.click(screen.getByTitle("Redo Edit signature for rename_me"));
+    expect(
+      screen.getByText(/renamed\(ignored: "nat", value: "nat", extra: "unit"\)/),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Export JSON" }));
+    const exported = JSON.parse(await readBlobText(exportedBlob!));
+    expect(exported.surfaceFunctions[0]).toMatchObject({
+      name: "renamed",
+      templateId: "rename_me",
+      parameters: [
+        { name: "ignored", type: "nat" },
+        { name: "value", type: "nat" },
+        { name: "extra", type: "unit" },
+      ],
+    });
+    await user.upload(
+      screen.getByLabelText("Open JSON file"),
+      new File([JSON.stringify(exported)], "signature.tilefold.json", {
+        type: "application/json",
+      }),
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: "template container container_template_1",
+      }),
+    );
+    expect(
+      screen.getByText(/renamed\(ignored: "nat", value: "nat", extra: "unit"\)/),
+    ).toBeInTheDocument();
+    click.mockRestore();
+  });
+
   it("opens a Function template and only deletes it after references are removed", async () => {
     const user = userEvent.setup();
     render(<App />);

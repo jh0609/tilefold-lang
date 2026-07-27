@@ -247,12 +247,24 @@ The compact two-column starter layout keeps capture and argument literals next
 to their consumer. Connecting named arguments in a different visual order does
 not change the canonical lowering because the underlying ports are stable.
 
+Existing named Surface function signatures can be edited from the template
+Inspector. The template ID remains the stable semantic reference while the
+user-facing name, argument labels, argument order, and Unit/Nat result type are
+updated across the body boundaries, Function closure ports, Call Apply nodes,
+and saved `surfaceFunctions` metadata as one Undo/Redo command. Argument
+identity is carried through the edit from the previous argument name, so
+renaming or reordering preserves existing body wires, Call wires, and temporary
+literal values. Adding an argument creates the matching body boundary and Call
+input state deterministically. Removing an argument or changing a connected
+argument/result type is blocked until the user disconnects the affected body or
+Call wiring; the editor does not silently delete those wires or coerce values.
+
 Function names and template IDs use the v1 identifier alphabet and must be
 unique among containers. Generated stable IDs use the normal smallest-unused
 policy. Authoring refuses to expand the host container when doing so would
 overlap another container. The current form intentionally supports only Unit and
 Nat parameters, results, and captures; inferred captures, nested arrow
-authoring, renaming referenced signatures, and source-mapped lowering errors
+authoring, source-mapped lowering errors, and destructive signature migrations
 remain future work.
 
 Pointer positions are transformed through the SVG current transformation matrix

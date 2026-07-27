@@ -154,6 +154,44 @@
   font-size: 11px;
 }
 
+.signature-dialog-backdrop {
+  position: fixed;
+  z-index: 10;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(16 24 40 / 42%);
+}
+
+.signature-dialog {
+  display: grid;
+  width: min(560px, 100%);
+  max-height: min(760px, calc(100vh - 48px));
+  gap: 11px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--bg-panel);
+  box-shadow: 0 24px 60px rgb(16 24 40 / 25%);
+}
+
+.signature-dialog .function-capture-row {
+  grid-template-columns: minmax(0, 1fr) 76px 28px 28px 28px;
+}
+
+.signature-dialog .inline-error {
+  margin: 0;
+  grid-column: 1 / -1;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 @media (max-width: 700px) {
   .inspector {
     border-top: 1px solid var(--border);

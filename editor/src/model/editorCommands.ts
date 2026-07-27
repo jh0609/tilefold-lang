@@ -5,6 +5,7 @@ import {
   addResultBoundary,
   addWire,
   deleteSelection,
+  editSurfaceFunctionSignature,
   moveElement,
   reconnectWireEndpoint,
   resizeOrMoveElement,
@@ -13,6 +14,7 @@ import {
   updateNatValue,
   type AddableElementKind,
   type FunctionTemplateDraft,
+  type SurfaceFunctionSignatureEdit,
 } from "./editorOps";
 import { exportProjectJson, parseProjectJson } from "./importProject";
 import {
@@ -43,6 +45,10 @@ export type EditorCommand =
       type: "add_function_call";
       hostContainerId: string;
       templateId: string;
+    }
+  | {
+      type: "edit_surface_function_signature";
+      edit: SurfaceFunctionSignatureEdit;
     }
   | { type: "add_result_boundary" }
   | { type: "add_wire"; source: ConnectablePort; target: ConnectablePort }
@@ -139,6 +145,23 @@ export function applyEditorCommand(
             error instanceof Error
               ? `New call failed the editor structure check: ${error.message}`
               : "New call failed the editor structure check.",
+        };
+      }
+    }
+    case "edit_surface_function_signature": {
+      const result = editSurfaceFunctionSignature(document, command.edit);
+      if ("error" in result) return { document, error: result.error };
+      try {
+        return {
+          document: parseProjectJson(exportProjectJson(result.document)),
+        };
+      } catch (error) {
+        return {
+          document,
+          error:
+            error instanceof Error
+              ? `Edited signature failed the editor structure check: ${error.message}`
+              : "Edited signature failed the editor structure check.",
         };
       }
     }
@@ -245,6 +268,8 @@ export function editorCommandLabel(command: EditorCommand): string {
       return `Add Function ${command.draft.templateId}`;
     case "add_function_call":
       return `Call ${command.templateId}`;
+    case "edit_surface_function_signature":
+      return `Edit signature for ${command.edit.templateId}`;
     case "add_result_boundary":
       return "Add Result";
     case "add_wire":
@@ -289,6 +314,8 @@ export function isNoOpCommand(command: EditorCommand): boolean {
         ) &&
         coreTypeEqual(command.before.resultType, command.after.resultType)
       );
+    case "edit_surface_function_signature":
+      return false;
     default:
       return false;
   }
