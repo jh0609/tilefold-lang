@@ -44,7 +44,7 @@
   max-width: 165px;
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -52,7 +52,7 @@
 .brand .format-label {
   color: #475467;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 9px;
+  font-size: var(--font-micro);
 }
 
 .toolbar-group {
@@ -67,7 +67,7 @@
   display: grid;
   gap: 1px;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: var(--font-micro);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -82,7 +82,7 @@
   background: var(--bg-panel);
   padding: 4px 28px 4px 8px;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-control);
   font-weight: 600;
   letter-spacing: normal;
   text-transform: none;
@@ -128,7 +128,7 @@
 
 .workspace {
   display: grid;
-  grid-template-columns: 244px minmax(0, 1fr) 320px;
+  grid-template-columns: 268px minmax(0, 1fr) 340px;
   grid-template-rows: minmax(0, 1fr) auto;
   min-height: 0;
 }
@@ -160,14 +160,15 @@
   padding: 12px 18px;
   color: var(--text-muted);
   background: var(--bg-panel);
-  font-size: 11px;
+  font-size: var(--font-caption);
+  line-height: 1.5;
   overflow-wrap: anywhere;
 }
 
 .execution-panel h2 {
   margin: 0 0 8px;
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--font-heading-sm);
 }
 
 .execution-panel p {
@@ -213,7 +214,7 @@
 .trace-inspector h3 {
   margin: 0;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--font-body);
 }
 
 .trace-navigation {
@@ -275,7 +276,7 @@
   color: var(--text-muted);
   background: var(--bg-panel);
   padding: 5px 12px;
-  font-size: 11px;
+  font-size: var(--font-caption);
   white-space: nowrap;
 }
 
@@ -315,6 +316,12 @@
 
   .workspace {
     grid-template-columns: 210px minmax(0, 1fr) 280px;
+  }
+}
+
+@media (max-width: 1180px) and (min-width: 981px) {
+  .workspace {
+    grid-template-columns: 232px minmax(0, 1fr) 300px;
   }
 }
 
