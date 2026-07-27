@@ -7,10 +7,16 @@ interface ElementNodeProps {
   element: ProjectElement;
   selected: boolean;
   traceHighlighted: boolean;
+  ownerContainerId?: string;
   onSelect: () => void;
   onPointerDown: (
     event: ReactPointerEvent<SVGGElement>,
     element: ProjectElement,
+  ) => void;
+  onResizePointerDown: (
+    event: ReactPointerEvent<SVGCircleElement>,
+    element: ProjectElement,
+    handle: ResizeHandle,
   ) => void;
   ports: ConnectablePort[];
   connectionTargetKey: string | null;
@@ -21,6 +27,8 @@ interface ElementNodeProps {
     port: ConnectablePort,
   ) => void;
 }
+
+export type ResizeHandle = "east" | "south" | "south-east";
 
 const KIND_LABELS: Record<ProjectElement["kind"], string> = {
   unit_literal: "Unit",
@@ -101,8 +109,10 @@ export function ElementNode({
   element,
   selected,
   traceHighlighted,
+  ownerContainerId,
   onSelect,
   onPointerDown,
+  onResizePointerDown,
   ports,
   connectionTargetKey,
   compatiblePortKeys,
@@ -120,6 +130,10 @@ export function ElementNode({
       data-testid={`element-${element.id}`}
       data-node-id={element.id}
       data-node-kind={element.kind}
+      data-owner-container-id={ownerContainerId}
+      data-template-id={
+        element.kind === "function" ? element.properties.templateId : undefined
+      }
       data-trace-highlighted={traceHighlighted ? "true" : undefined}
       role="button"
       aria-label={`${KIND_LABELS[element.kind]} element ${element.id}`}
@@ -189,6 +203,30 @@ export function ElementNode({
         >
           {compact ? "SEL" : "SELECTED"}
         </text>
+      )}
+      {selected && (
+        <g className="resize-handles" aria-hidden="false">
+          {[
+            ["east", x + width, y + height / 2],
+            ["south", x + width / 2, y + height],
+            ["south-east", x + width, y + height],
+          ].map(([handle, cx, cy]) => (
+            <circle
+              key={handle}
+              className={`resize-handle ${handle}`}
+              data-testid={`resize-${element.id}-${handle}`}
+              cx={cx as number}
+              cy={cy as number}
+              r={7}
+              role="button"
+              tabIndex={0}
+              aria-label={`Resize ${handle} handle for ${element.id}`}
+              onPointerDown={(event) =>
+                onResizePointerDown(event, element, handle as ResizeHandle)
+              }
+            />
+          ))}
+        </g>
       )}
       {element.portAnchors.map((anchor) => {
         const port = ports.find((candidate) => candidate.name === anchor.port);

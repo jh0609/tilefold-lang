@@ -316,6 +316,33 @@
   pointer-events: none;
 }
 
+.resize-handles {
+  pointer-events: none;
+}
+
+.resize-handle {
+  fill: #ffffff;
+  stroke: var(--select);
+  stroke-width: 2.5;
+  cursor: nwse-resize;
+  pointer-events: all;
+  vector-effect: non-scaling-stroke;
+}
+
+.resize-handle.east {
+  cursor: ew-resize;
+}
+
+.resize-handle.south {
+  cursor: ns-resize;
+}
+
+.resize-handle:focus {
+  outline: none;
+  stroke: #101828;
+  stroke-width: 3.5;
+}
+
 .element-node.compact .selection-badge {
   font-size: 6px;
 }
@@ -373,6 +400,7 @@
   background: rgba(255, 255, 255, 0.91);
   padding: 6px 9px;
   font-size: var(--font-caption);
+  pointer-events: none;
 }
 
 .canvas-hint strong {
@@ -399,6 +427,7 @@
   padding: 4px;
   font-size: var(--font-caption);
   box-shadow: 0 4px 12px rgba(16, 24, 40, 0.08);
+  z-index: 1;
 }
 
 .canvas-hud button {

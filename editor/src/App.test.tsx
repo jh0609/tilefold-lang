@@ -958,14 +958,14 @@ describe("Tilefold editor UI", () => {
     await user.tab();
 
     expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
-      "points",
+      "data-semantic-points",
       "110,70 120,70",
     );
     expect(screen.getByText("1 undo · 0 redo")).toBeInTheDocument();
 
     await user.keyboard("{Control>}z{/Control}");
     expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
-      "points",
+      "data-semantic-points",
       "80,70 120,70",
     );
   });
@@ -997,7 +997,7 @@ describe("Tilefold editor UI", () => {
       clientY: 90,
     });
     expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
-      "points",
+      "data-semantic-points",
       "120,100 120,70",
     );
     fireEvent.pointerUp(screen.getByTestId("project-canvas"), { pointerId: 7 });
@@ -1005,7 +1005,7 @@ describe("Tilefold editor UI", () => {
     expect(screen.getByLabelText("X")).toHaveValue("100");
     expect(screen.getByLabelText("Y")).toHaveValue("90");
     expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
-      "points",
+      "data-semantic-points",
       "120,100 120,70",
     );
   });
@@ -1274,11 +1274,11 @@ describe("Tilefold editor UI", () => {
       clientY: 100,
     });
     expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
-      "points",
+      "data-semantic-points",
       "80,70 160,110",
     );
     expect(screen.getByTestId("wire-wire_result")).toHaveAttribute(
-      "points",
+      "data-semantic-points",
       "200,110 240,70",
     );
     fireEvent.pointerUp(canvas, { pointerId: 70 });
@@ -1286,20 +1286,20 @@ describe("Tilefold editor UI", () => {
 
     await user.keyboard("{Control>}z{/Control}");
     expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
-      "points",
+      "data-semantic-points",
       "80,70 120,70",
     );
     expect(screen.getByTestId("wire-wire_result")).toHaveAttribute(
-      "points",
+      "data-semantic-points",
       "160,70 240,70",
     );
     await user.keyboard("{Control>}y{/Control}");
     expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
-      "points",
+      "data-semantic-points",
       "80,70 160,110",
     );
     expect(screen.getByTestId("wire-wire_result")).toHaveAttribute(
-      "points",
+      "data-semantic-points",
       "200,110 240,70",
     );
   });
@@ -1323,7 +1323,7 @@ describe("Tilefold editor UI", () => {
     });
     expect(screen.getByText("0 undo · 0 redo")).toBeInTheDocument();
     expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
-      "points",
+      "data-semantic-points",
       "80,70 120,70",
     );
   });
@@ -1344,12 +1344,12 @@ describe("Tilefold editor UI", () => {
       clientY: 90,
     });
     expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
-      "points",
+      "data-semantic-points",
       "120,100 120,70",
     );
     await user.keyboard("{Escape}");
     expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
-      "points",
+      "data-semantic-points",
       "80,70 120,70",
     );
     expect(screen.getByText(/0 undo · 0 redo/)).toBeInTheDocument();
@@ -1618,18 +1618,18 @@ describe("Tilefold editor UI", () => {
       screen.getByRole("heading", { name: "wire_nat_succ" }),
     ).toBeInTheDocument();
     expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
-      "points",
+      "data-semantic-points",
       "248,130 120,70",
     );
 
     await user.keyboard("{Control>}z{/Control}");
     expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
-      "points",
+      "data-semantic-points",
       "80,70 120,70",
     );
     await user.keyboard("{Control>}y{/Control}");
     expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
-      "points",
+      "data-semantic-points",
       "248,130 120,70",
     );
 
@@ -1648,7 +1648,7 @@ describe("Tilefold editor UI", () => {
       pointerId: 42,
     });
     expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
-      "points",
+      "data-semantic-points",
       "248,130 276,130",
     );
   });
@@ -1666,7 +1666,7 @@ describe("Tilefold editor UI", () => {
     fireEvent.pointerDown(handle, { pointerId: 51, button: 0 });
     fireEvent.pointerUp(canvas, { pointerId: 51 });
     expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
-      "points",
+      "data-semantic-points",
       original,
     );
     expect(
@@ -1685,7 +1685,7 @@ describe("Tilefold editor UI", () => {
     fireEvent.pointerCancel(canvas, { pointerId: 53 });
     expect(screen.queryByTestId("wire-preview")).not.toBeInTheDocument();
     expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
-      "points",
+      "data-semantic-points",
       original,
     );
   });

@@ -366,10 +366,18 @@ export function App() {
   }
 
   function add(kind: AddableElementKind) {
+    const currentContainer = document.geometry.containers.find(
+      (container) => container.id === document.currentContainerId,
+    );
     const command = {
       type: "add_element",
       kind,
-      center: findOpenElementCenter(document, kind, viewportCenter),
+      center: findOpenElementCenter(
+        document,
+        kind,
+        viewportCenter,
+        currentContainer?.bounds,
+      ),
     } as const;
     const nextDocument = runCommand(command);
     if (!nextDocument) return;
@@ -696,6 +704,22 @@ export function App() {
               id,
               from: { x: element.bounds.x, y: element.bounds.y },
               to: next,
+            });
+          }}
+          onResizeElement={(id, before, after) => {
+            if (
+              before.x === after.x &&
+              before.y === after.y &&
+              before.width === after.width &&
+              before.height === after.height
+            ) {
+              return;
+            }
+            runCommand({
+              type: "resize_or_move_element",
+              id,
+              before,
+              after,
             });
           }}
           onAddWire={connectPorts}

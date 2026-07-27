@@ -881,6 +881,41 @@ describe("editor operations", () => {
     ).toEqual({ x: 320, y: 210 });
   });
 
+  it("keeps new element centers inside the active owner bounds", () => {
+    const project = parseProjectJson(exampleJson);
+    const ownerBounds = { x: 500, y: -120, width: 240, height: 180 };
+
+    const center = findOpenElementCenter(
+      project,
+      "apply",
+      { x: 200, y: 400 },
+      ownerBounds,
+    );
+    const result = addElement(project, "apply", center);
+
+    expect(findElementOwnerContainer({
+      ...result.document,
+      geometry: {
+        ...result.document.geometry,
+        containers: [
+          ...result.document.geometry.containers,
+          {
+            id: "owner",
+            kind: {
+              kind: "template",
+              templateId: "owner_template",
+              parameterType: "nat",
+              resultType: "nat",
+              dependencies: [],
+            },
+            bounds: ownerBounds,
+            boundaryPorts: [],
+          },
+        ],
+      },
+    }, result.element)?.id).toBe("owner");
+  });
+
   it("moves integer bounds, absolute port anchors, and hinted wire endpoints", () => {
     const project = parseProjectJson(exampleJson);
     const result = moveElement(project, "node_nat_2", { x: 101.7, y: 99.2 });
@@ -1095,6 +1130,31 @@ describe("editor operations", () => {
     expect(updateElementType(project, "drop_unit", "nat").error).toContain(
       "wire_parameter",
     );
+  });
+
+  it("connects a function value to an Arrow-typed Copy input", () => {
+    const authored = addFunctionTemplate(parseProjectJson(exampleJson), "entry", {
+      templateId: "inc",
+      parameterType: "nat",
+      resultType: "nat",
+    });
+    if ("error" in authored) throw new Error(authored.error);
+    let project = deleteSelection(authored.document, {
+      type: "element",
+      id: "node_drop_1",
+    }).document;
+    project = addElement(project, "copy", { x: 500, y: 200 }).document;
+    const typed = updateElementType(project, "node_copy_2", {
+      arrow: ["nat", "nat"],
+    });
+    expect(typed.error).toBeUndefined();
+    const ports = collectConnectablePorts(typed.document);
+    const result = addWire(
+      typed.document,
+      ports.find((port) => port.key === "element:node_function_1:value")!,
+      ports.find((port) => port.key === "element:node_copy_2:input")!,
+    );
+    expect("error" in result).toBe(false);
   });
 
   it("adds a deterministic, hinted two-point wire without changing existing data", () => {

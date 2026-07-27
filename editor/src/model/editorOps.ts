@@ -121,13 +121,29 @@ export function findOpenElementCenter(
   document: ProjectDocument,
   kind: AddableElementKind,
   preferredCenter: Point,
+  ownerBounds?: Bounds,
 ): Point {
+  const { width, height } = NEW_ELEMENT_SIZE[kind];
+  const clampToOwner = (center: Point): Point => {
+    if (!ownerBounds) return center;
+    return {
+      x: Math.min(
+        Math.max(center.x, ownerBounds.x + 4 + width / 2),
+        ownerBounds.x + ownerBounds.width - 4 - width / 2,
+      ),
+      y: Math.min(
+        Math.max(center.y, ownerBounds.y + 4 + height / 2),
+        ownerBounds.y + ownerBounds.height - 4 - height / 2,
+      ),
+    };
+  };
   const preferred = {
-    x: Math.round(preferredCenter.x),
-    y: Math.round(preferredCenter.y),
+    x: Math.round(clampToOwner(preferredCenter).x),
+    y: Math.round(clampToOwner(preferredCenter).y),
   };
   const available = (center: Point) => {
     const candidate = newElementBounds(kind, center);
+    if (ownerBounds && !boundsInside(candidate, ownerBounds)) return false;
     return document.geometry.elements.every(
       (element) => !boundsOverlapWithClearance(candidate, element.bounds),
     );
@@ -146,27 +162,26 @@ export function findOpenElementCenter(
   ] as const;
   for (let ring = 1; ring <= ELEMENT_PLACEMENT_RINGS; ring += 1) {
     for (const direction of directions) {
-      const candidate = {
+      const candidate = clampToOwner({
         x: preferred.x + direction.x * ring * ELEMENT_PLACEMENT_STEP.x,
         y: preferred.y + direction.y * ring * ELEMENT_PLACEMENT_STEP.y,
-      };
+      });
       if (available(candidate)) return candidate;
     }
   }
 
-  const { width } = NEW_ELEMENT_SIZE[kind];
   const rightmost = Math.max(
     preferred.x,
     ...document.geometry.elements.map(
       (element) => element.bounds.x + element.bounds.width,
     ),
   );
-  return {
+  return clampToOwner({
     x: Math.round(
       rightmost + ELEMENT_PLACEMENT_CLEARANCE + width / 2,
     ),
     y: preferred.y,
-  };
+  });
 }
 
 export function nextStableId(
@@ -2465,25 +2480,62 @@ export function resizeOrMoveElement(
     (element) => element.id === id,
   );
   if (!current) return document;
-  const dx = nextBounds.x - current.bounds.x;
-  const dy = nextBounds.y - current.bounds.y;
-  return {
+  const scaleX =
+    current.bounds.width === 0 ? 1 : nextBounds.width / current.bounds.width;
+  const scaleY =
+    current.bounds.height === 0 ? 1 : nextBounds.height / current.bounds.height;
+  const resized: ProjectElement = {
+    ...current,
+    bounds: nextBounds,
+    portAnchors: current.portAnchors.map((anchor) => ({
+      ...anchor,
+      x: Math.round(nextBounds.x + (anchor.x - current.bounds.x) * scaleX),
+      y: Math.round(nextBounds.y + (anchor.y - current.bounds.y) * scaleY),
+    })),
+  };
+  const elements = document.geometry.elements.map((element) =>
+    element.id === id ? resized : element,
+  );
+  const resizedDocument: ProjectDocument = {
     ...document,
     geometry: {
       ...document.geometry,
-      elements: document.geometry.elements.map((element) =>
-        element.id === id
-          ? {
-              ...element,
-              bounds: nextBounds,
-              portAnchors: element.portAnchors.map((anchor) => ({
-                ...anchor,
-                x: anchor.x + dx,
-                y: anchor.y + dy,
-              })),
-            }
-          : element,
-      ),
+      elements,
+    },
+  };
+  const wires: ProjectWire[] = [];
+  for (const wire of document.geometry.wires) {
+    const sourceChanges = hintReferencesElementPort(wire.sourceHint, id);
+    const targetChanges = hintReferencesElementPort(wire.targetHint, id);
+    if (!sourceChanges && !targetChanges) {
+      wires.push(wire);
+      continue;
+    }
+    if (wire.points.length < 2) {
+      wires.push(wire);
+      continue;
+    }
+    const points = wire.points.map((point) => ({ ...point }));
+    if (sourceChanges) {
+      const port = resolveEndpointHint(resizedDocument, wire.sourceHint);
+      if (port) points[0] = { x: Math.round(port.anchor.x), y: Math.round(port.anchor.y) };
+    }
+    if (targetChanges) {
+      const port = resolveEndpointHint(resizedDocument, wire.targetHint);
+      if (port) {
+        points[points.length - 1] = {
+          x: Math.round(port.anchor.x),
+          y: Math.round(port.anchor.y),
+        };
+      }
+    }
+    wires.push({ ...wire, points });
+  }
+  return {
+    ...resizedDocument,
+    geometry: {
+      ...resizedDocument.geometry,
+      wires,
     },
   };
 }
