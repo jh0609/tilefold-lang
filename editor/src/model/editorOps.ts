@@ -328,6 +328,12 @@ function normalizeFunctionDraft(
   };
 }
 
+export type ContainerResizeHandle =
+  | "north-west"
+  | "north-east"
+  | "south-west"
+  | "south-east";
+
 function curriedResultType(
   parameters: readonly FunctionParameterDraft[],
   resultType: CoreType,
@@ -655,7 +661,13 @@ export function addFunctionTemplate(
     id: hostDropId,
     kind: "drop",
     bounds: hostDropBounds,
-    properties: { type: functionType },
+    properties: {
+      type: functionType,
+      provenance: {
+        kind: "auto_function_output_drop",
+        sourceElementId: functionElement.id,
+      },
+    },
     portAnchors: [
       {
         port: "input",
@@ -2590,7 +2602,10 @@ export function addWire(
   source: ConnectablePort,
   target: ConnectablePort,
 ): { document: ProjectDocument; wire: ProjectWire } | { error: string } {
-  const validation = validateConnection(document, source, target);
+  const autoDrop = findReplaceableAutoDrop(document, source);
+  const validation = validateConnection(document, source, target, {
+    excludeWireId: autoDrop?.wire.id,
+  });
   if ("error" in validation) return validation;
   const wire: ProjectWire = {
     id: nextStableId(document, "wire_"),
@@ -2613,10 +2628,65 @@ export function addWire(
       ...document,
       geometry: {
         ...document.geometry,
-        wires: [...document.geometry.wires, wire],
+        elements: autoDrop
+          ? document.geometry.elements.filter(
+              (element) => element.id !== autoDrop.drop.id,
+            )
+          : document.geometry.elements,
+        wires: [
+          ...document.geometry.wires.filter(
+            (candidate) => candidate.id !== autoDrop?.wire.id,
+          ),
+          wire,
+        ],
       },
     },
   };
+}
+
+function findReplaceableAutoDrop(
+  document: ProjectDocument,
+  source: ConnectablePort,
+): { drop: Extract<ProjectElement, { kind: "drop" }>; wire: ProjectWire } | null {
+  if (source.hint.kind !== "element_port") return null;
+  const outgoing = document.geometry.wires.filter((wire) =>
+    endpointHintEqual(wire.sourceHint, source.hint),
+  );
+  if (outgoing.length !== 1) return null;
+  const wire = outgoing[0]!;
+  const targetHint = wire.targetHint;
+  if (targetHint?.kind !== "element_port" || targetHint.port !== "input") {
+    return null;
+  }
+  const drop = document.geometry.elements.find(
+    (element): element is Extract<ProjectElement, { kind: "drop" }> =>
+      element.id === targetHint.elementId && element.kind === "drop",
+  );
+  if (!drop) return null;
+  const provenance = drop.properties.provenance;
+  if (
+    !provenance ||
+    provenance.kind !== "auto_function_output_drop" ||
+    provenance.sourceElementId !== source.hint.elementId
+  ) {
+    return null;
+  }
+  const references = document.geometry.wires.filter(
+    (candidate) =>
+      candidate.id !== wire.id &&
+      (hintReferencesElementPort(candidate.sourceHint, drop.id) ||
+        hintReferencesElementPort(candidate.targetHint, drop.id)),
+  );
+  if (references.length > 0) return null;
+  if (!coreTypeEqual(source.type, drop.properties.type)) return null;
+  return { drop, wire };
+}
+
+export function replaceableAutoDropWireId(
+  document: ProjectDocument,
+  source: ConnectablePort,
+): string | undefined {
+  return findReplaceableAutoDrop(document, source)?.wire.id;
 }
 
 export function reconnectWireEndpoint(
@@ -2866,6 +2936,125 @@ export function resizeOrMoveElement(
     geometry: {
       ...resizedDocument.geometry,
       wires,
+    },
+  };
+}
+
+const CONTAINER_MIN_WIDTH = 220;
+const CONTAINER_MIN_HEIGHT = 140;
+const CONTAINER_PADDING = 24;
+
+function childContentBounds(
+  document: ProjectDocument,
+  container: ProjectContainer,
+): Bounds | null {
+  const childBounds = document.geometry.elements
+    .filter((element) => findElementOwnerContainer(document, element)?.id === container.id)
+    .map((element) => element.bounds);
+  const boundaryPoints = container.boundaryPorts.map((boundary) =>
+    boundaryAbsolutePoint(container, boundary),
+  );
+  const xs = [
+    ...childBounds.flatMap((bounds) => [bounds.x, bounds.x + bounds.width]),
+    ...boundaryPoints.map((point) => point.x),
+  ];
+  const ys = [
+    ...childBounds.flatMap((bounds) => [bounds.y, bounds.y + bounds.height]),
+    ...boundaryPoints.map((point) => point.y),
+  ];
+  if (xs.length === 0 || ys.length === 0) return null;
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+export function resizeContainerBounds(
+  document: ProjectDocument,
+  id: string,
+  handle: ContainerResizeHandle,
+  proposed: Bounds,
+): Bounds {
+  const current = document.geometry.containers.find((container) => container.id === id);
+  if (!current) return proposed;
+  const content = childContentBounds(document, current);
+  let left = Math.round(proposed.x);
+  let top = Math.round(proposed.y);
+  let right = Math.round(proposed.x + proposed.width);
+  let bottom = Math.round(proposed.y + proposed.height);
+
+  if (handle === "north-west" || handle === "south-west") {
+    left = Math.min(left, right - CONTAINER_MIN_WIDTH);
+    if (content) left = Math.min(left, content.x - CONTAINER_PADDING);
+  } else {
+    right = Math.max(right, left + CONTAINER_MIN_WIDTH);
+    if (content) {
+      right = Math.max(
+        right,
+        content.x + content.width + CONTAINER_PADDING,
+      );
+    }
+  }
+  if (handle === "north-west" || handle === "north-east") {
+    top = Math.min(top, bottom - CONTAINER_MIN_HEIGHT);
+    if (content) top = Math.min(top, content.y - CONTAINER_PADDING);
+  } else {
+    bottom = Math.max(bottom, top + CONTAINER_MIN_HEIGHT);
+    if (content) {
+      bottom = Math.max(
+        bottom,
+        content.y + content.height + CONTAINER_PADDING,
+      );
+    }
+  }
+  return {
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
+  };
+}
+
+export function resizeContainer(
+  document: ProjectDocument,
+  id: string,
+  handle: ContainerResizeHandle,
+  nextBounds: Bounds,
+): ProjectDocument {
+  const current = document.geometry.containers.find((container) => container.id === id);
+  if (!current) return document;
+  const bounds = resizeContainerBounds(document, id, handle, nextBounds);
+  const scaleX =
+    current.bounds.width === 0 ? 1 : bounds.width / current.bounds.width;
+  const scaleY =
+    current.bounds.height === 0 ? 1 : bounds.height / current.bounds.height;
+  const resized: ProjectContainer = {
+    ...current,
+    bounds,
+    boundaryPorts: current.boundaryPorts.map((boundary) => ({
+      ...boundary,
+      anchor: {
+        x: Math.round(boundary.anchor.x * scaleX),
+        y: Math.round(boundary.anchor.y * scaleY),
+      },
+    })),
+  };
+  const containers = document.geometry.containers.map((container) =>
+    container.id === id ? resized : container,
+  );
+  const resizedDocument: ProjectDocument = {
+    ...document,
+    geometry: {
+      ...document.geometry,
+      containers,
+    },
+  };
+  return {
+    ...resizedDocument,
+    geometry: {
+      ...resizedDocument.geometry,
+      wires: updateBoundaryWireEndpoints(resizedDocument.geometry.wires, resized),
     },
   };
 }

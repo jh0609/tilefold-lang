@@ -121,6 +121,72 @@ let () =
     | _ -> assert false
   in
   ignore (decode (Yojson.Safe.to_string with_surface_metadata));
+  let with_drop_provenance =
+    Yojson.Safe.from_string (P.encode_json project)
+    |> function
+    | `Assoc fields ->
+        let geometry =
+          match List.assoc "geometry" fields with
+          | `Assoc geometry_fields ->
+              let elements =
+                match List.assoc "elements" geometry_fields with
+                | `List values ->
+                    let patched = ref false in
+                    `List
+                      (List.map
+                         (function
+                           | `Assoc element_fields
+                             when (not !patched)
+                                  && List.assoc_opt "kind" element_fields
+                                     = Some (`String "drop") ->
+                               patched := true;
+                               let properties =
+                                 match List.assoc "properties" element_fields with
+                                 | `Assoc property_fields ->
+                                     `Assoc
+                                       (property_fields
+                                       @ [
+                                           ( "provenance",
+                                             `Assoc
+                                               [
+                                                 ( "kind",
+                                                   `String
+                                                     "auto_function_output_drop"
+                                                 );
+                                                 ( "sourceElementId",
+                                                   `String "node_function_1" );
+                                               ] );
+                                         ])
+                                 | value -> value
+                               in
+                               `Assoc
+                                 (List.map
+                                    (fun (name, value) ->
+                                      if String.equal name "properties" then
+                                        (name, properties)
+                                      else (name, value))
+                                    element_fields)
+                           | value -> value)
+                         values)
+                | value -> value
+              in
+              `Assoc
+                (List.map
+                   (fun (name, value) ->
+                     if String.equal name "elements" then (name, elements)
+                     else (name, value))
+                   geometry_fields)
+          | value -> value
+        in
+        `Assoc
+          (List.map
+             (fun (name, value) ->
+               if String.equal name "geometry" then (name, geometry)
+               else (name, value))
+             fields)
+    | _ -> assert false
+  in
+  ignore (decode (Yojson.Safe.to_string with_drop_provenance));
   let raw =
     match P.to_raw_scene checked with
     | Ok value -> value

@@ -24,6 +24,22 @@ interface Segment {
   b: Point;
 }
 
+export type RouteMode =
+  | "straight"
+  | "direct-corridor"
+  | "direct-orthogonal"
+  | "lane"
+  | "body-clear-lane"
+  | "body-clear-direct"
+  | "fallback";
+
+export interface RoutedWire {
+  points: Point[];
+  mode: RouteMode;
+  fallbackReason?: string;
+  cost: number;
+}
+
 function inflated(bounds: Bounds, margin: number, elementId: string): Rect {
   return {
     x1: bounds.x - margin,
@@ -131,6 +147,41 @@ function simplify(points: Point[]): Point[] {
   return result;
 }
 
+function removeCollinearBacktracking(
+  points: Point[],
+  preserveEndpointCorridors: boolean,
+): Point[] {
+  const result = [...points];
+  for (let index = 1; index < result.length - 1; index += 1) {
+    if (
+      preserveEndpointCorridors &&
+      (index === 1 || index === result.length - 2)
+    ) {
+      continue;
+    }
+    const a = result[index - 1]!;
+    const b = result[index]!;
+    const c = result[index + 1]!;
+    if (a.y === b.y && b.y === c.y) {
+      const first = Math.sign(b.x - a.x);
+      const second = Math.sign(c.x - b.x);
+      if (first !== 0 && second !== 0 && first !== second) {
+        result.splice(index, 1);
+        return result;
+      }
+    }
+    if (a.x === b.x && b.x === c.x) {
+      const first = Math.sign(b.y - a.y);
+      const second = Math.sign(c.y - b.y);
+      if (first !== 0 && second !== 0 && first !== second) {
+        result.splice(index, 1);
+        return result;
+      }
+    }
+  }
+  return result;
+}
+
 function dedupe(points: Point[]): Point[] {
   const result: Point[] = [];
   for (const point of points) {
@@ -163,10 +214,18 @@ function removeDeadBranches(points: Point[]): Point[] {
   return result;
 }
 
-function normalizePath(points: Point[]): Point[] {
+function normalizePath(
+  points: Point[],
+  preserveEndpointCorridors = true,
+): Point[] {
   let current = dedupe(points);
   while (true) {
-    const next = simplify(removeDeadBranches(current));
+    const next = simplify(
+      removeCollinearBacktracking(
+        removeDeadBranches(current),
+        preserveEndpointCorridors,
+      ),
+    );
     if (
       next.length === current.length &&
       next.every((point, index) => samePoint(point, current[index]!))
@@ -175,6 +234,10 @@ function normalizePath(points: Point[]): Point[] {
     }
     current = next;
   }
+}
+
+export function normalizeRouteForTest(points: Point[]): Point[] {
+  return normalizePath(points, false);
 }
 
 function pathSegments(points: readonly Point[]): Segment[] {
@@ -320,6 +383,49 @@ function routeConflictCost(
   return cost;
 }
 
+function bendCount(points: readonly Point[]): number {
+  let bends = 0;
+  for (let index = 2; index < points.length; index += 1) {
+    const a = points[index - 2]!;
+    const b = points[index - 1]!;
+    const c = points[index]!;
+    if ((a.x === b.x && b.y === c.y) || (a.y === b.y && b.x === c.x)) {
+      bends += 1;
+    }
+  }
+  return bends;
+}
+
+function backtrackingDistance(points: readonly Point[], source: Point, target: Point): number {
+  const desiredX = Math.sign(target.x - source.x);
+  const desiredY = Math.sign(target.y - source.y);
+  let distance = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    const a = points[index - 1]!;
+    const b = points[index]!;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    if (desiredX !== 0 && Math.sign(dx) === -desiredX) distance += Math.abs(dx);
+    if (desiredY !== 0 && Math.sign(dy) === -desiredY) distance += Math.abs(dy);
+  }
+  return distance;
+}
+
+function boundingBoxExcursion(points: readonly Point[], source: Point, target: Point): number {
+  const left = Math.min(source.x, target.x);
+  const right = Math.max(source.x, target.x);
+  const top = Math.min(source.y, target.y);
+  const bottom = Math.max(source.y, target.y);
+  let excursion = 0;
+  for (const point of points) {
+    if (point.x < left) excursion += left - point.x;
+    if (point.x > right) excursion += point.x - right;
+    if (point.y < top) excursion += top - point.y;
+    if (point.y > bottom) excursion += point.y - bottom;
+  }
+  return excursion;
+}
+
 function referenceSegmentsForWire(
   document: ProjectDocument,
   wire: ProjectWire,
@@ -356,6 +462,8 @@ function referenceSegments(
 
 function routeCost(
   points: readonly Point[],
+  source: Point,
+  target: Point,
   references: readonly Segment[] = [],
 ): number {
   let length = 0;
@@ -364,7 +472,14 @@ function routeCost(
       Math.abs(points[index]!.x - points[index - 1]!.x) +
       Math.abs(points[index]!.y - points[index - 1]!.y);
   }
-  return length + points.length * 6 + routeConflictCost(points, references);
+  return (
+    length +
+    bendCount(points) * 24 +
+    backtrackingDistance(points, source, target) * 8 +
+    boundingBoxExcursion(points, source, target) * 2 +
+    points.length * 6 +
+    routeConflictCost(points, references)
+  );
 }
 
 function horizontalSegmentIntersectsRect(
@@ -427,13 +542,21 @@ function endpointCorridorPoint(
   };
 }
 
-export function routeWire(
+export function routeWireDetailed(
   document: ProjectDocument,
   wire: ProjectWire,
-): Point[] {
+): RoutedWire {
   const source = endpointPoint(document, wire, "source");
   const target = endpointPoint(document, wire, "target");
-  if (!source || !target) return wire.points.map((point) => ({ ...point }));
+  if (!source || !target) {
+    const points = normalizePath(wire.points.map((point) => ({ ...point })));
+    return {
+      points,
+      mode: "fallback",
+      fallbackReason: "unresolved-endpoint",
+      cost: Number.POSITIVE_INFINITY,
+    };
+  }
 
   const sourceElementId = endpointElementId(wire, "source");
   const targetElementId = endpointElementId(wire, "target");
@@ -473,7 +596,11 @@ export function routeWire(
         rect.elementId !== sourceElementId && rect.elementId !== targetElementId,
     );
     if (isClear(straight, unrelatedObstacles) && routeConflictCost(straight, references) === 0) {
-      return straight;
+      return {
+        points: straight,
+        mode: "straight",
+        cost: routeCost(straight, source, target, references),
+      };
     }
   }
 
@@ -483,7 +610,11 @@ export function routeWire(
     isClearRoutedPath(straight, obstacles, sourceElementId, targetElementId) &&
     routeConflictCost(straight, references) === 0
   ) {
-    return straight;
+    return {
+      points: straight,
+      mode: "direct-corridor",
+      cost: routeCost(straight, source, target, references),
+    };
   }
   const clearSourceExit = clearHorizontalExit(sourceExit, sourceDirection, obstacles);
   const clearTargetEntry = clearHorizontalExit(targetEntry, targetDirection, obstacles);
@@ -501,41 +632,79 @@ export function routeWire(
     isClearRoutedPath(direct, obstacles, sourceElementId, targetElementId) &&
     routeConflictCost(direct, references) === 0
   ) {
-    return direct;
+    return {
+      points: direct,
+      mode: "direct-orthogonal",
+      cost: routeCost(direct, source, target, references),
+    };
   }
 
   const lanes = new Set<number>([source.y, target.y]);
+  const xLanes = new Set<number>([clearSourceExit.x, clearTargetEntry.x]);
   for (const element of document.geometry.elements) {
     lanes.add(element.bounds.y - ROUTE_MARGIN);
     lanes.add(element.bounds.y + element.bounds.height + ROUTE_MARGIN);
   }
-  const candidates = [...lanes]
+  for (const rect of obstacles) {
+    xLanes.add(rect.x1 - 1);
+    xLanes.add(rect.x2 + 1);
+  }
+  const sortedLanes = [...lanes]
     .sort(
       (left, right) =>
         Math.abs(left - source.y) +
           Math.abs(left - target.y) -
           (Math.abs(right - source.y) + Math.abs(right - target.y)) ||
         left - right,
-    )
-    .map((lane) =>
-      normalizePath([
+    );
+  const sortedXLanes = [...xLanes].sort(
+    (left, right) =>
+      Math.abs(left - clearSourceExit.x) +
+        Math.abs(left - clearTargetEntry.x) -
+        (Math.abs(right - clearSourceExit.x) +
+          Math.abs(right - clearTargetEntry.x)) ||
+      left - right,
+  );
+  const candidateKeys = new Set<string>();
+  const candidates: Point[][] = [];
+  for (const lane of sortedLanes) {
+    for (const xLane of sortedXLanes) {
+      const candidate = normalizePath([
         source,
         sourceExit,
         clearSourceExit,
-        { x: clearSourceExit.x, y: lane },
+        { x: xLane, y: clearSourceExit.y },
+        { x: xLane, y: lane },
         { x: clearTargetEntry.x, y: lane },
         clearTargetEntry,
         targetEntry,
         target,
-      ]),
-    );
+      ]);
+      const key = candidate.map((point) => `${point.x},${point.y}`).join(";");
+      if (!candidateKeys.has(key)) {
+        candidateKeys.add(key);
+        candidates.push(candidate);
+      }
+    }
+  }
 
   const marginClearCandidates = candidates
     .filter((candidate) =>
       isClearRoutedPath(candidate, obstacles, sourceElementId, targetElementId),
     )
-    .sort((left, right) => routeCost(left, references) - routeCost(right, references));
-  if (marginClearCandidates[0]) return marginClearCandidates[0];
+    .sort(
+      (left, right) =>
+        routeCost(left, source, target, references) -
+        routeCost(right, source, target, references),
+    );
+  if (marginClearCandidates[0]) {
+    const points = marginClearCandidates[0];
+    return {
+      points,
+      mode: "lane",
+      cost: routeCost(points, source, target, references),
+    };
+  }
 
   const bodyClearCandidates = candidates
     .filter((candidate) =>
@@ -546,14 +715,50 @@ export function routeWire(
         targetElementId,
       ),
     )
-    .sort((left, right) => routeCost(left, references) - routeCost(right, references));
-  if (bodyClearCandidates[0]) return bodyClearCandidates[0];
-
-  if (isClearRoutedPath(direct, bodyObstacles, sourceElementId, targetElementId)) {
-    return direct;
+    .sort(
+      (left, right) =>
+        routeCost(left, source, target, references) -
+        routeCost(right, source, target, references),
+    );
+  if (bodyClearCandidates[0]) {
+    const points = bodyClearCandidates[0];
+    return {
+      points,
+      mode: "body-clear-lane",
+      fallbackReason: "margin-obstacles-blocked",
+      cost: routeCost(points, source, target, references),
+    };
   }
 
-  return normalizePath([source, sourceExit, targetEntry, target]);
+  if (isClearRoutedPath(direct, bodyObstacles, sourceElementId, targetElementId)) {
+    return {
+      points: direct,
+      mode: "body-clear-direct",
+      fallbackReason: "margin-obstacles-blocked",
+      cost: routeCost(direct, source, target, references),
+    };
+  }
+
+  const fallback = normalizePath([
+    source,
+    sourceExit,
+    { x: targetEntry.x, y: sourceExit.y },
+    targetEntry,
+    target,
+  ]);
+  return {
+    points: fallback,
+    mode: "fallback",
+    fallbackReason: "no-clear-orthogonal-candidate",
+    cost: routeCost(fallback, source, target, references),
+  };
+}
+
+export function routeWire(
+  document: ProjectDocument,
+  wire: ProjectWire,
+): Point[] {
+  return routeWireDetailed(document, wire).points;
 }
 
 export function elementObstacleBounds(element: ProjectElement): Bounds {

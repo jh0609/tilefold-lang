@@ -124,6 +124,19 @@ function pathHitsRect(
   );
 }
 
+async function containerRect(locator: Locator) {
+  return locator.evaluate((node) => {
+    const rect = node.querySelector("rect");
+    if (!(rect instanceof SVGRectElement)) throw new Error("missing container");
+    return {
+      x: Number(rect.getAttribute("x")),
+      y: Number(rect.getAttribute("y")),
+      width: Number(rect.getAttribute("width")),
+      height: Number(rect.getAttribute("height")),
+    };
+  });
+}
+
 function pointKey(point: { x: number; y: number }) {
   return `${point.x},${point.y}`;
 }
@@ -201,6 +214,56 @@ test("keeps resize geometry, ports, wires, undo, and import in sync", async ({
     "data-semantic-points",
     `80,70 ${input.x},${input.y}`,
   );
+  await expectNoBrowserIssues(issues);
+});
+
+test("resizes selected graph containers from corner handles and persists geometry", async ({
+  page,
+}, testInfo) => {
+  const issues = watchBrowserIssues(page);
+  await page.goto("/");
+
+  const entry = page.locator('g.container-shape[data-container-id="entry"]');
+  await entry.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("container-entry-resize-north-west")).toBeVisible();
+  await expect(page.getByTestId("container-entry-resize-north-east")).toBeVisible();
+  await expect(page.getByTestId("container-entry-resize-south-west")).toBeVisible();
+  await expect(page.getByTestId("container-entry-resize-south-east")).toBeVisible();
+
+  const succBefore = await svgRect(element(page, "node_succ"));
+  const before = await containerRect(entry);
+  await dragBy(page, page.getByTestId("container-entry-resize-south-east"), 120, 90);
+  const expanded = await containerRect(entry);
+  expect(expanded.x).toBe(before.x);
+  expect(expanded.y).toBe(before.y);
+  expect(expanded.width).toBeGreaterThan(before.width);
+  expect(expanded.height).toBeGreaterThan(before.height);
+  expect(await svgRect(element(page, "node_succ"))).toEqual(succBefore);
+
+  await dragBy(page, page.getByTestId("container-entry-resize-north-west"), -40, -30);
+  const movedOrigin = await containerRect(entry);
+  expect(movedOrigin.x).toBeLessThan(expanded.x);
+  expect(movedOrigin.y).toBeLessThan(expanded.y);
+  expect(movedOrigin.x + movedOrigin.width).toBe(expanded.x + expanded.width);
+  expect(movedOrigin.y + movedOrigin.height).toBe(expanded.y + expanded.height);
+  expect(await svgRect(element(page, "node_succ"))).toEqual(succBefore);
+
+  await dragBy(page, page.getByTestId("container-entry-resize-south-east"), -1000, -1000);
+  const clamped = await containerRect(entry);
+  const succ = await svgRect(element(page, "node_succ"));
+  expect(clamped.x + clamped.width).toBeGreaterThan(succ.x + succ.width);
+  expect(clamped.y + clamped.height).toBeGreaterThan(succ.y + succ.height);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export JSON" }).click();
+  const download = await downloadPromise;
+  const savedPath = testInfo.outputPath("container-resize.tilefold.json");
+  await download.saveAs(savedPath);
+  const beforeReload = await containerRect(entry);
+  await page.reload();
+  await page.getByLabel("Open JSON file").setInputFiles(savedPath);
+  expect(await containerRect(entry)).toEqual(beforeReload);
   await expectNoBrowserIssues(issues);
 });
 

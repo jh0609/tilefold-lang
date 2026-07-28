@@ -54,6 +54,28 @@
   stroke-width: 4;
 }
 
+.container-resize-handle {
+  fill: #ffffff;
+  stroke: var(--select);
+  stroke-width: 2.5;
+  pointer-events: all;
+  vector-effect: non-scaling-stroke;
+}
+
+.container-resize-handle.nwse {
+  cursor: nwse-resize;
+}
+
+.container-resize-handle.nesw {
+  cursor: nesw-resize;
+}
+
+.container-resize-handle:focus-visible {
+  outline: none;
+  stroke: #101828;
+  stroke-width: 4;
+}
+
 .boundary-port {
   fill: #fff;
   stroke: var(--structure);

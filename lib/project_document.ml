@@ -264,6 +264,31 @@ let decode_captures path json =
   in
   loop 0 [] values
 
+let decode_drop_provenance path fields =
+  match optional_field "provenance" fields with
+  | None -> Ok ()
+  | Some json ->
+      let* provenance_fields = object_at (path ^ ".provenance") json in
+      let* () =
+        reject_unknown (path ^ ".provenance") [ "kind"; "sourceElementId" ]
+          provenance_fields
+      in
+      let* kind_json = field (path ^ ".provenance") "kind" provenance_fields in
+      let* kind = string_at (path ^ ".provenance.kind") kind_json in
+      let* () =
+        if String.equal kind "auto_function_output_drop" then Ok ()
+        else
+          error (path ^ ".provenance.kind")
+            (Invalid_value ("unknown drop provenance " ^ kind))
+      in
+      let* source_json =
+        field (path ^ ".provenance") "sourceElementId" provenance_fields
+      in
+      let* _source =
+        string_at (path ^ ".provenance.sourceElementId") source_json
+      in
+      Ok ()
+
 let decode_element_kind path json =
   let* fields = object_at path json in
   let* kind_json = field path "kind" fields in
@@ -284,10 +309,15 @@ let decode_element_kind path json =
   | "succ" ->
       let* () = reject_unknown path [ "kind" ] fields in
       Ok Succ
-  | "drop" | "copy" | "nat_rec" ->
+  | "drop" ->
+      let* () = reject_unknown path [ "kind"; "type"; "provenance" ] fields in
+      let* () = decode_drop_provenance path fields in
+      let* typ = type_field "type" in
+      Ok (Drop typ)
+  | "copy" | "nat_rec" ->
       let* () = reject_unknown path [ "kind"; "type" ] fields in
       let* typ = type_field "type" in
-      Ok (if kind = "drop" then Drop typ else if kind = "copy" then Copy typ else NatRec typ)
+      Ok (if kind = "copy" then Copy typ else NatRec typ)
   | "apply" ->
       let* () =
         reject_unknown path [ "kind"; "parameterType"; "resultType" ] fields

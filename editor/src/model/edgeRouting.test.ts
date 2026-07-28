@@ -1,7 +1,12 @@
 import exampleJson from "../../../examples/nat-succ.tilefold.json?raw";
 import { describe, expect, it } from "vitest";
 import { resizeOrMoveElement } from "./editorOps";
-import { routeIntersectsObstacle, routeWire } from "./edgeRouting";
+import {
+  normalizeRouteForTest,
+  routeIntersectsObstacle,
+  routeWireDetailed,
+  routeWire,
+} from "./edgeRouting";
 import { parseProjectJson } from "./importProject";
 import type { ProjectDocument, ProjectElement } from "./project";
 
@@ -218,7 +223,41 @@ function sharedAxisLength(
   return shared;
 }
 
+function expectOrthogonalPath(points: readonly { x: number; y: number }[]) {
+  for (let index = 1; index < points.length; index += 1) {
+    const previous = points[index - 1]!;
+    const point = points[index]!;
+    expect(
+      previous.x === point.x || previous.y === point.y,
+      `${previous.x},${previous.y} -> ${point.x},${point.y}`,
+    ).toBe(true);
+  }
+}
+
 describe("edge routing", () => {
+  it("removes collinear partial backtracking until stable", () => {
+    expect(
+      normalizeRouteForTest([
+        { x: 636, y: 220 },
+        { x: 791, y: 220 },
+        { x: 660, y: 220 },
+      ]),
+    ).toEqual([
+      { x: 636, y: 220 },
+      { x: 660, y: 220 },
+    ]);
+    expect(
+      normalizeRouteForTest([
+        { x: 40, y: 10 },
+        { x: 40, y: 90 },
+        { x: 40, y: 32 },
+      ]),
+    ).toEqual([
+      { x: 40, y: 10 },
+      { x: 40, y: 32 },
+    ]);
+  });
+
   it("routes around unrelated element obstacles without changing Project JSON points", () => {
     const document = example();
     const wire = {
@@ -281,6 +320,7 @@ describe("edge routing", () => {
 
       const routed = routeWire(routedDocument, wire);
 
+      expectOrthogonalPath(routed);
       expect(routed[1]!.x).toBeGreaterThan(routed[0]!.x);
       expect(routeIntersectsObstacle(routeAfterFirstSegment(routed), source.bounds)).toBe(false);
       expect(routeIntersectsObstacle(routeBeforeLastSegment(routed), target.bounds)).toBe(false);
@@ -296,6 +336,7 @@ describe("edge routing", () => {
 
     const routed = routeWire(routedDocument, wire);
 
+    expectOrthogonalPath(routed);
     expect(routeIntersectsObstacle(routeAfterFirstSegment(routed), source.bounds)).toBe(false);
     expect(routeIntersectsObstacle(routeBeforeLastSegment(routed), moved.bounds)).toBe(false);
   });
@@ -308,6 +349,7 @@ describe("edge routing", () => {
 
     const routed = routeWire(routedDocument, wire);
 
+    expectOrthogonalPath(routed);
     expect(routed[0]).toEqual({ x: source.portAnchors[0]!.x, y: source.portAnchors[0]!.y });
     expect(routed.at(-1)).toEqual(
       (() => {
@@ -331,6 +373,8 @@ describe("edge routing", () => {
 
     const rerouted = routeWire(movedDocument, wire);
 
+    expectOrthogonalPath(initial);
+    expectOrthogonalPath(rerouted);
     expectSimpleNonBranchingPath(initial);
     expectSimpleNonBranchingPath(rerouted);
     expect(rerouted.at(-1)).toEqual(
@@ -364,12 +408,44 @@ describe("edge routing", () => {
     const routed = wires.map((wire) => routeWire(routedDocument, wire));
 
     for (const points of routed) {
+      expectOrthogonalPath(points);
       expectSimpleNonBranchingPath(points);
       expect(routeIntersectsObstacle(routeBeforeLastSegment(points), natRec.bounds)).toBe(false);
     }
     expect(sharedAxisLength(routed[0]!, routed[1]!)).toBe(0);
     expect(sharedAxisLength(routed[0]!, routed[2]!)).toBe(0);
     expect(sharedAxisLength(routed[1]!, routed[2]!)).toBe(0);
+  });
+
+  it("keeps relaxed obstacle routes orthogonal and reports metadata", () => {
+    const source = natNode("source", 96, 168);
+    const target = succNode("target", 280, 40);
+    const obstacle = succNode("obstacle", 178, 98, 120, 86);
+    const wire = wireBetween("wire", source, target);
+    const routedDocument = withElements(example(), [source, target, obstacle], wire);
+
+    const routed = routeWireDetailed(routedDocument, wire);
+
+    expect(routed.mode).toBe("body-clear-lane");
+    expect(routed.fallbackReason).toBe("margin-obstacles-blocked");
+    expectOrthogonalPath(routed.points);
+  });
+
+  it("reports unresolved endpoints as fallback metadata", () => {
+    const source = natNode("source", 96, 168);
+    const target = succNode("target", 280, 40);
+    const wire = {
+      ...wireBetween("wire", source, target),
+      points: [],
+      sourceHint: undefined,
+      targetHint: undefined,
+    };
+    const routedDocument = withElements(example(), [source, target], wire);
+
+    const routed = routeWireDetailed(routedDocument, wire);
+
+    expect(routed.mode).toBe("fallback");
+    expect(routed.fallbackReason).toBe("unresolved-endpoint");
   });
 
   it("updates ports and semantic wire endpoints when an element is resized", () => {

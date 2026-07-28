@@ -449,9 +449,53 @@ direction, has an invalid polyline, or would create consecutive duplicate
 points rejects the whole move without changing the document. Unrelated invalid
 geometry is not treated as an attachment.
 
-Wire bend points, segments, junction creation, and routing are not editable. Element
-movement deliberately does not reroute or translate middle points. Container
-movement remains unsupported.
+Wire bend points, segments, and junction creation are not editable. Visible wire
+routes are transient orthogonal polylines derived from the stored semantic
+endpoints; SVG paths, bend points, obstacle caches, and DOM measurements are not
+written to Project JSON. Element movement, element resizing, and container
+corner resizing update the stored node or container geometry and then recompute
+visible routes from graph coordinates.
+
+The router keeps Tilefold's fixed port anchors and user-positioned nodes. It
+uses a port corridor model: output ports first escape in their outward
+direction, input ports are approached from their side, and source and target
+node bodies remain obstacles except for those corridors. Candidate paths are
+generated from source/target corridors plus obstacle-adjacent X/Y lanes, then
+ranked by Manhattan length, bend count, reverse travel, source-target bounding
+box excursion, crossings, collinear overlap, and near-parallel lane conflicts.
+Fallback routes are explicitly tagged in code and remain deterministic. Before
+rendering, polylines are normalized until stable by removing duplicate points,
+dead-end loops, immediate A-B-A turns, collinear partial backtracking, and
+same-axis redundant vertices.
+
+Open-source router review for the current implementation:
+
+- Adaptagrams libavoid and the `@mr_mint/elkjs-libavoid` adapter provide the
+  closest conceptual match: fixed nodes, shape buffer distance, port pins,
+  reverse-direction penalties, shared-path nudging, and incremental rerouting.
+  A local PoC compared Tilefold with `@mr_mint/elkjs-libavoid` on reverse-port
+  and obstacle fixtures. Libavoid found shorter, less reverse-travel routes in
+  reverse placements, but browser integration requires an async WASM asset and
+  the adapter depends on `libavoid-js` under LGPL-2.1-or-later. Tilefold does
+  not vendor or copy that code in this branch.
+- JointJS's open-source Manhattan router uses a grid obstacle map, start/end
+  direction sets, A* search with direction-change penalties, maximum loop
+  limits, and fallback routing. It is tied to JointJS graph/view primitives and
+  MPL-2.0 licensing, so it is a reference rather than a direct dependency.
+- React Flow Smart Edge uses grid pathfinding around node rectangles and is MIT
+  licensed, but it is React Flow-specific, its built-in step/smoothstep edges
+  are not obstacle-aware by themselves, and the smart-edge pathfinder does not
+  supply Tilefold's fixed individual port corridor and lane nudging semantics
+  without an adapter layer.
+- Eclipse ELK's libavoid integration is also conceptually aligned with shape
+  buffers and edge-routing penalties, but adopting it would still route through
+  libavoid/WASM machinery rather than Tilefold's small synchronous model.
+
+The current choice is therefore independent implementation with the verified
+principles above: fixed port corridors, obstacle X/Y lane candidate generation,
+explicit fallback metadata, stable cost ranking, and final polyline
+normalization. A future dependency switch should first resolve WASM loading,
+license notice, bundle-size, and deterministic-session concerns.
 
 ## Next steps
 

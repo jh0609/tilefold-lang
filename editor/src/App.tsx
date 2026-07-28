@@ -722,6 +722,23 @@ export function App() {
               after,
             });
           }}
+          onResizeContainer={(id, handle, before, after) => {
+            if (
+              before.x === after.x &&
+              before.y === after.y &&
+              before.width === after.width &&
+              before.height === after.height
+            ) {
+              return;
+            }
+            runCommand({
+              type: "resize_container",
+              id,
+              handle,
+              before,
+              after,
+            });
+          }}
           onAddWire={connectPorts}
           onReconnectWire={reconnectWire}
           onConnectionMessage={setConnectionMessage}

@@ -106,6 +106,35 @@ function elementAt(value: unknown, path: string): ProjectElement {
       );
       break;
     case "drop":
+      coreTypeAt(
+        required(properties, "type", `${path}.properties`),
+        `${path}.properties.type`,
+      );
+      if ("provenance" in properties) {
+        const provenance = objectAt(
+          properties.provenance,
+          `${path}.properties.provenance`,
+        );
+        const kind = stringAt(
+          required(provenance, "kind", `${path}.properties.provenance`),
+          `${path}.properties.provenance.kind`,
+        );
+        if (kind !== "auto_function_output_drop") {
+          throw new StructureError(
+            `${path}.properties.provenance.kind`,
+            "unknown Drop provenance",
+          );
+        }
+        stringAt(
+          required(
+            provenance,
+            "sourceElementId",
+            `${path}.properties.provenance`,
+          ),
+          `${path}.properties.provenance.sourceElementId`,
+        );
+      }
+      break;
     case "copy":
     case "nat_rec":
       coreTypeAt(

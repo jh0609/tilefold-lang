@@ -197,10 +197,6 @@ test("keeps Apply signature arguments separate from captures for NatRec step fun
   await expect(starterDropWire).toBeVisible();
   const starterDropId = await starterDropWire.getAttribute("data-target-node-id");
   expect(starterDropId).not.toBeNull();
-  await selectAndDelete(
-    page,
-    page.locator(`[data-node-id="${starterDropId}"].element-node`),
-  );
   await page.getByRole("button", { name: "Add NatRec" }).click();
   const natRecNode = page.locator('g.element-node.selected[data-node-kind="nat_rec"]');
   await expect(natRecNode).toBeVisible();
@@ -217,6 +213,8 @@ test("keeps Apply signature arguments separate from captures for NatRec step fun
       `polyline[data-source-node-id="${functionNodeId}"][data-source-port-name="value"][data-target-node-id="${natRecId}"][data-target-port-name="step"]`,
     ),
   ).toHaveCount(1);
+  await expect(page.locator(`[data-node-id="${starterDropId}"]`)).toHaveCount(0);
+  await expect(starterDropWire).toHaveCount(0);
 
   await selectAndDelete(page, page.locator('[data-node-id="node_succ"].element-node'));
   await dragTo(

@@ -13,6 +13,8 @@ import {
   nextStableId,
   nextFunctionTemplateId,
   callableFunctionTemplates,
+  resizeContainer,
+  resizeContainerBounds,
   templateFunctionReferences,
   updateApplyTypes,
   updateElementType,
@@ -21,6 +23,7 @@ import {
 import { exportProjectJson, parseProjectJson } from "./importProject";
 import { collectConnectablePorts } from "./portConnections";
 import { preflightProjectDiagnostics } from "./sourceDiagnostics";
+import type { ProjectElement } from "./project";
 
 function disconnectedPair() {
   let project = parseProjectJson(exampleJson);
@@ -100,6 +103,10 @@ describe("editor operations", () => {
     );
     expect(hostDrop?.properties).toEqual({
       type: { arrow: ["nat", "nat"] },
+      provenance: {
+        kind: "auto_function_output_drop",
+        sourceElementId: "node_function_1",
+      },
     });
     expect(
       result.document.geometry.wires.filter(
@@ -265,6 +272,263 @@ describe("editor operations", () => {
     expect(
       parseProjectJson(exportProjectJson(result.document)).surfaceFunctions,
     ).toEqual(result.document.surfaceFunctions);
+  });
+
+  it("resizes containers from every corner while preserving fixed opposite corners", () => {
+    const project = parseProjectJson(exampleJson);
+    const entry = project.geometry.containers[0]!;
+    const cases = [
+      {
+        handle: "south-east" as const,
+        proposed: { x: entry.bounds.x, y: entry.bounds.y, width: 520, height: 360 },
+        fixed: { x: entry.bounds.x, y: entry.bounds.y },
+      },
+      {
+        handle: "north-east" as const,
+        proposed: { x: entry.bounds.x, y: entry.bounds.y - 40, width: 540, height: entry.bounds.height + 40 },
+        fixed: { x: entry.bounds.x, y: entry.bounds.y + entry.bounds.height },
+      },
+      {
+        handle: "south-west" as const,
+        proposed: { x: entry.bounds.x - 40, y: entry.bounds.y, width: entry.bounds.width + 40, height: 360 },
+        fixed: { x: entry.bounds.x + entry.bounds.width, y: entry.bounds.y },
+      },
+      {
+        handle: "north-west" as const,
+        proposed: { x: entry.bounds.x - 40, y: entry.bounds.y - 40, width: entry.bounds.width + 40, height: entry.bounds.height + 40 },
+        fixed: { x: entry.bounds.x + entry.bounds.width, y: entry.bounds.y + entry.bounds.height },
+      },
+    ];
+    for (const item of cases) {
+      const resized = resizeContainer(project, entry.id, item.handle, item.proposed);
+      const next = resized.geometry.containers.find(
+        (container) => container.id === entry.id,
+      )!;
+      if (item.handle === "south-east") {
+        expect({ x: next.bounds.x, y: next.bounds.y }).toEqual(item.fixed);
+      } else if (item.handle === "north-east") {
+        expect(next.bounds.x).toBe(item.fixed.x);
+        expect(next.bounds.y + next.bounds.height).toBe(item.fixed.y);
+      } else if (item.handle === "south-west") {
+        expect(next.bounds.x + next.bounds.width).toBe(item.fixed.x);
+        expect(next.bounds.y).toBe(item.fixed.y);
+      } else {
+        expect(next.bounds.x + next.bounds.width).toBe(item.fixed.x);
+        expect(next.bounds.y + next.bounds.height).toBe(item.fixed.y);
+      }
+    }
+  });
+
+  it("clamps container resize to internal content and retargets boundary wires", () => {
+    let project = parseProjectJson(exampleJson);
+    project = addElement(project, "nat_literal", { x: 260, y: 180 }).document;
+    const entry = project.geometry.containers[0]!;
+    const beforeWire = project.geometry.wires.find(
+      (wire) => wire.id === "wire_result",
+    )!;
+    const nextBounds = resizeContainerBounds(
+      project,
+      entry.id,
+      "south-east",
+      { x: entry.bounds.x, y: entry.bounds.y, width: 120, height: 90 },
+    );
+    const resized = resizeContainer(project, entry.id, "south-east", nextBounds);
+    const nextEntry = resized.geometry.containers.find(
+      (container) => container.id === entry.id,
+    )!;
+    const child = resized.geometry.elements.find(
+      (element) => element.id === "node_succ",
+    )!;
+    expect(child.bounds).toEqual(
+      project.geometry.elements.find((element) => element.id === "node_succ")!
+        .bounds,
+    );
+    expect(nextEntry.bounds.x + nextEntry.bounds.width).toBeGreaterThanOrEqual(
+      child.bounds.x + child.bounds.width + 24,
+    );
+    const resultBoundary = nextEntry.boundaryPorts.find(
+      (boundary) => boundary.role === "result",
+    )!;
+    const afterWire = resized.geometry.wires.find(
+      (wire) => wire.id === beforeWire.id,
+    )!;
+    expect(afterWire.points.at(-1)).toEqual({
+      x: nextEntry.bounds.x + resultBoundary.anchor.x,
+      y: nextEntry.bounds.y + resultBoundary.anchor.y,
+    });
+  });
+
+  it("round-trips container geometry and automatic Drop provenance", () => {
+    const project = parseProjectJson(exampleJson);
+    const created = addFunctionTemplate(project, "entry", {
+      templateId: "keep_drop",
+      parameters: [{ name: "value", type: "nat" }],
+      resultType: "nat",
+    });
+    if ("error" in created) throw new Error(created.error);
+    const resized = resizeContainer(created.document, created.container.id, "south-east", {
+      ...created.container.bounds,
+      width: created.container.bounds.width + 80,
+      height: created.container.bounds.height + 40,
+    });
+    const roundTripped = parseProjectJson(exportProjectJson(resized));
+    expect(
+      roundTripped.geometry.containers.find(
+        (container) => container.id === created.container.id,
+      )?.bounds.width,
+    ).toBe(created.container.bounds.width + 80);
+    expect(
+      roundTripped.geometry.elements.find(
+        (element) => element.kind === "drop" && element.id === "node_drop_1",
+      )?.properties,
+    ).toEqual({
+      type: { arrow: ["nat", "nat"] },
+      provenance: {
+        kind: "auto_function_output_drop",
+        sourceElementId: created.element.id,
+      },
+    });
+  });
+
+  it("atomically replaces an automatic Function output Drop with a valid consumer wire", () => {
+    let project = parseProjectJson(exampleJson);
+    const created = addFunctionTemplate(project, "entry", {
+      templateId: "isZeroStep",
+      parameters: [
+        { name: "index", type: "nat" },
+        { name: "previous", type: "nat" },
+      ],
+      resultType: "nat",
+    });
+    if ("error" in created) throw new Error(created.error);
+    project = addElement(created.document, "nat_rec", {
+      x: created.element.bounds.x + 320,
+      y: created.element.bounds.y,
+    }).document;
+    const ports = collectConnectablePorts(project);
+    const source = ports.find(
+      (port) => port.key === `element:${created.element.id}:value`,
+    )!;
+    const target = ports.find(
+      (port) =>
+        port.hint.kind === "element_port" &&
+        port.hint.elementId === "node_nat_rec_1" &&
+        port.hint.port === "step",
+    )!;
+
+    const result = addWire(project, source, target);
+    if ("error" in result) throw new Error(result.error);
+
+    expect(
+      result.document.geometry.elements.some(
+        (element) =>
+          element.kind === "drop" &&
+          element.properties.provenance?.sourceElementId === created.element.id,
+      ),
+    ).toBe(false);
+    expect(
+      result.document.geometry.wires.some(
+        (wire) =>
+          wire.sourceHint?.kind === "element_port" &&
+          wire.sourceHint.elementId === created.element.id &&
+          wire.sourceHint.port === "value" &&
+          wire.targetHint?.kind === "element_port" &&
+          wire.targetHint.elementId === "node_nat_rec_1" &&
+          wire.targetHint.port === "step",
+      ),
+    ).toBe(true);
+    expect(preflightProjectDiagnostics(result.document)).toEqual([]);
+  });
+
+  it("keeps automatic Drop when a replacement connection is invalid", () => {
+    let project = parseProjectJson(exampleJson);
+    const created = addFunctionTemplate(project, "entry", {
+      templateId: "badStep",
+      parameters: [
+        { name: "index", type: "nat" },
+        { name: "previous", type: "nat" },
+      ],
+      resultType: "nat",
+    });
+    if ("error" in created) throw new Error(created.error);
+    project = addElement(created.document, "nat_rec", {
+      x: created.element.bounds.x + 320,
+      y: created.element.bounds.y,
+    }).document;
+    const ports = collectConnectablePorts(project);
+    const source = ports.find(
+      (port) => port.key === `element:${created.element.id}:value`,
+    )!;
+    const target = ports.find(
+      (port) =>
+        port.hint.kind === "element_port" &&
+        port.hint.elementId === "node_nat_rec_1" &&
+        port.hint.port === "base",
+    )!;
+
+    const result = addWire(project, source, target);
+
+    expect("error" in result).toBe(true);
+    expect(
+      project.geometry.elements.some(
+        (element) =>
+          element.kind === "drop" &&
+          element.properties.provenance?.sourceElementId === created.element.id,
+      ),
+    ).toBe(true);
+  });
+
+  it("does not replace a user-created Drop", () => {
+    let project = parseProjectJson(exampleJson);
+    const created = addFunctionTemplate(project, "entry", {
+      templateId: "manualDrop",
+      parameters: [
+        { name: "index", type: "nat" },
+        { name: "previous", type: "nat" },
+      ],
+      resultType: "nat",
+    });
+    if ("error" in created) throw new Error(created.error);
+    const autoDrop = created.document.geometry.elements.find(
+      (element): element is Extract<ProjectElement, { kind: "drop" }> =>
+        element.kind === "drop" &&
+        element.properties.provenance?.sourceElementId === created.element.id,
+    )!;
+    project = {
+      ...created.document,
+      geometry: {
+        ...created.document.geometry,
+        elements: created.document.geometry.elements.map((element) =>
+          element.id === autoDrop.id && element.kind === "drop"
+            ? {
+                ...element,
+                properties: { type: autoDrop.properties.type },
+              }
+            : element,
+        ),
+      },
+    };
+    project = addElement(project, "nat_rec", {
+      x: created.element.bounds.x + 320,
+      y: created.element.bounds.y,
+    }).document;
+    const ports = collectConnectablePorts(project);
+    const source = ports.find(
+      (port) => port.key === `element:${created.element.id}:value`,
+    )!;
+    const target = ports.find(
+      (port) =>
+        port.hint.kind === "element_port" &&
+        port.hint.elementId === "node_nat_rec_1" &&
+        port.hint.port === "step",
+    )!;
+
+    const result = addWire(project, source, target);
+
+    expect("error" in result).toBe(true);
+    expect(
+      project.geometry.elements.some((element) => element.id === autoDrop.id),
+    ).toBe(true);
   });
 
   it("authors one argument without implicit captures", () => {

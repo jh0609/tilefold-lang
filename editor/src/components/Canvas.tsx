@@ -15,7 +15,10 @@ import {
 import {
   findElementOwnerContainer,
   moveElement,
+  replaceableAutoDropWireId,
+  resizeContainer,
   resizeOrMoveElement,
+  type ContainerResizeHandle,
 } from "../model/editorOps";
 import { routeWire } from "../model/edgeRouting";
 import {
@@ -55,6 +58,15 @@ interface ResizeState {
   next: Bounds;
 }
 
+interface ContainerResizeState {
+  pointerId: number;
+  containerId: string;
+  handle: ContainerResizeHandle;
+  start: Point;
+  origin: Bounds;
+  next: Bounds;
+}
+
 interface CanvasProps {
   document: ProjectDocument;
   selection: Selection | null;
@@ -68,6 +80,12 @@ interface CanvasProps {
   onSelect: (selection: Selection | null) => void;
   onMoveElement: (id: string, next: Point) => void;
   onResizeElement: (id: string, before: Bounds, after: Bounds) => void;
+  onResizeContainer: (
+    id: string,
+    handle: ContainerResizeHandle,
+    before: Bounds,
+    after: Bounds,
+  ) => void;
   onAddWire: (source: ConnectablePort, target: ConnectablePort) => void;
   onReconnectWire: (
     wireId: string,
@@ -111,13 +129,55 @@ function ContainerShape({
   selected,
   selectedBoundaryId,
   onSelect,
+  onResizePointerDown,
 }: {
   container: ProjectContainer;
   selected: boolean;
   selectedBoundaryId: string | null;
   onSelect: () => void;
+  onResizePointerDown: (
+    event: ReactPointerEvent<SVGCircleElement>,
+    container: ProjectContainer,
+    handle: ContainerResizeHandle,
+  ) => void;
 }) {
   const { x, y, width, height } = container.bounds;
+  const handles: Array<{
+    handle: ContainerResizeHandle;
+    x: number;
+    y: number;
+    className: string;
+    label: string;
+  }> = [
+    {
+      handle: "north-west",
+      x,
+      y,
+      className: "nwse",
+      label: "Resize top-left corner",
+    },
+    {
+      handle: "north-east",
+      x: x + width,
+      y,
+      className: "nesw",
+      label: "Resize top-right corner",
+    },
+    {
+      handle: "south-west",
+      x,
+      y: y + height,
+      className: "nesw",
+      label: "Resize bottom-left corner",
+    },
+    {
+      handle: "south-east",
+      x: x + width,
+      y: y + height,
+      className: "nwse",
+      label: "Resize bottom-right corner",
+    },
+  ];
   return (
     <g
       className={`container-shape${selected ? " selected" : ""}`}
@@ -154,6 +214,24 @@ function ContainerShape({
           <title>{`${boundary.role} boundary ${boundary.id}`}</title>
         </circle>
       ))}
+      {selected &&
+        handles.map((handle) => (
+          <circle
+            key={handle.handle}
+            className={`container-resize-handle ${handle.className}`}
+            data-testid={`container-${container.id}-resize-${handle.handle}`}
+            data-container-resize-handle={handle.handle}
+            cx={handle.x}
+            cy={handle.y}
+            r={7}
+            role="button"
+            tabIndex={0}
+            aria-label={`${handle.label} of ${container.id}`}
+            onPointerDown={(event) =>
+              onResizePointerDown(event, container, handle.handle)
+            }
+          />
+        ))}
     </g>
   );
 }
@@ -220,6 +298,7 @@ export function Canvas({
   onSelect,
   onMoveElement,
   onResizeElement,
+  onResizeContainer,
   onAddWire,
   onReconnectWire,
   onConnectionMessage,
@@ -229,6 +308,8 @@ export function Canvas({
   const completedPointerRef = useRef<number | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [resize, setResize] = useState<ResizeState | null>(null);
+  const [containerResize, setContainerResize] =
+    useState<ContainerResizeState | null>(null);
   const [connection, setConnection] = useState<ConnectionDrag | null>(null);
   const [pan, setPan] = useState<PanState | null>(null);
   const ports = useMemo(() => collectConnectablePorts(document), [document]);
@@ -252,7 +333,9 @@ export function Canvas({
           : candidate;
       const validation = validateConnection(document, source, target, {
         excludeWireId:
-          connection.kind === "reconnect" ? connection.wireId : undefined,
+          connection.kind === "reconnect"
+            ? connection.wireId
+            : replaceableAutoDropWireId(document, source),
       });
       if ("error" in validation) rejected.add(candidate.key);
       else compatible.add(candidate.key);
@@ -275,6 +358,10 @@ export function Canvas({
         suppressNextSelectionRef.current = true;
         setResize(null);
         onConnectionMessage("Element resize cancelled.");
+      } else if (containerResize) {
+        suppressNextSelectionRef.current = true;
+        setContainerResize(null);
+        onConnectionMessage("Container resize cancelled.");
       } else if (pan) {
         suppressNextSelectionRef.current = true;
         onViewBoxChange(pan.originViewBox);
@@ -284,14 +371,22 @@ export function Canvas({
     }
     window.addEventListener("keydown", cancelOnEscape);
     return () => window.removeEventListener("keydown", cancelOnEscape);
-  }, [connection, drag, onConnectionMessage, onViewBoxChange, pan, resize]);
+  }, [
+    connection,
+    containerResize,
+    drag,
+    onConnectionMessage,
+    onViewBoxChange,
+    pan,
+    resize,
+  ]);
 
   useEffect(() => {
     const canvas = svgRef.current;
     if (!canvas) return;
     const zoomAtPointer = (event: WheelEvent) => {
       event.preventDefault();
-      if (connection || drag || pan || resize) return;
+      if (connection || drag || pan || resize || containerResize) return;
       const anchor = clientToProject(canvas, event.clientX, event.clientY);
       const camera = parseViewBox(viewBox);
       const reference = parseViewBox(referenceViewBox);
@@ -322,6 +417,7 @@ export function Canvas({
     onViewBoxChange,
     pan,
     resize,
+    containerResize,
     referenceViewBox,
     viewBox,
   ]);
@@ -333,6 +429,7 @@ export function Canvas({
       connection ||
       drag ||
       resize ||
+      containerResize ||
       pan
     ) {
       return;
@@ -448,6 +545,74 @@ export function Canvas({
     });
   }
 
+  function startContainerResize(
+    event: ReactPointerEvent<SVGCircleElement>,
+    container: ProjectContainer,
+    handle: ContainerResizeHandle,
+  ) {
+    if (
+      event.button !== 0 ||
+      !svgRef.current ||
+      connection ||
+      drag ||
+      resize ||
+      containerResize ||
+      pan
+    ) {
+      return;
+    }
+    const start = clientToProject(svgRef.current, event.clientX, event.clientY);
+    if (!start) return;
+    event.stopPropagation();
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      onConnectionMessage(
+        "Unable to capture the pointer; container resize cancelled.",
+      );
+      return;
+    }
+    onSelect({ type: "container", id: container.id });
+    setContainerResize({
+      pointerId: event.pointerId,
+      containerId: container.id,
+      handle,
+      start,
+      origin: container.bounds,
+      next: container.bounds,
+    });
+  }
+
+  function containerBoundsFromDelta(
+    origin: Bounds,
+    handle: ContainerResizeHandle,
+    dx: number,
+    dy: number,
+  ): Bounds {
+    const left =
+      handle === "north-west" || handle === "south-west"
+        ? origin.x + dx
+        : origin.x;
+    const top =
+      handle === "north-west" || handle === "north-east"
+        ? origin.y + dy
+        : origin.y;
+    const right =
+      handle === "north-east" || handle === "south-east"
+        ? origin.x + origin.width + dx
+        : origin.x + origin.width;
+    const bottom =
+      handle === "south-west" || handle === "south-east"
+        ? origin.y + origin.height + dy
+        : origin.y + origin.height;
+    return {
+      x: left,
+      y: top,
+      width: right - left,
+      height: bottom - top,
+    };
+  }
+
   function continueDrag(event: ReactPointerEvent<SVGSVGElement>) {
     if (pan?.pointerId === event.pointerId && svgRef.current) {
       const current = clientToProject(
@@ -517,12 +682,38 @@ export function Canvas({
             : hover;
         const validation = validateConnection(document, source, target, {
           excludeWireId:
-            connection.kind === "reconnect" ? connection.wireId : undefined,
+            connection.kind === "reconnect"
+              ? connection.wireId
+              : replaceableAutoDropWireId(document, source),
         });
         if ("error" in validation) rejection = validation.error;
         else validHover = hover;
       }
       setConnection({ ...connection, current: point, validHover, rejection });
+      return;
+    }
+    if (containerResize?.pointerId === event.pointerId && svgRef.current) {
+      const current = clientToProject(
+        svgRef.current,
+        event.clientX,
+        event.clientY,
+      );
+      if (!current) return;
+      const dx = Math.round(current.x - containerResize.start.x);
+      const dy = Math.round(current.y - containerResize.start.y);
+      const preview = resizeContainer(
+        document,
+        containerResize.containerId,
+        containerResize.handle,
+        containerBoundsFromDelta(containerResize.origin, containerResize.handle, dx, dy),
+      );
+      const nextContainer = preview.geometry.containers.find(
+        (container) => container.id === containerResize.containerId,
+      );
+      setContainerResize({
+        ...containerResize,
+        next: nextContainer?.bounds ?? containerResize.origin,
+      });
       return;
     }
     if (resize?.pointerId === event.pointerId && svgRef.current) {
@@ -611,6 +802,17 @@ export function Canvas({
       setResize(null);
       return;
     }
+    if (containerResize?.pointerId === event.pointerId) {
+      completedPointerRef.current = event.pointerId;
+      onResizeContainer(
+        containerResize.containerId,
+        containerResize.handle,
+        containerResize.origin,
+        containerResize.next,
+      );
+      setContainerResize(null);
+      return;
+    }
     if (drag?.pointerId !== event.pointerId) return;
     onMoveElement(drag.elementId, drag.next);
     setDrag(null);
@@ -636,6 +838,12 @@ export function Canvas({
       onConnectionMessage("Element resize cancelled.");
       return;
     }
+    if (containerResize?.pointerId === event.pointerId) {
+      suppressNextSelectionRef.current = true;
+      setContainerResize(null);
+      onConnectionMessage("Container resize cancelled.");
+      return;
+    }
     if (drag?.pointerId === event.pointerId) setDrag(null);
   }
 
@@ -652,7 +860,7 @@ export function Canvas({
     port: ConnectablePort,
   ) {
     event.stopPropagation();
-    if (event.button !== 0 || pan) return;
+    if (event.button !== 0 || pan || drag || resize || containerResize) return;
     if (port.direction !== "output") {
       onConnectionMessage("Connections must start at an output port.");
       return;
@@ -682,7 +890,7 @@ export function Canvas({
     endpoint: WireEndpoint,
   ) {
     event.stopPropagation();
-    if (event.button !== 0 || pan) return;
+    if (event.button !== 0 || pan || drag || resize || containerResize) return;
     const wire = document.geometry.wires.find(
       (candidate) => candidate.id === wireId,
     );
@@ -736,12 +944,26 @@ export function Canvas({
   const resizePreview = resize
     ? resizeOrMoveElement(document, resize.elementId, resize.next)
     : null;
+  const containerResizePreview = containerResize
+    ? resizeContainer(
+        document,
+        containerResize.containerId,
+        containerResize.handle,
+        containerResize.next,
+      )
+    : null;
   const renderedDocument =
     movePreview && !("error" in movePreview)
       ? movePreview.document
       : resizePreview
         ? resizePreview
-        : document;
+        : containerResizePreview
+          ? containerResizePreview
+          : document;
+  const renderedPorts = useMemo(
+    () => collectConnectablePorts(renderedDocument),
+    [renderedDocument],
+  );
 
   function selectUnlessSuppressed(next: Selection | null) {
     if (suppressNextSelectionRef.current) {
@@ -813,6 +1035,7 @@ export function Canvas({
             onSelect={() =>
               selectUnlessSuppressed({ type: "container", id: container.id })
             }
+            onResizePointerDown={startContainerResize}
           />
         ))}
         <g className="wire-layer">
@@ -945,7 +1168,7 @@ export function Canvas({
             }}
             onPointerDown={startDrag}
             onResizePointerDown={startResize}
-            ports={ports.filter((port) => port.ownerId === element.id)}
+            ports={renderedPorts.filter((port) => port.ownerId === element.id)}
             connectionTargetKey={connection?.validHover?.key ?? null}
             compatiblePortKeys={connectionTargets.compatible}
             rejectedPortKeys={connectionTargets.rejected}
@@ -953,7 +1176,7 @@ export function Canvas({
           />
         ))}
         <g className="boundary-interaction-layer">
-          {ports
+          {renderedPorts
             .filter((port) => port.hint.kind === "boundary_port")
             .map((port) => (
               <circle

@@ -8,7 +8,9 @@ import {
   editSurfaceFunctionSignature,
   moveElement,
   reconnectWireEndpoint,
+  resizeContainer,
   resizeOrMoveElement,
+  type ContainerResizeHandle,
   updateApplyTypes,
   updateElementType,
   updateNatValue,
@@ -72,6 +74,13 @@ export type EditorCommand =
   | {
       type: "resize_or_move_element";
       id: string;
+      before: Bounds;
+      after: Bounds;
+    }
+  | {
+      type: "resize_container";
+      id: string;
+      handle: ContainerResizeHandle;
       before: Bounds;
       after: Bounds;
     }
@@ -234,6 +243,15 @@ export function applyEditorCommand(
       return {
         document: resizeOrMoveElement(document, command.id, command.after),
       };
+    case "resize_container":
+      return {
+        document: resizeContainer(
+          document,
+          command.id,
+          command.handle,
+          command.after,
+        ),
+      };
     case "set_nat_value":
       return {
         document: updateNatValue(document, command.id, command.after),
@@ -282,6 +300,8 @@ export function editorCommandLabel(command: EditorCommand): string {
       return `Move ${command.id}`;
     case "resize_or_move_element":
       return `Edit bounds for ${command.id}`;
+    case "resize_container":
+      return `Resize ${command.id}`;
     case "set_nat_value":
       return `Edit value for ${command.id}`;
     case "set_element_type":
@@ -296,6 +316,7 @@ export function isNoOpCommand(command: EditorCommand): boolean {
     case "move_element":
       return command.from.x === command.to.x && command.from.y === command.to.y;
     case "resize_or_move_element":
+    case "resize_container":
       return (
         command.before.x === command.after.x &&
         command.before.y === command.after.y &&

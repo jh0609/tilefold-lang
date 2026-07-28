@@ -39,8 +39,15 @@ export type ProjectElement =
       properties: Record<string, never>;
     })
   | (ElementBase & {
-      kind: "drop" | "copy" | "nat_rec";
+      kind: "copy" | "nat_rec";
       properties: { type: CoreType };
+    })
+  | (ElementBase & {
+      kind: "drop";
+      properties: {
+        type: CoreType;
+        provenance?: { kind: "auto_function_output_drop"; sourceElementId: StableId };
+      };
     })
   | (ElementBase & {
       kind: "apply";
