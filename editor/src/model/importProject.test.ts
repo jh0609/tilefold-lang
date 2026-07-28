@@ -1,5 +1,6 @@
 import exampleJson from "../../../examples/nat-succ.tilefold.json?raw";
 import { describe, expect, it } from "vitest";
+import { addFunctionTemplate, editTemplateCaptures } from "./editorOps";
 import { exportProjectJson, parseProjectJson, StructureError } from "./importProject";
 
 describe("Project JSON v1 import and export", () => {
@@ -173,5 +174,112 @@ describe("Project JSON v1 import and export", () => {
     expect(exported).not.toContain("selection");
     expect(exported).not.toContain('"drag"');
     expect(parseProjectJson(exported)).toEqual(project);
+  });
+
+  it("rejects duplicate template capture keys", () => {
+    const created = addFunctionTemplate(parseProjectJson(exampleJson), "entry", {
+      templateId: "captured",
+      parameterType: "nat",
+      resultType: "nat",
+      captures: [{ key: "seed", type: "nat" }],
+    });
+    if ("error" in created) throw new Error(created.error);
+    const input = JSON.parse(exportProjectJson(created.document));
+    const container = input.geometry.containers.find(
+      (candidate: { kind: { templateId?: string } }) =>
+        candidate.kind.templateId === "captured",
+    );
+    const capture = container.boundaryPorts.find(
+      (boundary: { role: string }) => boundary.role === "capture",
+    );
+    container.boundaryPorts.push({
+      ...capture,
+      id: "boundary_capture_duplicate",
+      anchor: { x: capture.anchor.x, y: capture.anchor.y + 32 },
+    });
+
+    expect(() => parseProjectJson(JSON.stringify(input))).toThrow(
+      "duplicate capture seed",
+    );
+  });
+
+  it("rejects stale Function capture metadata after a capture rename", () => {
+    const created = addFunctionTemplate(parseProjectJson(exampleJson), "entry", {
+      templateId: "captured",
+      parameterType: "nat",
+      resultType: "nat",
+      captures: [{ key: "seed", type: "nat" }],
+    });
+    if ("error" in created) throw new Error(created.error);
+    const renamed = editTemplateCaptures(created.document, {
+      templateId: "captured",
+      captures: [{ originalKey: "seed", key: "renamed", type: "nat" }],
+    });
+    if ("error" in renamed) throw new Error(renamed.error);
+    const input = JSON.parse(exportProjectJson(renamed.document));
+    const functionNode = input.geometry.elements.find(
+      (element: { kind: string; properties: { templateId?: string } }) =>
+        element.kind === "function" &&
+        element.properties.templateId === "captured",
+    );
+    functionNode.properties.captures = [{ key: "seed", type: "nat" }];
+
+    expect(() => parseProjectJson(JSON.stringify(input))).toThrow(
+      "unknown capture seed for template captured",
+    );
+  });
+
+  it("rejects missing, mismatched, and dangling Function capture references", () => {
+    const created = addFunctionTemplate(parseProjectJson(exampleJson), "entry", {
+      templateId: "captured",
+      parameterType: "nat",
+      resultType: "nat",
+      captures: [{ key: "seed", type: "nat" }],
+    });
+    if ("error" in created) throw new Error(created.error);
+    const base = JSON.parse(exportProjectJson(created.document));
+
+    const missing = structuredClone(base);
+    missing.geometry.elements.find(
+      (element: { kind: string; properties: { templateId?: string } }) =>
+        element.kind === "function" &&
+        element.properties.templateId === "captured",
+    ).properties.captures = [];
+    expect(() => parseProjectJson(JSON.stringify(missing))).toThrow(
+      "missing capture seed for template captured",
+    );
+
+    const mismatched = structuredClone(base);
+    mismatched.geometry.elements.find(
+      (element: { kind: string; properties: { templateId?: string } }) =>
+        element.kind === "function" &&
+        element.properties.templateId === "captured",
+    ).properties.captures[0].type = "unit";
+    expect(() => parseProjectJson(JSON.stringify(mismatched))).toThrow(
+      "capture seed type does not match template captured",
+    );
+
+    const dangling = structuredClone(base);
+    const functionId = dangling.geometry.elements.find(
+      (element: { kind: string; properties: { templateId?: string } }) =>
+        element.kind === "function" &&
+        element.properties.templateId === "captured",
+    ).id;
+    dangling.geometry.wires.push({
+      id: "wire_stale_capture",
+      points: [
+        { x: 0, y: 0 },
+        { x: 10, y: 10 },
+      ],
+      sourceHint: dangling.geometry.wires[0].sourceHint,
+      targetHint: {
+        kind: "element_port",
+        elementId: functionId,
+        port: "stale",
+      },
+    });
+    expect(() => parseProjectJson(JSON.stringify(dangling))).toThrow(
+      "unknown capture port stale",
+    );
   });
 });

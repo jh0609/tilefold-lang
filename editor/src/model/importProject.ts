@@ -431,6 +431,158 @@ function checkRenderingReferences(
   });
 }
 
+function stableStringify(value: unknown): string {
+  return JSON.stringify(value);
+}
+
+function checkFunctionCaptureReferences(
+  elements: unknown[],
+  containers: unknown[],
+  wires: unknown[],
+): void {
+  const templateCaptures = new Map<
+    string,
+    Map<string, { type: unknown; path: string }>
+  >();
+  containers.forEach((value, index) => {
+    const path = `$.geometry.containers[${index}]`;
+    const container = objectAt(value, path);
+    const kind = objectAt(required(container, "kind", path), `${path}.kind`);
+    if (
+      stringAt(required(kind, "kind", `${path}.kind`), `${path}.kind.kind`) !==
+      "template"
+    ) {
+      return;
+    }
+    const templateId = stringAt(
+      required(kind, "templateId", `${path}.kind`),
+      `${path}.kind.templateId`,
+    );
+    const captures = new Map<string, { type: unknown; path: string }>();
+    arrayAt(container.boundaryPorts, `${path}.boundaryPorts`).forEach(
+      (boundary, boundaryIndex) => {
+        const boundaryPath = `${path}.boundaryPorts[${boundaryIndex}]`;
+        const record = objectAt(boundary, boundaryPath);
+        const role = stringAt(
+          required(record, "role", boundaryPath),
+          `${boundaryPath}.role`,
+        );
+        if (role !== "capture") return;
+        const key = stringAt(
+          required(record, "captureKey", boundaryPath),
+          `${boundaryPath}.captureKey`,
+        );
+        if (captures.has(key)) {
+          throw new StructureError(
+            `${boundaryPath}.captureKey`,
+            `duplicate capture ${key}`,
+          );
+        }
+        captures.set(key, {
+          type: required(record, "type", boundaryPath),
+          path: boundaryPath,
+        });
+      },
+    );
+    templateCaptures.set(templateId, captures);
+  });
+
+  const functionCapturePorts = new Map<string, Set<string>>();
+  elements.forEach((value, index) => {
+    const path = `$.geometry.elements[${index}]`;
+    const element = objectAt(value, path);
+    if (stringAt(required(element, "kind", path), `${path}.kind`) !== "function") {
+      return;
+    }
+    const id = stringAt(required(element, "id", path), `${path}.id`);
+    const properties = objectAt(
+      required(element, "properties", path),
+      `${path}.properties`,
+    );
+    const templateId = stringAt(
+      required(properties, "templateId", `${path}.properties`),
+      `${path}.properties.templateId`,
+    );
+    const declaredCaptures = templateCaptures.get(templateId);
+    if (!declaredCaptures) {
+      throw new StructureError(
+        `${path}.properties.templateId`,
+        `unknown template ${templateId}`,
+      );
+    }
+    const seen = new Set<string>();
+    arrayAt(
+      required(properties, "captures", `${path}.properties`),
+      `${path}.properties.captures`,
+    ).forEach((capture, captureIndex) => {
+      const capturePath = `${path}.properties.captures[${captureIndex}]`;
+      const record = objectAt(capture, capturePath);
+      const key = stringAt(
+        required(record, "key", capturePath),
+        `${capturePath}.key`,
+      );
+      if (seen.has(key)) {
+        throw new StructureError(`${capturePath}.key`, `duplicate capture ${key}`);
+      }
+      seen.add(key);
+      const expected = declaredCaptures.get(key);
+      if (!expected) {
+        throw new StructureError(
+          `${capturePath}.key`,
+          `unknown capture ${key} for template ${templateId}`,
+        );
+      }
+      const type = required(record, "type", capturePath);
+      if (stableStringify(type) !== stableStringify(expected.type)) {
+        throw new StructureError(
+          `${capturePath}.type`,
+          `capture ${key} type does not match template ${templateId}`,
+        );
+      }
+    });
+    for (const key of declaredCaptures.keys()) {
+      if (!seen.has(key)) {
+        throw new StructureError(
+          `${path}.properties.captures`,
+          `missing capture ${key} for template ${templateId}`,
+        );
+      }
+    }
+    functionCapturePorts.set(id, seen);
+  });
+
+  wires.forEach((value, index) => {
+    const path = `$.geometry.wires[${index}]`;
+    const wire = objectAt(value, path);
+    const targetHint = wire.targetHint;
+    if (targetHint === undefined) return;
+    const hint = objectAt(targetHint, `${path}.targetHint`);
+    if (
+      stringAt(
+        required(hint, "kind", `${path}.targetHint`),
+        `${path}.targetHint.kind`,
+      ) !== "element_port"
+    ) {
+      return;
+    }
+    const elementId = stringAt(
+      required(hint, "elementId", `${path}.targetHint`),
+      `${path}.targetHint.elementId`,
+    );
+    const port = stringAt(
+      required(hint, "port", `${path}.targetHint`),
+      `${path}.targetHint.port`,
+    );
+    const captures = functionCapturePorts.get(elementId);
+    if (captures && port !== "value" && !captures.has(port)) {
+      throw new StructureError(
+        `${path}.targetHint.port`,
+        `unknown capture port ${port} on Function ${elementId}`,
+      );
+    }
+  });
+}
+
 function junctionAt(value: unknown, path: string): void {
   const junction = objectAt(value, path);
   idAt(junction, path);
@@ -514,6 +666,7 @@ export function parseProjectJson(text: string): ProjectDocument {
     stringAt(document.currentContainerId, "$.currentContainerId");
   }
   checkRenderingReferences(elements, containers, wires, junctions);
+  checkFunctionCaptureReferences(elements, containers, wires);
   checkSurfaceFunctionReferences(surfaceFunctions, containers);
   if (document.view !== undefined) {
     const view = objectAt(document.view, "$.view");
