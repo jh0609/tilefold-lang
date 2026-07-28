@@ -67,11 +67,7 @@
 }
 
 .container-resize-handle {
-  fill: #ffffff;
-  stroke: var(--select);
-  stroke-width: 2.5;
   pointer-events: all;
-  vector-effect: non-scaling-stroke;
 }
 
 .container-resize-handle.nwse {
@@ -84,6 +80,23 @@
 
 .container-resize-handle:focus-visible {
   outline: none;
+}
+
+.container-resize-handle-hit {
+  fill: transparent;
+  stroke: transparent;
+  pointer-events: all;
+}
+
+.container-resize-handle-visible {
+  fill: #ffffff;
+  stroke: var(--select);
+  stroke-width: 2.5;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.container-resize-handle:focus-visible .container-resize-handle-visible {
   stroke: #101828;
   stroke-width: 4;
 }
@@ -351,16 +364,12 @@
 }
 
 .resize-handles {
-  pointer-events: none;
+  pointer-events: all;
 }
 
 .resize-handle {
-  fill: #ffffff;
-  stroke: var(--select);
-  stroke-width: 2.5;
   cursor: nwse-resize;
   pointer-events: all;
-  vector-effect: non-scaling-stroke;
 }
 
 .resize-handle.east {
@@ -373,6 +382,23 @@
 
 .resize-handle:focus {
   outline: none;
+}
+
+.resize-handle-hit {
+  fill: transparent;
+  stroke: transparent;
+  pointer-events: all;
+}
+
+.resize-handle-visible {
+  fill: #ffffff;
+  stroke: var(--select);
+  stroke-width: 2.5;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.resize-handle:focus .resize-handle-visible {
   stroke: #101828;
   stroke-width: 3.5;
 }

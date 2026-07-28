@@ -234,6 +234,37 @@ function expectOrthogonalPath(points: readonly { x: number; y: number }[]) {
   }
 }
 
+function expectNoTerminalBacktracking(
+  points: readonly { x: number; y: number }[],
+  sourceDirection: 1 | -1,
+  targetDirection: 1 | -1,
+) {
+  if (points.length >= 3) {
+    const source = points[0]!;
+    const exit = points[1]!;
+    const next = points[2]!;
+    expect(
+      source.y === exit.y &&
+        exit.y === next.y &&
+        Math.sign(exit.x - source.x) === sourceDirection &&
+        Math.sign(next.x - exit.x) === -sourceDirection,
+      `source terminal backtracks in ${JSON.stringify(points)}`,
+    ).toBe(false);
+  }
+  if (points.length >= 3) {
+    const target = points.at(-1)!;
+    const entry = points.at(-2)!;
+    const previous = points.at(-3)!;
+    expect(
+      previous.y === entry.y &&
+        entry.y === target.y &&
+        Math.sign(target.x - entry.x) === -targetDirection &&
+        Math.sign(entry.x - previous.x) === targetDirection,
+      `target terminal backtracks in ${JSON.stringify(points)}`,
+    ).toBe(false);
+  }
+}
+
 describe("edge routing", () => {
   it("removes collinear partial backtracking until stable", () => {
     expect(
@@ -322,10 +353,25 @@ describe("edge routing", () => {
 
       expectOrthogonalPath(routed);
       expect(routed[1]!.x).toBeGreaterThan(routed[0]!.x);
+      expectNoTerminalBacktracking(routed, 1, -1);
       expect(routeIntersectsObstacle(routeAfterFirstSegment(routed), source.bounds)).toBe(false);
       expect(routeIntersectsObstacle(routeBeforeLastSegment(routed), target.bounds)).toBe(false);
     },
   );
+
+  it("shrinks terminal segments for close facing ports instead of overshooting and returning", () => {
+    const source = natNode("source", 120, 80);
+    const target = succNode("target", 222, 80);
+    const wire = wireBetween("wire", source, target);
+    const routedDocument = withElements(example(), [source, target], wire);
+
+    const routed = routeWire(routedDocument, wire);
+
+    expectOrthogonalPath(routed);
+    expectNoTerminalBacktracking(routed, 1, -1);
+    expect(routeIntersectsObstacle(routeAfterFirstSegment(routed), source.bounds)).toBe(false);
+    expect(routeIntersectsObstacle(routeBeforeLastSegment(routed), target.bounds)).toBe(false);
+  });
 
   it("recalculates reverse routes after moving a node", () => {
     const source = natNode("source", 220, 40);

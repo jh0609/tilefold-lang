@@ -93,6 +93,50 @@ async function portAnchor(locator: Locator) {
   }));
 }
 
+async function screenBox(locator: Locator) {
+  await expect(locator).toBeVisible();
+  const box = await locator.boundingBox();
+  expect(box).not.toBeNull();
+  return box!;
+}
+
+function boxesOverlap(
+  left: { x: number; y: number; width: number; height: number },
+  right: { x: number; y: number; width: number; height: number },
+) {
+  return (
+    left.x < right.x + right.width &&
+    left.x + left.width > right.x &&
+    left.y < right.y + right.height &&
+    left.y + left.height > right.y
+  );
+}
+
+async function expectNoScreenOverlap(left: Locator, right: Locator) {
+  expect(boxesOverlap(await screenBox(left), await screenBox(right))).toBe(false);
+}
+
+async function resetZoom(page: Page) {
+  await page.getByRole("button", { name: "Reset view" }).click();
+  await expect(page.getByLabel("Canvas zoom")).toHaveText("100%");
+}
+
+async function setZoomNear(page: Page, target: 50 | 100 | 200) {
+  await resetZoom(page);
+  if (target === 50) {
+    for (let count = 0; count < 3; count += 1) {
+      await page.getByRole("button", { name: "Zoom out" }).click();
+    }
+    await expect(page.getByLabel("Canvas zoom")).toHaveText("51%");
+  }
+  if (target === 200) {
+    for (let count = 0; count < 3; count += 1) {
+      await page.getByRole("button", { name: "Zoom in" }).click();
+    }
+    await expect(page.getByLabel("Canvas zoom")).toHaveText("195%");
+  }
+}
+
 function segmentHitsRect(
   a: { x: number; y: number },
   b: { x: number; y: number },
@@ -332,6 +376,8 @@ test("reroutes displayed wires around moved and resized obstacles", async ({
   await setSelectedBounds(page, "160", "44");
   await expect(obstacleNode.locator("rect.element-body")).toHaveAttribute("x", "160");
   await expect(obstacleNode.locator("rect.element-body")).toHaveAttribute("y", "44");
+  const obstacleId = await obstacleNode.getAttribute("data-node-id");
+  expect(obstacleId).not.toBeNull();
   const obstacle = await svgRect(obstacleNode);
   const routed = parsePoints(
     await page.getByTestId("wire-wire_nat_succ").getAttribute("points"),
@@ -343,7 +389,7 @@ test("reroutes displayed wires around moved and resized obstacles", async ({
 
   await dragBy(
     page,
-    page.locator('circle.resize-handle.south-east').last(),
+    page.getByTestId(`resize-${obstacleId!}-south-east`),
     40,
     40,
   );
@@ -355,6 +401,109 @@ test("reroutes displayed wires around moved and resized obstacles", async ({
   await page.getByRole("button", { name: "Zoom in" }).click();
   await page.getByRole("button", { name: "Zoom out" }).click();
   await expect(page.getByTestId("wire-wire_nat_succ")).toBeVisible();
+  await expectNoBrowserIssues(issues);
+});
+
+test("keeps interaction chrome screen-sized across zoom while resize math stays in canvas coordinates", async ({
+  page,
+}) => {
+  const issues = watchBrowserIssues(page);
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Add Function" }).click();
+  await page.getByLabel("Function name").fill("screenChrome");
+  await page.getByRole("button", { name: "Create total function" }).click();
+  const functionNode = page.locator(
+    'g.element-node[data-node-kind="function"][data-template-id="screenChrome"]',
+  );
+  await expect(functionNode).toBeVisible();
+  const functionId = await functionNode.getAttribute("data-node-id");
+  expect(functionId).not.toBeNull();
+  await functionNode.focus();
+  await page.keyboard.press("Enter");
+  await setSelectedBounds(page, "120", "130");
+
+  const visibleHandle = page.getByTestId(
+    `resize-${functionId!}-south-east-visible`,
+  );
+  const sizes: number[] = [];
+  for (const zoom of [50, 100, 200] as const) {
+    await setZoomNear(page, zoom);
+    await functionNode.focus();
+    await page.keyboard.press("Enter");
+    const box = await screenBox(visibleHandle);
+    sizes.push(box.width);
+    expect(box.width).toBeGreaterThanOrEqual(8);
+    expect(box.width).toBeLessThanOrEqual(13);
+  }
+  expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(2.5);
+
+  await setZoomNear(page, 200);
+  await functionNode.focus();
+  await page.keyboard.press("Enter");
+  const before = await svgRect(functionNode);
+  await dragBy(page, page.getByTestId(`resize-${functionId!}-east`), 39, 0);
+  const after = await svgRect(functionNode);
+  expect(after.width - before.width).toBeGreaterThanOrEqual(9);
+  expect(after.width - before.width).toBeLessThanOrEqual(11);
+  await page.getByRole("button", { name: "Undo" }).click();
+  expect(await svgRect(functionNode)).toEqual(before);
+  await page.getByRole("button", { name: "Redo" }).click();
+  expect(await svgRect(functionNode)).toEqual(after);
+  await expectNoBrowserIssues(issues);
+});
+
+test("keeps Nat, Succ, and Drop ports clear of node content across zoom levels", async ({
+  page,
+}) => {
+  const issues = watchBrowserIssues(page);
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Add Drop" }).click();
+  const dropNode = page.locator('g.element-node.selected[data-node-kind="drop"]');
+  await expect(dropNode).toBeVisible();
+  const dropId = await dropNode.getAttribute("data-node-id");
+  expect(dropId).not.toBeNull();
+  await setSelectedBounds(page, "250", "145");
+  await page.getByRole("button", { name: "Add Nat", exact: true }).click();
+  const sourceNat = page.locator('g.element-node.selected[data-node-kind="nat_literal"]');
+  await expect(sourceNat).toBeVisible();
+  const sourceNatId = await sourceNat.getAttribute("data-node-id");
+  expect(sourceNatId).not.toBeNull();
+  await setSelectedBounds(page, "130", "145");
+
+  for (const zoom of [50, 100, 200] as const) {
+    await setZoomNear(page, zoom);
+    await expectNoScreenOverlap(
+      page.getByTestId("port-visible-node_nat_2-value"),
+      page.getByTestId("element-node_nat_2-primary-value"),
+    );
+    await expectNoScreenOverlap(
+      page.getByTestId("port-visible-node_succ-input"),
+      page.getByTestId("element-node_succ-kind-label"),
+    );
+    await expectNoScreenOverlap(
+      page.getByTestId("port-visible-node_succ-result"),
+      page.getByTestId("element-node_succ-kind-label"),
+    );
+    await expectNoScreenOverlap(
+      page.getByTestId(`port-visible-${dropId!}-input`),
+      page.getByTestId(`element-${dropId!}-kind-label`),
+    );
+  }
+
+  await dragTo(
+    page,
+    port(page, sourceNatId!, "value", "output"),
+    port(page, dropId!, "input", "input"),
+  );
+  const wire = page.locator(
+    `polyline[data-source-node-id="${sourceNatId}"][data-target-node-id="${dropId}"]`,
+  );
+  await expect(wire).toHaveCount(1);
+  const route = parsePoints(await wire.getAttribute("points"));
+  expect(route[0]).toEqual(await portAnchor(port(page, sourceNatId!, "value", "output")));
+  expect(route.at(-1)).toEqual(await portAnchor(port(page, dropId!, "input", "input")));
   await expectNoBrowserIssues(issues);
 });
 

@@ -33,6 +33,11 @@ import {
   managedCaptureSourcePort,
   resourceFlowSourceIds,
 } from "../model/surfaceResourceFlow";
+import {
+  INTERACTION_CHROME,
+  pixelsPerCanvasUnit as measurePixelsPerCanvasUnit,
+  screenUnits,
+} from "../model/interactionChrome";
 import type {
   CoreType,
   EndpointHint,
@@ -142,6 +147,7 @@ function ContainerShape({
   container,
   selected,
   selectedBoundaryId,
+  pixelsPerCanvasUnit,
   onSelect,
   onResizePointerDown,
   onMovePointerDown,
@@ -149,9 +155,10 @@ function ContainerShape({
   container: ProjectContainer;
   selected: boolean;
   selectedBoundaryId: string | null;
+  pixelsPerCanvasUnit: number;
   onSelect: () => void;
   onResizePointerDown: (
-    event: ReactPointerEvent<SVGCircleElement>,
+    event: ReactPointerEvent<SVGElement>,
     container: ProjectContainer,
     handle: ContainerResizeHandle,
   ) => void;
@@ -161,6 +168,18 @@ function ContainerShape({
   ) => void;
 }) {
   const { x, y, width, height } = container.bounds;
+  const boundaryPortRadius = screenUnits(
+    INTERACTION_CHROME.boundaryPortVisibleRadiusPx,
+    pixelsPerCanvasUnit,
+  );
+  const resizeVisibleRadius = screenUnits(
+    INTERACTION_CHROME.resizeHandleVisibleRadiusPx,
+    pixelsPerCanvasUnit,
+  );
+  const resizeHitRadius = screenUnits(
+    INTERACTION_CHROME.resizeHandleHitRadiusPx,
+    pixelsPerCanvasUnit,
+  );
   const handles: Array<{
     handle: ContainerResizeHandle;
     x: number;
@@ -242,7 +261,7 @@ function ContainerShape({
           className={`boundary-port role-${boundary.role} ${portTypeClass(boundary.type)}${selectedBoundaryId === boundary.id ? " selected" : ""}`}
           cx={x + boundary.anchor.x}
           cy={y + boundary.anchor.y}
-          r={6}
+          r={boundaryPortRadius}
           aria-hidden="true"
         >
           <title>{`${boundary.role} boundary ${boundary.id}`}</title>
@@ -250,21 +269,36 @@ function ContainerShape({
       ))}
       {selected &&
         handles.map((handle) => (
-          <circle
+          <g
             key={handle.handle}
             className={`container-resize-handle ${handle.className}`}
             data-testid={`container-${container.id}-resize-${handle.handle}`}
             data-container-resize-handle={handle.handle}
-            cx={handle.x}
-            cy={handle.y}
-            r={7}
             role="button"
             tabIndex={0}
             aria-label={`${handle.label} of ${container.id}`}
             onPointerDown={(event) =>
               onResizePointerDown(event, container, handle.handle)
             }
-          />
+          >
+            <circle
+              className="container-resize-handle-hit"
+              cx={handle.x}
+              cy={handle.y}
+              r={resizeHitRadius}
+              onPointerDown={(event) =>
+                onResizePointerDown(event, container, handle.handle)
+              }
+            />
+            <circle
+              className="container-resize-handle-visible"
+              data-testid={`container-${container.id}-resize-${handle.handle}-visible`}
+              cx={handle.x}
+              cy={handle.y}
+              r={resizeVisibleRadius}
+              aria-hidden="true"
+            />
+          </g>
         ))}
     </g>
   );
@@ -349,6 +383,11 @@ export function Canvas({
     useState<ContainerMoveState | null>(null);
   const [connection, setConnection] = useState<ConnectionDrag | null>(null);
   const [pan, setPan] = useState<PanState | null>(null);
+  const [svgViewport, setSvgViewport] = useState({ width: 0, height: 0 });
+  const pixelsPerCanvasUnit = useMemo(
+    () => measurePixelsPerCanvasUnit(parseViewBox(viewBox), svgViewport),
+    [svgViewport, viewBox],
+  );
   const ports = useMemo(() => collectConnectablePorts(document), [document]);
   const connectionTargets = useMemo(() => {
     const compatible = new Set<string>();
@@ -383,6 +422,20 @@ export function Canvas({
     }
     return { compatible, rejected };
   }, [connection, document, ports]);
+
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const updateSize = () => {
+      const rect = svg.getBoundingClientRect();
+      setSvgViewport({ width: rect.width, height: rect.height });
+    };
+    updateSize();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(svg);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     function cancelOnEscape(event: KeyboardEvent) {
@@ -563,7 +616,7 @@ export function Canvas({
   }
 
   function startResize(
-    event: ReactPointerEvent<SVGCircleElement>,
+    event: ReactPointerEvent<SVGElement>,
     element: ProjectElement,
     handle: ResizeHandle,
   ) {
@@ -593,7 +646,7 @@ export function Canvas({
   }
 
   function startContainerResize(
-    event: ReactPointerEvent<SVGCircleElement>,
+    event: ReactPointerEvent<SVGElement>,
     container: ProjectContainer,
     handle: ContainerResizeHandle,
   ) {
@@ -1158,6 +1211,7 @@ export function Canvas({
                 ? selection.id
                 : null
             }
+            pixelsPerCanvasUnit={pixelsPerCanvasUnit}
             onSelect={() =>
               selectUnlessSuppressed({ type: "container", id: container.id })
             }
@@ -1299,6 +1353,7 @@ export function Canvas({
             connectionTargetKey={connection?.validHover?.key ?? null}
             compatiblePortKeys={connectionTargets.compatible}
             rejectedPortKeys={connectionTargets.rejected}
+            pixelsPerCanvasUnit={pixelsPerCanvasUnit}
             onPortPointerDown={startConnection}
           />
         ))}
@@ -1326,7 +1381,10 @@ export function Canvas({
                 }
                 cx={port.anchor.x}
                 cy={port.anchor.y}
-                r={11}
+                r={screenUnits(
+                  INTERACTION_CHROME.portHitRadiusPx,
+                  pixelsPerCanvasUnit,
+                )}
                 role="button"
                 tabIndex={0}
                 aria-label={`${port.direction} boundary port ${port.name} on ${port.ownerId}${port.direction === "output" ? ", drag to connect" : ", select to inspect"}`}
@@ -1383,7 +1441,10 @@ export function Canvas({
                     data-testid={`wire-${wire.id}-${endpoint}-handle`}
                     cx={availability.point.x}
                     cy={availability.point.y}
-                    r={12}
+                    r={screenUnits(
+                      INTERACTION_CHROME.wireEndpointHitRadiusPx,
+                      pixelsPerCanvasUnit,
+                    )}
                     role="button"
                     tabIndex={0}
                     aria-label={`Reconnect ${endpoint} endpoint of wire ${wire.id}`}
@@ -1395,7 +1456,10 @@ export function Canvas({
                     className="wire-endpoint-visible"
                     cx={availability.point.x}
                     cy={availability.point.y}
-                    r={7}
+                    r={screenUnits(
+                      INTERACTION_CHROME.wireEndpointVisibleRadiusPx,
+                      pixelsPerCanvasUnit,
+                    )}
                     aria-hidden="true"
                   />
                   <text

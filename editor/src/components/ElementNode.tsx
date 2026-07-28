@@ -2,6 +2,7 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import type { CoreType, ProjectElement } from "../model/project";
 import type { ConnectablePort } from "../model/portConnections";
 import { formatCoreType } from "../model/coreTypes";
+import { INTERACTION_CHROME, screenUnits } from "../model/interactionChrome";
 
 interface ElementNodeProps {
   element: ProjectElement;
@@ -14,7 +15,7 @@ interface ElementNodeProps {
     element: ProjectElement,
   ) => void;
   onResizePointerDown: (
-    event: ReactPointerEvent<SVGCircleElement>,
+    event: ReactPointerEvent<SVGElement>,
     element: ProjectElement,
     handle: ResizeHandle,
   ) => void;
@@ -22,6 +23,7 @@ interface ElementNodeProps {
   connectionTargetKey: string | null;
   compatiblePortKeys: ReadonlySet<string>;
   rejectedPortKeys: ReadonlySet<string>;
+  pixelsPerCanvasUnit: number;
   onPortPointerDown: (
     event: ReactPointerEvent<SVGCircleElement>,
     port: ConnectablePort,
@@ -42,6 +44,7 @@ const KIND_LABELS: Record<ProjectElement["kind"], string> = {
 };
 
 const COMPACT_PORT_HIT_OFFSET = 8;
+const PORT_SIDE_SAFE_INSET = 20;
 
 function typeClass(type: CoreType): string {
   if (type === "nat") return "type-nat";
@@ -117,6 +120,7 @@ export function ElementNode({
   connectionTargetKey,
   compatiblePortKeys,
   rejectedPortKeys,
+  pixelsPerCanvasUnit,
   onPortPointerDown,
 }: ElementNodeProps) {
   const { x, y, width, height } = element.bounds;
@@ -124,6 +128,26 @@ export function ElementNode({
   const value =
     element.kind === "nat_literal" ? element.properties.value : undefined;
   const signature = nodeSignature(element, ports);
+  const portVisibleRadius = screenUnits(
+    INTERACTION_CHROME.portVisibleRadiusPx,
+    pixelsPerCanvasUnit,
+  );
+  const portHitRadius = screenUnits(
+    INTERACTION_CHROME.portHitRadiusPx,
+    pixelsPerCanvasUnit,
+  );
+  const resizeVisibleRadius = screenUnits(
+    INTERACTION_CHROME.resizeHandleVisibleRadiusPx,
+    pixelsPerCanvasUnit,
+  );
+  const resizeHitRadius = screenUnits(
+    INTERACTION_CHROME.resizeHandleHitRadiusPx,
+    pixelsPerCanvasUnit,
+  );
+  const contentLeft = x + PORT_SIDE_SAFE_INSET;
+  const contentRight = x + width - PORT_SIDE_SAFE_INSET;
+  const contentCenter = (contentLeft + contentRight) / 2;
+  const eastResizeY = y + Math.max(12, Math.min(height - 12, height * 0.75));
   return (
     <g
       className={`element-node kind-${element.kind}${compact ? " compact" : ""}${selected ? " selected" : ""}${traceHighlighted ? " trace-highlighted" : ""}`}
@@ -172,7 +196,8 @@ export function ElementNode({
       )}
       <text
         className="element-kind"
-        x={x + (compact ? 3 : 12)}
+        data-testid={`element-${element.id}-kind-label`}
+        x={compact ? contentLeft - 14 : contentLeft}
         y={y + (compact ? 7 : 22)}
         fontSize={compact ? 5 : undefined}
       >
@@ -181,16 +206,22 @@ export function ElementNode({
       {value !== undefined && (
         <text
           className="element-primary-value"
-          x={x + width / 2}
+          data-testid={`element-${element.id}-primary-value`}
+          x={compact ? x + width * 0.35 : contentCenter}
           y={y + height / 2 + (compact ? 4 : 7)}
-          fontSize={compact ? 10 : undefined}
+          fontSize={compact ? 8 : undefined}
           textAnchor="middle"
         >
           {value}
         </text>
       )}
       {!compact && (
-        <text className="element-signature" x={x + 12} y={y + height - 8}>
+        <text
+          className="element-signature"
+          data-testid={`element-${element.id}-signature`}
+          x={contentLeft}
+          y={y + height - 8}
+        >
           {signature}
         </text>
       )}
@@ -207,24 +238,39 @@ export function ElementNode({
       {selected && (
         <g className="resize-handles" aria-hidden="false">
           {[
-            ["east", x + width, y + height / 2],
+            ["east", x + width, eastResizeY],
             ["south", x + width / 2, y + height],
             ["south-east", x + width, y + height],
           ].map(([handle, cx, cy]) => (
-            <circle
+            <g
               key={handle}
               className={`resize-handle ${handle}`}
               data-testid={`resize-${element.id}-${handle}`}
-              cx={cx as number}
-              cy={cy as number}
-              r={7}
               role="button"
               tabIndex={0}
               aria-label={`Resize ${handle} handle for ${element.id}`}
               onPointerDown={(event) =>
                 onResizePointerDown(event, element, handle as ResizeHandle)
               }
-            />
+            >
+              <circle
+                className="resize-handle-hit"
+                cx={cx as number}
+                cy={cy as number}
+                r={resizeHitRadius}
+                onPointerDown={(event) =>
+                  onResizePointerDown(event, element, handle as ResizeHandle)
+                }
+              />
+              <circle
+                className="resize-handle-visible"
+                data-testid={`resize-${element.id}-${handle}-visible`}
+                cx={cx as number}
+                cy={cy as number}
+                r={resizeVisibleRadius}
+                aria-hidden="true"
+              />
+            </g>
           ))}
         </g>
       )}
@@ -245,7 +291,7 @@ export function ElementNode({
                 className="port-hit-area"
                 cx={hitCenter.x}
                 cy={hitCenter.y}
-                r={11}
+                r={portHitRadius}
                 data-testid={`port-${port.key}`}
                 data-node-id={element.id}
                 data-node-kind={element.kind}
@@ -259,9 +305,10 @@ export function ElementNode({
             )}
             <circle
               className="port-anchor"
+              data-testid={`port-visible-${element.id}-${anchor.port}`}
               cx={anchor.x}
               cy={anchor.y}
-              r={5}
+              r={portVisibleRadius}
               aria-hidden="true"
             >
               <title>{`${anchor.port} · ${output ? "output" : "input"}${output ? " · drag to connect" : " · drop target"}`}</title>
@@ -269,7 +316,8 @@ export function ElementNode({
             {!compact && (
               <text
                 className="port-label"
-                x={anchor.x + (output ? -9 : 9)}
+                data-testid={`port-label-${element.id}-${anchor.port}`}
+                x={anchor.x + (output ? -PORT_SIDE_SAFE_INSET / 2 : PORT_SIDE_SAFE_INSET / 2)}
                 y={anchor.y + 7}
                 textAnchor={output ? "end" : "start"}
               >

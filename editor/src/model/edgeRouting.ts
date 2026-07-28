@@ -433,21 +433,26 @@ function referenceSegmentsForWire(
   const source = endpointPoint(document, wire, "source");
   const target = endpointPoint(document, wire, "target");
   if (!source || !target) return pathSegments(wire.points);
-  const sourceExit = endpointCorridorPoint(
+  const sourceDirection = endpointDirection(document, wire, "source", source);
+  const targetDirection = endpointDirection(document, wire, "target", target);
+  const { sourceExit, targetEntry, corridorsFit } = endpointCorridorPoints(
     document,
     wire,
-    "source",
     source,
-    endpointDirection(document, wire, "source", source),
-  );
-  const targetEntry = endpointCorridorPoint(
-    document,
-    wire,
-    "target",
     target,
-    endpointDirection(document, wire, "target", target),
+    sourceDirection,
+    targetDirection,
   );
-  return pathSegments(normalizePath([source, sourceExit, targetEntry, target]));
+  const points = corridorsFit
+    ? [source, sourceExit, targetEntry, target]
+    : [
+        source,
+        sourceExit,
+        { x: sourceExit.x, y: targetEntry.y },
+        targetEntry,
+        target,
+      ];
+  return pathSegments(normalizePath(points));
 }
 
 function referenceSegments(
@@ -480,6 +485,40 @@ function routeCost(
     points.length * 6 +
     routeConflictCost(points, references)
   );
+}
+
+function hasTerminalBacktracking(
+  points: readonly Point[],
+  sourceDirection: 1 | -1,
+  targetDirection: 1 | -1,
+): boolean {
+  if (points.length >= 3) {
+    const source = points[0]!;
+    const exit = points[1]!;
+    const next = points[2]!;
+    if (
+      source.y === exit.y &&
+      exit.y === next.y &&
+      Math.sign(exit.x - source.x) === sourceDirection &&
+      Math.sign(next.x - exit.x) === -sourceDirection
+    ) {
+      return true;
+    }
+  }
+  if (points.length >= 3) {
+    const target = points.at(-1)!;
+    const entry = points.at(-2)!;
+    const previous = points.at(-3)!;
+    if (
+      previous.y === entry.y &&
+      entry.y === target.y &&
+      Math.sign(target.x - entry.x) === -targetDirection &&
+      Math.sign(entry.x - previous.x) === targetDirection
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function horizontalSegmentIntersectsRect(
@@ -542,6 +581,76 @@ function endpointCorridorPoint(
   };
 }
 
+function signedDistanceAlongDirection(
+  from: Point,
+  to: Point,
+  direction: 1 | -1,
+): number {
+  return direction > 0 ? to.x - from.x : from.x - to.x;
+}
+
+function pointAtDistance(point: Point, direction: 1 | -1, distance: number): Point {
+  return {
+    x: point.x + direction * Math.max(0, Math.round(distance)),
+    y: point.y,
+  };
+}
+
+function endpointCorridorPoints(
+  document: ProjectDocument,
+  wire: ProjectWire,
+  source: Point,
+  target: Point,
+  sourceDirection: 1 | -1,
+  targetDirection: 1 | -1,
+): { sourceExit: Point; targetEntry: Point; corridorsFit: boolean } {
+  const preferredSourceExit = endpointCorridorPoint(
+    document,
+    wire,
+    "source",
+    source,
+    sourceDirection,
+  );
+  const preferredTargetEntry = endpointCorridorPoint(
+    document,
+    wire,
+    "target",
+    target,
+    targetDirection,
+  );
+  const sourceDistance = Math.abs(preferredSourceExit.x - source.x);
+  const targetDistance = Math.abs(target.x - preferredTargetEntry.x);
+  const facingGap =
+    sourceDirection === -targetDirection
+      ? signedDistanceAlongDirection(source, target, sourceDirection)
+      : -1;
+
+  if (facingGap <= 0 || sourceDistance + targetDistance <= facingGap) {
+    return {
+      sourceExit: preferredSourceExit,
+      targetEntry: preferredTargetEntry,
+      corridorsFit: true,
+    };
+  }
+
+  if (facingGap <= 2) {
+    return {
+      sourceExit: preferredSourceExit,
+      targetEntry: preferredTargetEntry,
+      corridorsFit: false,
+    };
+  }
+
+  const sourceShare = Math.floor(
+    (facingGap * sourceDistance) / (sourceDistance + targetDistance),
+  );
+  return {
+    sourceExit: pointAtDistance(source, sourceDirection, sourceShare),
+    targetEntry: pointAtDistance(target, targetDirection, facingGap - sourceShare),
+    corridorsFit: true,
+  };
+}
+
 export function routeWireDetailed(
   document: ProjectDocument,
   wire: ProjectWire,
@@ -569,18 +678,12 @@ export function routeWireDetailed(
   const bodyObstacles = document.geometry.elements.map((element) =>
     inflated(element.bounds, 0, element.id),
   );
-  const sourceExit = endpointCorridorPoint(
+  const { sourceExit, targetEntry, corridorsFit } = endpointCorridorPoints(
     document,
     wire,
-    "source",
     source,
-    sourceDirection,
-  );
-  const targetEntry = endpointCorridorPoint(
-    document,
-    wire,
-    "target",
     target,
+    sourceDirection,
     targetDirection,
   );
 
@@ -607,6 +710,8 @@ export function routeWireDetailed(
   const straight = normalizePath([source, sourceExit, targetEntry, target]);
   if (
     (sourceExit.x === targetEntry.x || sourceExit.y === targetEntry.y) &&
+    corridorsFit &&
+    !hasTerminalBacktracking(straight, sourceDirection, targetDirection) &&
     isClearRoutedPath(straight, obstacles, sourceElementId, targetElementId) &&
     routeConflictCost(straight, references) === 0
   ) {
@@ -629,6 +734,7 @@ export function routeWireDetailed(
     target,
   ]);
   if (
+    !hasTerminalBacktracking(direct, sourceDirection, targetDirection) &&
     isClearRoutedPath(direct, obstacles, sourceElementId, targetElementId) &&
     routeConflictCost(direct, references) === 0
   ) {
@@ -690,6 +796,7 @@ export function routeWireDetailed(
 
   const marginClearCandidates = candidates
     .filter((candidate) =>
+      !hasTerminalBacktracking(candidate, sourceDirection, targetDirection) &&
       isClearRoutedPath(candidate, obstacles, sourceElementId, targetElementId),
     )
     .sort(
@@ -708,6 +815,7 @@ export function routeWireDetailed(
 
   const bodyClearCandidates = candidates
     .filter((candidate) =>
+      !hasTerminalBacktracking(candidate, sourceDirection, targetDirection) &&
       isClearRoutedPath(
         candidate,
         bodyObstacles,
@@ -730,7 +838,10 @@ export function routeWireDetailed(
     };
   }
 
-  if (isClearRoutedPath(direct, bodyObstacles, sourceElementId, targetElementId)) {
+  if (
+    !hasTerminalBacktracking(direct, sourceDirection, targetDirection) &&
+    isClearRoutedPath(direct, bodyObstacles, sourceElementId, targetElementId)
+  ) {
     return {
       points: direct,
       mode: "body-clear-direct",
@@ -739,13 +850,27 @@ export function routeWireDetailed(
     };
   }
 
-  const fallback = normalizePath([
+  const simpleFallback = normalizePath([
     source,
     sourceExit,
     { x: targetEntry.x, y: sourceExit.y },
     targetEntry,
     target,
   ]);
+  const fallback = hasTerminalBacktracking(
+    simpleFallback,
+    sourceDirection,
+    targetDirection,
+  )
+    ? normalizePath([
+        source,
+        sourceExit,
+        { x: sourceExit.x, y: Math.min(source.y, target.y) - ROUTE_MARGIN },
+        { x: targetEntry.x, y: Math.min(source.y, target.y) - ROUTE_MARGIN },
+        targetEntry,
+        target,
+      ])
+    : simpleFallback;
   return {
     points: fallback,
     mode: "fallback",

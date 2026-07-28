@@ -1018,9 +1018,10 @@ describe("Tilefold editor UI", () => {
     const outputAnchor = outputHit.parentElement?.querySelector(".port-anchor");
     expect(outputHit).toHaveAttribute("cx", "88");
     expect(outputHit).toHaveAttribute("cy", "70");
-    expect(outputHit).toHaveAttribute("r", "11");
+    expect(outputHit).toHaveAttribute("r", "12");
     expect(outputAnchor).toHaveAttribute("cx", "80");
     expect(outputAnchor).toHaveAttribute("cy", "70");
+    expect(outputAnchor).toHaveAttribute("r", "5");
 
     const inputHit = screen.getByTestId("port-element:drop_unit:input");
     const inputAnchor = inputHit.parentElement?.querySelector(".port-anchor");
