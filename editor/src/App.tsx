@@ -32,6 +32,7 @@ import {
   callableFunctionTemplates,
   findElementOwnerContainer,
   findOpenElementCenter,
+  fitContainerBoundsToContent,
   nextFunctionTemplateId,
   templateFunctionReferences,
   type AddableElementKind,
@@ -706,6 +707,15 @@ export function App() {
               to: next,
             });
           }}
+          onMoveContainer={(id, from, to) => {
+            if (from.x === to.x && from.y === to.y) return;
+            runCommand({
+              type: "move_container",
+              id,
+              from,
+              to,
+            });
+          }}
           onResizeElement={(id, before, after) => {
             if (
               before.x === after.x &&
@@ -826,6 +836,23 @@ export function App() {
           onFocusTemplate={focusTemplate}
           onFocusEntry={focusEntry}
           onEditSignature={editSurfaceFunctionSignature}
+          onEditCaptures={(edit) =>
+            Boolean(runCommand({ type: "edit_template_captures", edit }))
+          }
+          onFitContainer={(id) => {
+            const container = document.geometry.containers.find(
+              (candidate) => candidate.id === id,
+            );
+            if (!container) return;
+            const after = fitContainerBoundsToContent(document, id);
+            const afterDocument = runCommand({
+              type: "fit_container_to_content",
+              id,
+              before: container.bounds,
+              after,
+            });
+            if (afterDocument) setSelection({ type: "container", id });
+          }}
           onError={setInspectorError}
         />
         <ExecutionPanel

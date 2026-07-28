@@ -14,6 +14,7 @@ import {
 } from "../model/coordinates";
 import {
   findElementOwnerContainer,
+  moveContainer,
   moveElement,
   replaceableAutoDropWireId,
   resizeContainer,
@@ -67,6 +68,14 @@ interface ContainerResizeState {
   next: Bounds;
 }
 
+interface ContainerMoveState {
+  pointerId: number;
+  containerId: string;
+  start: Point;
+  origin: Point;
+  next: Point;
+}
+
 interface CanvasProps {
   document: ProjectDocument;
   selection: Selection | null;
@@ -79,6 +88,7 @@ interface CanvasProps {
   onResetView: () => void;
   onSelect: (selection: Selection | null) => void;
   onMoveElement: (id: string, next: Point) => void;
+  onMoveContainer: (id: string, from: Point, to: Point) => void;
   onResizeElement: (id: string, before: Bounds, after: Bounds) => void;
   onResizeContainer: (
     id: string,
@@ -130,6 +140,7 @@ function ContainerShape({
   selectedBoundaryId,
   onSelect,
   onResizePointerDown,
+  onMovePointerDown,
 }: {
   container: ProjectContainer;
   selected: boolean;
@@ -139,6 +150,10 @@ function ContainerShape({
     event: ReactPointerEvent<SVGCircleElement>,
     container: ProjectContainer,
     handle: ContainerResizeHandle,
+  ) => void;
+  onMovePointerDown: (
+    event: ReactPointerEvent<SVGRectElement>,
+    container: ProjectContainer,
   ) => void;
 }) {
   const { x, y, width, height } = container.bounds;
@@ -199,6 +214,21 @@ function ContainerShape({
       }}
     >
       <rect x={x} y={y} width={width} height={height} rx={12} />
+      {container.kind.kind === "template" && (
+        <rect
+          className="container-drag-handle"
+          data-testid={`container-${container.id}-move-handle`}
+          x={x}
+          y={y}
+          width={width}
+          height={32}
+          rx={12}
+          role="button"
+          tabIndex={0}
+          aria-label={`Move ${container.id}`}
+          onPointerDown={(event) => onMovePointerDown(event, container)}
+        />
+      )}
       <text x={x + 12} y={y + 20}>
         {container.kind.kind.toUpperCase()} · {container.id}
       </text>
@@ -297,6 +327,7 @@ export function Canvas({
   onResetView,
   onSelect,
   onMoveElement,
+  onMoveContainer,
   onResizeElement,
   onResizeContainer,
   onAddWire,
@@ -310,6 +341,8 @@ export function Canvas({
   const [resize, setResize] = useState<ResizeState | null>(null);
   const [containerResize, setContainerResize] =
     useState<ContainerResizeState | null>(null);
+  const [containerMove, setContainerMove] =
+    useState<ContainerMoveState | null>(null);
   const [connection, setConnection] = useState<ConnectionDrag | null>(null);
   const [pan, setPan] = useState<PanState | null>(null);
   const ports = useMemo(() => collectConnectablePorts(document), [document]);
@@ -362,6 +395,10 @@ export function Canvas({
         suppressNextSelectionRef.current = true;
         setContainerResize(null);
         onConnectionMessage("Container resize cancelled.");
+      } else if (containerMove) {
+        suppressNextSelectionRef.current = true;
+        setContainerMove(null);
+        onConnectionMessage("Container move cancelled.");
       } else if (pan) {
         suppressNextSelectionRef.current = true;
         onViewBoxChange(pan.originViewBox);
@@ -373,6 +410,7 @@ export function Canvas({
     return () => window.removeEventListener("keydown", cancelOnEscape);
   }, [
     connection,
+    containerMove,
     containerResize,
     drag,
     onConnectionMessage,
@@ -430,6 +468,7 @@ export function Canvas({
       drag ||
       resize ||
       containerResize ||
+      containerMove ||
       pan
     ) {
       return;
@@ -583,6 +622,44 @@ export function Canvas({
     });
   }
 
+  function startContainerMove(
+    event: ReactPointerEvent<SVGRectElement>,
+    container: ProjectContainer,
+  ) {
+    if (
+      event.button !== 0 ||
+      !svgRef.current ||
+      connection ||
+      drag ||
+      resize ||
+      containerResize ||
+      containerMove ||
+      pan ||
+      container.kind.kind === "entry"
+    ) {
+      return;
+    }
+    const start = clientToProject(svgRef.current, event.clientX, event.clientY);
+    if (!start) return;
+    event.stopPropagation();
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      onConnectionMessage(
+        "Unable to capture the pointer; container move cancelled.",
+      );
+      return;
+    }
+    onSelect({ type: "container", id: container.id });
+    setContainerMove({
+      pointerId: event.pointerId,
+      containerId: container.id,
+      start,
+      origin: { x: container.bounds.x, y: container.bounds.y },
+      next: { x: container.bounds.x, y: container.bounds.y },
+    });
+  }
+
   function containerBoundsFromDelta(
     origin: Bounds,
     handle: ContainerResizeHandle,
@@ -716,6 +793,22 @@ export function Canvas({
       });
       return;
     }
+    if (containerMove?.pointerId === event.pointerId && svgRef.current) {
+      const current = clientToProject(
+        svgRef.current,
+        event.clientX,
+        event.clientY,
+      );
+      if (!current) return;
+      setContainerMove({
+        ...containerMove,
+        next: {
+          x: Math.round(containerMove.origin.x + current.x - containerMove.start.x),
+          y: Math.round(containerMove.origin.y + current.y - containerMove.start.y),
+        },
+      });
+      return;
+    }
     if (resize?.pointerId === event.pointerId && svgRef.current) {
       const current = clientToProject(
         svgRef.current,
@@ -813,6 +906,16 @@ export function Canvas({
       setContainerResize(null);
       return;
     }
+    if (containerMove?.pointerId === event.pointerId) {
+      completedPointerRef.current = event.pointerId;
+      onMoveContainer(
+        containerMove.containerId,
+        containerMove.origin,
+        containerMove.next,
+      );
+      setContainerMove(null);
+      return;
+    }
     if (drag?.pointerId !== event.pointerId) return;
     onMoveElement(drag.elementId, drag.next);
     setDrag(null);
@@ -842,6 +945,12 @@ export function Canvas({
       suppressNextSelectionRef.current = true;
       setContainerResize(null);
       onConnectionMessage("Container resize cancelled.");
+      return;
+    }
+    if (containerMove?.pointerId === event.pointerId) {
+      suppressNextSelectionRef.current = true;
+      setContainerMove(null);
+      onConnectionMessage("Container move cancelled.");
       return;
     }
     if (drag?.pointerId === event.pointerId) setDrag(null);
@@ -952,6 +1061,9 @@ export function Canvas({
         containerResize.next,
       )
     : null;
+  const containerMovePreview = containerMove
+    ? moveContainer(document, containerMove.containerId, containerMove.next)
+    : null;
   const renderedDocument =
     movePreview && !("error" in movePreview)
       ? movePreview.document
@@ -959,7 +1071,9 @@ export function Canvas({
         ? resizePreview
         : containerResizePreview
           ? containerResizePreview
-          : document;
+          : containerMovePreview && !("error" in containerMovePreview)
+            ? containerMovePreview.document
+            : document;
   const renderedPorts = useMemo(
     () => collectConnectablePorts(renderedDocument),
     [renderedDocument],
@@ -1036,6 +1150,7 @@ export function Canvas({
               selectUnlessSuppressed({ type: "container", id: container.id })
             }
             onResizePointerDown={startContainerResize}
+            onMovePointerDown={startContainerMove}
           />
         ))}
         <g className="wire-layer">

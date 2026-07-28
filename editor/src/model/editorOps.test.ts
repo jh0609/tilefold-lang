@@ -6,15 +6,20 @@ import {
   addFunctionTemplate,
   addWire,
   deleteSelection,
+  editTemplateCaptures,
   editSurfaceFunctionSignature,
+  fitContainerBoundsToContent,
+  fitContainerToContent,
   findElementOwnerContainer,
   findOpenElementCenter,
+  moveContainer,
   moveElement,
   nextStableId,
   nextFunctionTemplateId,
   callableFunctionTemplates,
   resizeContainer,
   resizeContainerBounds,
+  templateCaptureDrafts,
   templateFunctionReferences,
   updateApplyTypes,
   updateElementType,
@@ -141,7 +146,13 @@ describe("editor operations", () => {
     ]);
     expect(
       bodyElements.find((element) => element.kind === "drop")?.properties,
-    ).toEqual({ type: "unit" });
+    ).toMatchObject({
+      type: "unit",
+      provenance: {
+        kind: "auto_function_output_drop",
+        sourceElementId: "boundary_parameter_1",
+      },
+    });
     expect(
       bodyElements.find((element) => element.kind === "nat_literal")
         ?.properties,
@@ -423,6 +434,8 @@ describe("editor operations", () => {
       result.document.geometry.elements.some(
         (element) =>
           element.kind === "drop" &&
+          element.properties.provenance?.kind ===
+            "auto_function_output_drop" &&
           element.properties.provenance?.sourceElementId === created.element.id,
       ),
     ).toBe(false);
@@ -473,6 +486,8 @@ describe("editor operations", () => {
       project.geometry.elements.some(
         (element) =>
           element.kind === "drop" &&
+          element.properties.provenance?.kind ===
+            "auto_function_output_drop" &&
           element.properties.provenance?.sourceElementId === created.element.id,
       ),
     ).toBe(true);
@@ -492,6 +507,8 @@ describe("editor operations", () => {
     const autoDrop = created.document.geometry.elements.find(
       (element): element is Extract<ProjectElement, { kind: "drop" }> =>
         element.kind === "drop" &&
+        element.properties.provenance?.kind ===
+          "auto_function_output_drop" &&
         element.properties.provenance?.sourceElementId === created.element.id,
     )!;
     project = {
@@ -1694,5 +1711,177 @@ describe("editor operations", () => {
     ).toMatchObject({
       error: "This port is not available in Project JSON v1.",
     });
+  });
+});
+
+describe("template capture authoring", () => {
+  it("adds a lexical capture to a curried template and replaces the outer auto Drop", () => {
+    let project = parseProjectJson(exampleJson);
+    const created = addFunctionTemplate(project, "entry", {
+      templateId: "predStep",
+      parameters: [
+        { name: "index", type: "nat" },
+        { name: "previous", type: "nat" },
+      ],
+      resultType: "nat",
+      captures: [],
+    });
+    if ("error" in created) throw new Error(created.error);
+    project = created.document;
+    const innerTemplateId = "predStep_curried_1";
+    const edited = editTemplateCaptures(project, {
+      templateId: innerTemplateId,
+      captures: [{ key: "index", type: "nat" }],
+    });
+    if ("error" in edited) throw new Error(edited.error);
+    project = edited.document;
+
+    expect(templateCaptureDrafts(project, innerTemplateId)).toEqual([
+      { key: "index", type: "nat" },
+    ]);
+    const innerFunction = project.geometry.elements.find(
+      (element): element is Extract<ProjectElement, { kind: "function" }> =>
+        element.kind === "function" &&
+        element.properties.templateId === innerTemplateId,
+    )!;
+    const ports = collectConnectablePorts(project);
+    const source = ports.find(
+      (port) =>
+        port.hint.kind === "boundary_port" &&
+        port.hint.containerId === created.container.id &&
+        port.name === "parameter",
+    )!;
+    const target = ports.find(
+      (port) =>
+        port.hint.kind === "element_port" &&
+        port.hint.elementId === innerFunction.id &&
+        port.hint.port === "index",
+    )!;
+    const connected = addWire(project, source, target);
+    if ("error" in connected) throw new Error(connected.error);
+    project = connected.document;
+    const sourceBoundaryId =
+      source.hint.kind === "boundary_port" ? source.hint.boundaryId : "";
+
+    expect(
+      project.geometry.elements.some(
+        (element) =>
+          element.kind === "drop" &&
+          element.properties.provenance?.kind ===
+            "auto_function_output_drop" &&
+          element.properties.provenance.sourceElementId === sourceBoundaryId,
+      ),
+    ).toBe(false);
+    expect(preflightProjectDiagnostics(project)).toEqual([]);
+    const reparsed = parseProjectJson(exportProjectJson(project));
+    expect(templateCaptureDrafts(reparsed, innerTemplateId)).toEqual([
+      { key: "index", type: "nat" },
+    ]);
+  });
+
+  it("renames captures by retargeting Function ports and wires", () => {
+    let project = parseProjectJson(exampleJson);
+    const created = addFunctionTemplate(project, "entry", {
+      templateId: "captured",
+      parameterType: "nat",
+      resultType: "nat",
+      captures: [{ key: "index", type: "nat" }],
+    });
+    if ("error" in created) throw new Error(created.error);
+    project = created.document;
+    const edited = editTemplateCaptures(project, {
+      templateId: "captured",
+      captures: [{ originalKey: "index", key: "seed", type: "nat" }],
+    });
+    if ("error" in edited) throw new Error(edited.error);
+    project = edited.document;
+    expect(templateCaptureDrafts(project, "captured")).toEqual([
+      { key: "seed", type: "nat" },
+    ]);
+    expect(
+      project.geometry.wires.some(
+        (wire) =>
+          wire.targetHint?.kind === "element_port" &&
+          wire.targetHint.port === "seed",
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("container geometry editing", () => {
+  it("fits a container to content idempotently and moves its contents atomically", () => {
+    let project = parseProjectJson(exampleJson);
+    const created = addFunctionTemplate(project, "entry", {
+      templateId: "movable",
+      parameterType: "nat",
+      resultType: "nat",
+    });
+    if ("error" in created) throw new Error(created.error);
+    project = created.document;
+    const fitBounds = fitContainerBoundsToContent(project, created.container.id);
+    const fitted = fitContainerToContent(project, created.container.id);
+    expect(
+      fitted.geometry.containers.find(
+        (container) => container.id === created.container.id,
+      )?.bounds,
+    ).toEqual(fitBounds);
+    expect(
+      fitContainerBoundsToContent(fitted, created.container.id),
+    ).toEqual(fitBounds);
+
+    const beforeContainer = fitted.geometry.containers.find(
+      (container) => container.id === created.container.id,
+    )!;
+    const beforeElement = fitted.geometry.elements.find(
+      (element) =>
+        findElementOwnerContainer(fitted, element)?.id === created.container.id,
+    )!;
+    const moved = moveContainer(fitted, created.container.id, {
+      x: beforeContainer.bounds.x + 75,
+      y: beforeContainer.bounds.y + 45,
+    });
+    if ("error" in moved) throw new Error(moved.error);
+    const afterElement = moved.document.geometry.elements.find(
+      (element) => element.id === beforeElement.id,
+    )!;
+    expect(afterElement.bounds.x - beforeElement.bounds.x).toBe(75);
+    expect(afterElement.bounds.y - beforeElement.bounds.y).toBe(45);
+    expect(parseProjectJson(exportProjectJson(moved.document))).toMatchObject({
+      version: 1,
+    });
+  });
+
+  it("refuses referenced template deletion and deletes an unreferenced template", () => {
+    let project = parseProjectJson(exampleJson);
+    const created = addFunctionTemplate(project, "entry", {
+      templateId: "delete_me",
+      parameterType: "nat",
+      resultType: "nat",
+    });
+    if ("error" in created) throw new Error(created.error);
+    project = created.document;
+    expect(
+      deleteSelection(project, { type: "container", id: created.container.id })
+        .error,
+    ).toMatch(/Delete Function references/);
+    project = deleteSelection(project, {
+      type: "element",
+      id: created.element.id,
+    }).document;
+    const deleted = deleteSelection(project, {
+      type: "container",
+      id: created.container.id,
+    });
+    expect(deleted.error).toBeUndefined();
+    expect(
+      deleted.document.geometry.containers.some(
+        (container) => container.id === created.container.id,
+      ),
+    ).toBe(false);
+    expect(
+      deleted.document.surfaceFunctions?.some(
+        (functionInfo) => functionInfo.templateId === "delete_me",
+      ),
+    ).toBe(false);
   });
 });

@@ -126,6 +126,11 @@
   background: #d92d20;
 }
 
+.danger-action {
+  border-color: #d92d20;
+  color: #b42318;
+}
+
 .workspace {
   display: grid;
   grid-template-columns: 268px minmax(0, 1fr) 340px;

@@ -22,6 +22,7 @@ import {
 } from "./portConnections";
 import {
   primitiveCoreType,
+  formatCoreType,
   type PrimitiveCoreType,
 } from "./coreTypes";
 
@@ -58,6 +59,17 @@ export interface SurfaceFunctionSignatureEdit {
   parameters: SurfaceFunctionParameterEdit[];
   resultName: string;
   resultType: CoreType;
+}
+
+export interface TemplateCaptureEdit {
+  originalKey?: string;
+  key: string;
+  type: CoreType;
+}
+
+export interface TemplateCapturesEdit {
+  templateId: string;
+  captures: TemplateCaptureEdit[];
 }
 
 export interface AddFunctionTemplateResult {
@@ -353,6 +365,19 @@ function templateCaptures(
     captures.push({ key: boundary.captureKey, type: boundary.type });
   }
   return captures;
+}
+
+export function templateCaptureDrafts(
+  document: ProjectDocument,
+  templateId: string,
+): FunctionCaptureDraft[] {
+  const container = document.geometry.containers.find(
+    (candidate) =>
+      candidate.kind.kind === "template" &&
+      candidate.kind.templateId === templateId,
+  );
+  if (!container) return [];
+  return templateCaptures(container) ?? [];
 }
 
 function dependencyReaches(
@@ -774,7 +799,13 @@ export function addFunctionTemplate(
       id: allocate("node_drop_"),
       kind: "drop",
       bounds: dropBounds,
-      properties: { type: capture.type },
+      properties: {
+        type: capture.type,
+        provenance: {
+          kind: "auto_function_output_drop",
+          sourceElementId: boundary.id,
+        },
+      },
       portAnchors: [
         {
           port: "input",
@@ -847,7 +878,13 @@ export function addFunctionTemplate(
       id: allocate("node_drop_"),
       kind: "drop",
       bounds: identityDropBounds,
-      properties: { type: parameterType },
+        properties: {
+          type: parameterType,
+          provenance: {
+            kind: "auto_function_output_drop",
+            sourceElementId: parameterBoundaryId,
+          },
+        },
       portAnchors: [
         {
           port: "input",
@@ -927,7 +964,13 @@ export function addFunctionTemplate(
       id: bodyDropId,
       kind: "drop",
       bounds: bodyDropBounds,
-      properties: { type: parameterType },
+      properties: {
+        type: parameterType,
+        provenance: {
+          kind: "auto_function_output_drop",
+          sourceElementId: parameterBoundaryId,
+        },
+      },
       portAnchors: [
         {
           port: "input",
@@ -1013,7 +1056,13 @@ export function addFunctionTemplate(
       id: bodyDropId,
       kind: "drop",
       bounds: bodyDropBounds,
-      properties: { type: parameterType },
+      properties: {
+          type: parameterType,
+          provenance: {
+            kind: "auto_function_output_drop",
+            sourceElementId: parameterBoundaryId,
+          },
+        },
       portAnchors: [
         {
           port: "input",
@@ -1124,7 +1173,13 @@ export function addFunctionTemplate(
         id: allocate("node_drop_"),
         kind: "drop",
         bounds: nestedDropBounds,
-        properties: { type: nestedParameterType },
+        properties: {
+          type: nestedParameterType,
+          provenance: {
+            kind: "auto_function_output_drop",
+            sourceElementId: nestedParameterBoundaryId,
+          },
+        },
         portAnchors: [
           {
             port: "input",
@@ -1272,7 +1327,13 @@ export function addFunctionTemplate(
           id: allocate("node_drop_"),
           kind: "drop",
           bounds: deeperDropBounds,
-          properties: { type: deeperParameterType },
+          properties: {
+            type: deeperParameterType,
+            provenance: {
+              kind: "auto_function_output_drop",
+              sourceElementId: deeperParameterBoundaryId,
+            },
+          },
           portAnchors: [
             {
               port: "input",
@@ -2446,6 +2507,237 @@ export function editSurfaceFunctionSignature(
   };
 }
 
+function captureBoundaryReferences(
+  document: ProjectDocument,
+  template: ProjectContainer,
+  captureKey: string,
+): ProjectWire[] {
+  const boundaryIds = new Set(
+    template.boundaryPorts
+      .filter(
+        (boundary) =>
+          boundary.role === "capture" && boundary.captureKey === captureKey,
+      )
+      .map((boundary) => boundary.id),
+  );
+  return document.geometry.wires.filter(
+    (wire) =>
+      (wire.sourceHint?.kind === "boundary_port" &&
+        wire.sourceHint.containerId === template.id &&
+        boundaryIds.has(wire.sourceHint.boundaryId)) ||
+      (wire.targetHint?.kind === "boundary_port" &&
+        wire.targetHint.containerId === template.id &&
+        boundaryIds.has(wire.targetHint.boundaryId)),
+  );
+}
+
+function functionCaptureReferences(
+  document: ProjectDocument,
+  templateId: string,
+  captureKey: string,
+): ProjectWire[] {
+  const functionIds = new Set(
+    document.geometry.elements
+      .filter(
+        (element) =>
+          element.kind === "function" &&
+          element.properties.templateId === templateId,
+      )
+      .map((element) => element.id),
+  );
+  return document.geometry.wires.filter(
+    (wire) =>
+      wire.targetHint?.kind === "element_port" &&
+      functionIds.has(wire.targetHint.elementId) &&
+      wire.targetHint.port === captureKey,
+  );
+}
+
+function validateTemplateCapturesEdit(
+  document: ProjectDocument,
+  template: ProjectContainer,
+  edit: TemplateCapturesEdit,
+): string | null {
+  const seen = new Set<string>();
+  for (const capture of edit.captures) {
+    if (!validProjectId(capture.key)) {
+      return "Capture keys must use 1-128 ASCII letters, digits, underscores, hyphens, or periods.";
+    }
+    if (capture.key === "value") {
+      return "Capture key value is reserved for the Function output port.";
+    }
+    if (seen.has(capture.key)) {
+      return `Capture key ${capture.key} is duplicated.`;
+    }
+    seen.add(capture.key);
+  }
+  const oldCaptures = templateCaptures(template) ?? [];
+  const nextByOriginal = new Map(
+    edit.captures
+      .filter((capture) => capture.originalKey)
+      .map((capture) => [capture.originalKey!, capture]),
+  );
+  for (const oldCapture of oldCaptures) {
+    const next = nextByOriginal.get(oldCapture.key);
+    const references = [
+      ...captureBoundaryReferences(document, template, oldCapture.key),
+      ...functionCaptureReferences(document, edit.templateId, oldCapture.key),
+    ];
+    if (!next && references.length > 0) {
+      return `Disconnect ${references.length} connection(s) before removing capture "${oldCapture.key}".`;
+    }
+    if (
+      next &&
+      !coreTypeEqual(next.type, oldCapture.type) &&
+      references.length > 0
+    ) {
+      return `Disconnect ${references.length} connection(s) before changing capture "${oldCapture.key}" type.`;
+    }
+  }
+  return null;
+}
+
+export function editTemplateCaptures(
+  document: ProjectDocument,
+  edit: TemplateCapturesEdit,
+): { document: ProjectDocument } | { error: string } {
+  const template = document.geometry.containers.find(
+    (container) =>
+      container.kind.kind === "template" &&
+      container.kind.templateId === edit.templateId,
+  );
+  if (!template || template.kind.kind !== "template") {
+    return { error: `Template ${edit.templateId} does not exist.` };
+  }
+  const validation = validateTemplateCapturesEdit(document, template, edit);
+  if (validation) return { error: validation };
+
+  const usedIds = collectStableIds(document);
+  const allocate = (prefix: string) => {
+    let index = 1;
+    while (usedIds.has(`${prefix}${index}`)) index += 1;
+    const id = `${prefix}${index}`;
+    usedIds.add(id);
+    return id;
+  };
+  const oldCaptureBoundaries = template.boundaryPorts.filter(
+    (boundary): boundary is Extract<BoundaryPort, { role: "capture" }> =>
+      boundary.role === "capture",
+  );
+  const oldByKey = new Map(
+    oldCaptureBoundaries.map((boundary) => [boundary.captureKey, boundary]),
+  );
+  const keyRename = new Map<string, string>();
+  const newCaptureBoundaries: Array<Extract<BoundaryPort, { role: "capture" }>> = edit.captures.map(
+    (capture, index) => {
+      const existing = capture.originalKey
+        ? oldByKey.get(capture.originalKey)
+        : undefined;
+      if (capture.originalKey && capture.originalKey !== capture.key) {
+        keyRename.set(capture.originalKey, capture.key);
+      }
+      return {
+        id: existing?.id ?? allocate("boundary_capture_"),
+        role: "capture",
+        captureKey: capture.key,
+        type: capture.type,
+        anchor: existing?.anchor ?? { x: 0, y: 156 + index * 64 },
+      };
+    },
+  );
+  const nextTemplate: ProjectContainer = {
+    ...template,
+    bounds: {
+      ...template.bounds,
+      height: Math.max(
+        template.bounds.height,
+        220 + newCaptureBoundaries.length * 64,
+      ),
+    },
+    boundaryPorts: [
+      ...template.boundaryPorts.filter((boundary) => boundary.role !== "capture"),
+      ...newCaptureBoundaries,
+    ],
+  };
+  const captureSpecs = newCaptureBoundaries.map((boundary) => ({
+    key: boundary.captureKey,
+    type: boundary.type,
+  }));
+  const elements = document.geometry.elements.map((element) => {
+    if (
+      element.kind !== "function" ||
+      element.properties.templateId !== edit.templateId
+    ) {
+      return element;
+    }
+    const oldAnchors = new Map(
+      element.portAnchors.map((anchor) => [anchor.port, anchor]),
+    );
+    const captureAnchors = captureSpecs.map((capture, index) => {
+      const oldKey =
+        [...keyRename.entries()].find(([, next]) => next === capture.key)?.[0] ??
+        capture.key;
+      const retained = oldAnchors.get(oldKey) ?? oldAnchors.get(capture.key);
+      return {
+        port: capture.key,
+        x: retained?.x ?? element.bounds.x,
+        y: retained?.y ?? element.bounds.y + 28 + index * 64,
+      };
+    });
+    return {
+      ...element,
+      bounds: {
+        ...element.bounds,
+        height: Math.max(72, captureSpecs.length * 64),
+      },
+      properties: {
+        ...element.properties,
+        captures: captureSpecs,
+      },
+      portAnchors: [
+        ...captureAnchors,
+        element.portAnchors.find((anchor) => anchor.port === "value") ?? {
+          port: "value",
+          x: element.bounds.x + element.bounds.width,
+          y: element.bounds.y + element.bounds.height / 2,
+        },
+      ],
+    };
+  });
+  const nextDocument: ProjectDocument = {
+    ...document,
+    geometry: {
+      ...document.geometry,
+      containers: document.geometry.containers.map((container) =>
+        container.id === template.id ? nextTemplate : container,
+      ),
+      elements,
+      wires: updateBoundaryWireEndpoints(
+        document.geometry.wires.map((wire) => {
+          const retarget = (hint: ProjectWire["sourceHint"]) =>
+            hint?.kind === "element_port" &&
+            elements.some(
+              (element) =>
+                element.kind === "function" &&
+                element.id === hint.elementId &&
+                element.properties.templateId === edit.templateId,
+            ) &&
+            keyRename.has(hint.port)
+              ? { ...hint, port: keyRename.get(hint.port)! }
+              : hint;
+          return {
+            ...wire,
+            sourceHint: retarget(wire.sourceHint),
+            targetHint: retarget(wire.targetHint),
+          };
+        }),
+        nextTemplate,
+      ),
+    },
+  };
+  return { document: nextDocument };
+}
+
 export function addElement(
   document: ProjectDocument,
   kind: AddableElementKind,
@@ -2648,7 +2940,12 @@ function findReplaceableAutoDrop(
   document: ProjectDocument,
   source: ConnectablePort,
 ): { drop: Extract<ProjectElement, { kind: "drop" }>; wire: ProjectWire } | null {
-  if (source.hint.kind !== "element_port") return null;
+  if (
+    source.hint.kind !== "element_port" &&
+    source.hint.kind !== "boundary_port"
+  ) {
+    return null;
+  }
   const outgoing = document.geometry.wires.filter((wire) =>
     endpointHintEqual(wire.sourceHint, source.hint),
   );
@@ -2664,11 +2961,22 @@ function findReplaceableAutoDrop(
   );
   if (!drop) return null;
   const provenance = drop.properties.provenance;
-  if (
-    !provenance ||
-    provenance.kind !== "auto_function_output_drop" ||
-    provenance.sourceElementId !== source.hint.elementId
-  ) {
+  if (!provenance) return null;
+  if (source.hint.kind === "element_port") {
+    if (
+      provenance.kind !== "auto_function_output_drop" ||
+      provenance.sourceElementId !== source.hint.elementId
+    ) {
+      return null;
+    }
+  } else if (source.hint.kind === "boundary_port") {
+    if (
+      provenance.kind !== "auto_function_output_drop" ||
+      provenance.sourceElementId !== source.hint.boundaryId
+    ) {
+      return null;
+    }
+  } else {
     return null;
   }
   const references = document.geometry.wires.filter(
@@ -2944,6 +3252,18 @@ const CONTAINER_MIN_WIDTH = 220;
 const CONTAINER_MIN_HEIGHT = 140;
 const CONTAINER_PADDING = 24;
 
+function containerHeaderMinWidth(
+  document: ProjectDocument,
+  container: ProjectContainer,
+): number {
+  const functionInfo = functionMetadata(document, container.kind.templateId);
+  const title =
+    container.kind.kind === "entry"
+      ? `entry -> ${formatCoreType(container.kind.resultType)}`
+      : `${functionInfo?.name ?? container.kind.templateId} -> ${formatCoreType(container.kind.parameterType)} -> ${formatCoreType(container.kind.resultType)}`;
+  return Math.max(CONTAINER_MIN_WIDTH, 28 + title.length * 7);
+}
+
 function childContentBounds(
   document: ProjectDocument,
   container: ProjectContainer,
@@ -2951,16 +3271,11 @@ function childContentBounds(
   const childBounds = document.geometry.elements
     .filter((element) => findElementOwnerContainer(document, element)?.id === container.id)
     .map((element) => element.bounds);
-  const boundaryPoints = container.boundaryPorts.map((boundary) =>
-    boundaryAbsolutePoint(container, boundary),
-  );
   const xs = [
     ...childBounds.flatMap((bounds) => [bounds.x, bounds.x + bounds.width]),
-    ...boundaryPoints.map((point) => point.x),
   ];
   const ys = [
     ...childBounds.flatMap((bounds) => [bounds.y, bounds.y + bounds.height]),
-    ...boundaryPoints.map((point) => point.y),
   ];
   if (xs.length === 0 || ys.length === 0) return null;
   const minX = Math.min(...xs);
@@ -2968,6 +3283,52 @@ function childContentBounds(
   const minY = Math.min(...ys);
   const maxY = Math.max(...ys);
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+export function containerMinimumBounds(
+  document: ProjectDocument,
+  container: ProjectContainer,
+): Bounds {
+  const content = childContentBounds(document, container);
+  const minWidth = containerHeaderMinWidth(document, container);
+  const minHeight = CONTAINER_MIN_HEIGHT;
+  const left = content
+    ? Math.min(container.bounds.x, content.x - CONTAINER_PADDING)
+    : container.bounds.x;
+  const top = content
+    ? Math.min(container.bounds.y, content.y - CONTAINER_PADDING)
+    : container.bounds.y;
+  const right = Math.max(
+    left + minWidth,
+    content ? content.x + content.width + CONTAINER_PADDING : container.bounds.x + minWidth,
+  );
+  const bottom = Math.max(
+    top + minHeight,
+    content ? content.y + content.height + CONTAINER_PADDING : container.bounds.y + minHeight,
+  );
+  return {
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
+  };
+}
+
+export function fitContainerBoundsToContent(
+  document: ProjectDocument,
+  id: string,
+): Bounds {
+  const container = document.geometry.containers.find(
+    (candidate) => candidate.id === id,
+  );
+  if (!container) return { x: 0, y: 0, width: CONTAINER_MIN_WIDTH, height: CONTAINER_MIN_HEIGHT };
+  const minimum = containerMinimumBounds(document, container);
+  return {
+    x: container.bounds.x,
+    y: container.bounds.y,
+    width: Math.max(containerHeaderMinWidth(document, container), minimum.x + minimum.width - container.bounds.x),
+    height: Math.max(CONTAINER_MIN_HEIGHT, minimum.y + minimum.height - container.bounds.y),
+  };
 }
 
 export function resizeContainerBounds(
@@ -2978,35 +3339,26 @@ export function resizeContainerBounds(
 ): Bounds {
   const current = document.geometry.containers.find((container) => container.id === id);
   if (!current) return proposed;
-  const content = childContentBounds(document, current);
+  const minimum = containerMinimumBounds(document, current);
+  const minWidth = containerHeaderMinWidth(document, current);
   let left = Math.round(proposed.x);
   let top = Math.round(proposed.y);
   let right = Math.round(proposed.x + proposed.width);
   let bottom = Math.round(proposed.y + proposed.height);
 
   if (handle === "north-west" || handle === "south-west") {
-    left = Math.min(left, right - CONTAINER_MIN_WIDTH);
-    if (content) left = Math.min(left, content.x - CONTAINER_PADDING);
+    left = Math.min(left, right - minWidth);
+    left = Math.min(left, minimum.x);
   } else {
-    right = Math.max(right, left + CONTAINER_MIN_WIDTH);
-    if (content) {
-      right = Math.max(
-        right,
-        content.x + content.width + CONTAINER_PADDING,
-      );
-    }
+    right = Math.max(right, left + minWidth);
+    right = Math.max(right, minimum.x + minimum.width);
   }
   if (handle === "north-west" || handle === "north-east") {
     top = Math.min(top, bottom - CONTAINER_MIN_HEIGHT);
-    if (content) top = Math.min(top, content.y - CONTAINER_PADDING);
+    top = Math.min(top, minimum.y);
   } else {
     bottom = Math.max(bottom, top + CONTAINER_MIN_HEIGHT);
-    if (content) {
-      bottom = Math.max(
-        bottom,
-        content.y + content.height + CONTAINER_PADDING,
-      );
-    }
+    bottom = Math.max(bottom, minimum.y + minimum.height);
   }
   return {
     x: left,
@@ -3016,15 +3368,11 @@ export function resizeContainerBounds(
   };
 }
 
-export function resizeContainer(
+function resizeContainerToBounds(
   document: ProjectDocument,
-  id: string,
-  handle: ContainerResizeHandle,
-  nextBounds: Bounds,
+  current: ProjectContainer,
+  bounds: Bounds,
 ): ProjectDocument {
-  const current = document.geometry.containers.find((container) => container.id === id);
-  if (!current) return document;
-  const bounds = resizeContainerBounds(document, id, handle, nextBounds);
   const scaleX =
     current.bounds.width === 0 ? 1 : bounds.width / current.bounds.width;
   const scaleY =
@@ -3041,7 +3389,7 @@ export function resizeContainer(
     })),
   };
   const containers = document.geometry.containers.map((container) =>
-    container.id === id ? resized : container,
+    container.id === current.id ? resized : container,
   );
   const resizedDocument: ProjectDocument = {
     ...document,
@@ -3055,6 +3403,112 @@ export function resizeContainer(
     geometry: {
       ...resizedDocument.geometry,
       wires: updateBoundaryWireEndpoints(resizedDocument.geometry.wires, resized),
+    },
+  };
+}
+
+export function resizeContainer(
+  document: ProjectDocument,
+  id: string,
+  handle: ContainerResizeHandle,
+  nextBounds: Bounds,
+): ProjectDocument {
+  const current = document.geometry.containers.find((container) => container.id === id);
+  if (!current) return document;
+  const bounds = resizeContainerBounds(document, id, handle, nextBounds);
+  return resizeContainerToBounds(document, current, bounds);
+}
+
+export function fitContainerToContent(
+  document: ProjectDocument,
+  id: string,
+): ProjectDocument {
+  const current = document.geometry.containers.find((container) => container.id === id);
+  if (!current) return document;
+  return resizeContainerToBounds(document, current, fitContainerBoundsToContent(document, id));
+}
+
+export function moveContainer(
+  document: ProjectDocument,
+  id: string,
+  next: Point,
+): { document: ProjectDocument; container: ProjectContainer } | { error: string } {
+  const current = document.geometry.containers.find((container) => container.id === id);
+  if (!current) return { error: `Container ${id} does not exist.` };
+  if (current.kind.kind === "entry") {
+    return { error: "The entry container cannot be moved." };
+  }
+  const rounded = { x: Math.round(next.x), y: Math.round(next.y) };
+  const dx = rounded.x - current.bounds.x;
+  const dy = rounded.y - current.bounds.y;
+  if (dx === 0 && dy === 0) return { document, container: current };
+  const elementIds = new Set(
+    document.geometry.elements
+      .filter((element) => findElementOwnerContainer(document, element)?.id === id)
+      .map((element) => element.id),
+  );
+  const boundaryIds = new Set(current.boundaryPorts.map((boundary) => boundary.id));
+  const movedContainer: ProjectContainer = {
+    ...current,
+    bounds: { ...current.bounds, x: rounded.x, y: rounded.y },
+  };
+  const elements = document.geometry.elements.map((element) =>
+    elementIds.has(element.id)
+      ? {
+          ...element,
+          bounds: { ...element.bounds, x: element.bounds.x + dx, y: element.bounds.y + dy },
+          portAnchors: element.portAnchors.map((anchor) => ({
+            ...anchor,
+            x: anchor.x + dx,
+            y: anchor.y + dy,
+          })),
+        }
+      : element,
+  );
+  const containers = document.geometry.containers.map((container) =>
+    container.id === id ? movedContainer : container,
+  );
+  const movedDocument: ProjectDocument = {
+    ...document,
+    geometry: { ...document.geometry, elements, containers },
+  };
+  const movePoint = (point: Point): Point => ({ x: point.x + dx, y: point.y + dy });
+  const hintMoves = (hint: ProjectWire["sourceHint"]) => {
+    if (!hint) return false;
+    if (hint.kind === "element_port") return elementIds.has(hint.elementId);
+    if (hint.kind === "boundary_port") {
+      return hint.containerId === id && boundaryIds.has(hint.boundaryId);
+    }
+    return false;
+  };
+  const wires = document.geometry.wires.map((wire) => {
+    const sourceMoves = hintMoves(wire.sourceHint);
+    const targetMoves = hintMoves(wire.targetHint);
+    if (!sourceMoves && !targetMoves) return wire;
+    if (sourceMoves && targetMoves) {
+      return { ...wire, points: wire.points.map(movePoint) };
+    }
+    const points = wire.points.map((point) => ({ ...point }));
+    if (sourceMoves) {
+      const port = resolveEndpointHint(movedDocument, wire.sourceHint);
+      if (port && points[0]) points[0] = { x: Math.round(port.anchor.x), y: Math.round(port.anchor.y) };
+    }
+    if (targetMoves) {
+      const port = resolveEndpointHint(movedDocument, wire.targetHint);
+      if (port && points.length > 0) {
+        points[points.length - 1] = {
+          x: Math.round(port.anchor.x),
+          y: Math.round(port.anchor.y),
+        };
+      }
+    }
+    return { ...wire, points };
+  });
+  return {
+    container: movedContainer,
+    document: {
+      ...movedDocument,
+      geometry: { ...movedDocument.geometry, wires },
     },
   };
 }

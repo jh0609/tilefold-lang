@@ -5,7 +5,10 @@ import {
   addResultBoundary,
   addWire,
   deleteSelection,
+  editTemplateCaptures,
   editSurfaceFunctionSignature,
+  fitContainerToContent,
+  moveContainer,
   moveElement,
   reconnectWireEndpoint,
   resizeContainer,
@@ -17,6 +20,7 @@ import {
   type AddableElementKind,
   type FunctionTemplateDraft,
   type SurfaceFunctionSignatureEdit,
+  type TemplateCapturesEdit,
 } from "./editorOps";
 import { exportProjectJson, parseProjectJson } from "./importProject";
 import {
@@ -52,6 +56,10 @@ export type EditorCommand =
       type: "edit_surface_function_signature";
       edit: SurfaceFunctionSignatureEdit;
     }
+  | {
+      type: "edit_template_captures";
+      edit: TemplateCapturesEdit;
+    }
   | { type: "add_result_boundary" }
   | { type: "add_wire"; source: ConnectablePort; target: ConnectablePort }
   | {
@@ -72,6 +80,12 @@ export type EditorCommand =
       to: Point;
     }
   | {
+      type: "move_container";
+      id: string;
+      from: Point;
+      to: Point;
+    }
+  | {
       type: "resize_or_move_element";
       id: string;
       before: Bounds;
@@ -81,6 +95,12 @@ export type EditorCommand =
       type: "resize_container";
       id: string;
       handle: ContainerResizeHandle;
+      before: Bounds;
+      after: Bounds;
+    }
+  | {
+      type: "fit_container_to_content";
+      id: string;
       before: Bounds;
       after: Bounds;
     }
@@ -174,6 +194,23 @@ export function applyEditorCommand(
         };
       }
     }
+    case "edit_template_captures": {
+      const result = editTemplateCaptures(document, command.edit);
+      if ("error" in result) return { document, error: result.error };
+      try {
+        return {
+          document: parseProjectJson(exportProjectJson(result.document)),
+        };
+      } catch (error) {
+        return {
+          document,
+          error:
+            error instanceof Error
+              ? `Edited captures failed the editor structure check: ${error.message}`
+              : "Edited captures failed the editor structure check.",
+        };
+      }
+    }
     case "add_result_boundary": {
       const result = addResultBoundary(document);
       return "error" in result
@@ -239,6 +276,23 @@ export function applyEditorCommand(
         };
       }
     }
+    case "move_container": {
+      const result = moveContainer(document, command.id, command.to);
+      if ("error" in result) return { document, error: result.error };
+      try {
+        return {
+          document: parseProjectJson(exportProjectJson(result.document)),
+        };
+      } catch (error) {
+        return {
+          document,
+          error:
+            error instanceof Error
+              ? `Moved container failed the editor structure check: ${error.message}`
+              : "Moved container failed the editor structure check.",
+        };
+      }
+    }
     case "resize_or_move_element":
       return {
         document: resizeOrMoveElement(document, command.id, command.after),
@@ -251,6 +305,10 @@ export function applyEditorCommand(
           command.handle,
           command.after,
         ),
+      };
+    case "fit_container_to_content":
+      return {
+        document: fitContainerToContent(document, command.id),
       };
     case "set_nat_value":
       return {
@@ -288,6 +346,8 @@ export function editorCommandLabel(command: EditorCommand): string {
       return `Call ${command.templateId}`;
     case "edit_surface_function_signature":
       return `Edit signature for ${command.edit.templateId}`;
+    case "edit_template_captures":
+      return `Edit captures for ${command.edit.templateId}`;
     case "add_result_boundary":
       return "Add Result";
     case "add_wire":
@@ -298,10 +358,14 @@ export function editorCommandLabel(command: EditorCommand): string {
       return `Delete ${command.selection.id}`;
     case "move_element":
       return `Move ${command.id}`;
+    case "move_container":
+      return `Move ${command.id}`;
     case "resize_or_move_element":
       return `Edit bounds for ${command.id}`;
     case "resize_container":
       return `Resize ${command.id}`;
+    case "fit_container_to_content":
+      return `Fit ${command.id} to content`;
     case "set_nat_value":
       return `Edit value for ${command.id}`;
     case "set_element_type":
@@ -314,9 +378,11 @@ export function editorCommandLabel(command: EditorCommand): string {
 export function isNoOpCommand(command: EditorCommand): boolean {
   switch (command.type) {
     case "move_element":
+    case "move_container":
       return command.from.x === command.to.x && command.from.y === command.to.y;
     case "resize_or_move_element":
     case "resize_container":
+    case "fit_container_to_content":
       return (
         command.before.x === command.after.x &&
         command.before.y === command.after.y &&

@@ -43,6 +43,18 @@
   fill: #5e5182;
   font-size: 9px;
   font-weight: 700;
+  pointer-events: none;
+}
+
+.container-drag-handle {
+  fill: transparent;
+  stroke: transparent;
+  cursor: grab;
+  pointer-events: all;
+}
+
+.container-drag-handle:active {
+  cursor: grabbing;
 }
 
 .container-shape:hover rect {

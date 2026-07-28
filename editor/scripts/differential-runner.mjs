@@ -46,9 +46,10 @@ function nativeRun(projectJson) {
     /does not appear to be a valid opam root/.test(result.stderr || "")
   ) {
     const wslRepositoryRoot = toWslPath(repositoryRoot);
+    const wslSwitch = process.env.TILEFOLD_WSL_OPAM_SWITCH ?? ".";
     const command = [
       `cd ${shellQuote(wslRepositoryRoot)}`,
-      `eval "$(opam env --shell=sh --switch=.)"`,
+      `eval "$(opam env --shell=sh --switch=${shellQuote(wslSwitch)})"`,
       `dune exec --root ${shellQuote(wslRepositoryRoot)} bin/project_runner.exe`,
     ].join(" && ");
     result = spawnSync("wsl", ["bash", "-lc", command], {

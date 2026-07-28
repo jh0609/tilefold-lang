@@ -9,8 +9,10 @@ import type {
 } from "../model/project";
 import {
   templateFunctionReferences,
+  templateCaptureDrafts,
   validProjectId,
   type SurfaceFunctionSignatureEdit,
+  type TemplateCapturesEdit,
 } from "../model/editorOps";
 import { wireEndpointAvailability } from "../model/portConnections";
 import { formatCoreType } from "../model/coreTypes";
@@ -33,6 +35,8 @@ interface InspectorProps {
   onFocusTemplate: (templateId: string) => void;
   onFocusEntry: () => void;
   onEditSignature: (edit: SurfaceFunctionSignatureEdit) => boolean;
+  onEditCaptures: (edit: TemplateCapturesEdit) => boolean;
+  onFitContainer: (id: string) => void;
   onError: (error: string | null) => void;
 }
 
@@ -40,6 +44,13 @@ interface SignatureParameterRow {
   draftId: number;
   originalName?: string;
   name: string;
+  type: CoreType;
+}
+
+interface CaptureRow {
+  draftId: number;
+  originalKey?: string;
+  key: string;
   type: CoreType;
 }
 
@@ -337,6 +348,172 @@ function SignatureEditDialog({
   );
 }
 
+function CaptureEditDialog({
+  templateId,
+  initialCaptures,
+  onApply,
+  onCancel,
+}: {
+  templateId: string;
+  initialCaptures: Array<{ key: string; type: CoreType }>;
+  onApply: (edit: TemplateCapturesEdit) => boolean;
+  onCancel: () => void;
+}) {
+  const [captures, setCaptures] = useState<CaptureRow[]>(() =>
+    initialCaptures.map((capture, index) => ({
+      draftId: index + 1,
+      originalKey: capture.key,
+      key: capture.key,
+      type: capture.type,
+    })),
+  );
+  const nextDraftId = useRef(initialCaptures.length + 1);
+  const errors: Record<string, string> = {};
+  const seen = new Set<string>();
+  captures.forEach((capture) => {
+    if (!validProjectId(capture.key)) {
+      errors[`capture-${capture.draftId}`] =
+        capture.key.trim().length === 0
+          ? "Capture name is required"
+          : "Capture name must use ASCII letters, digits, underscores, hyphens, or periods.";
+    }
+    if (seen.has(capture.key)) {
+      errors[`capture-${capture.draftId}`] = "Capture names must be unique";
+    }
+    seen.add(capture.key);
+  });
+  const hasErrors = Object.keys(errors).length > 0;
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCancel();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onCancel]);
+
+  function updateCapture(draftId: number, patch: Partial<CaptureRow>) {
+    setCaptures((current) =>
+      current.map((capture) =>
+        capture.draftId === draftId ? { ...capture, ...patch } : capture,
+      ),
+    );
+  }
+
+  return (
+    <div
+      className="signature-dialog-backdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onCancel();
+      }}
+    >
+      <form
+        className="signature-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="capture-dialog-title"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (hasErrors) return;
+          if (
+            onApply({
+              templateId,
+              captures: captures.map(({ originalKey, key, type }) => ({
+                originalKey,
+                key,
+                type,
+              })),
+            })
+          ) {
+            onCancel();
+          }
+        }}
+      >
+        <div className="function-authoring-heading">
+          <strong id="capture-dialog-title">Edit captures</strong>
+          <button
+            type="button"
+            aria-label="Cancel capture edit"
+            onClick={onCancel}
+          >
+            ×
+          </button>
+        </div>
+        <section className="function-captures">
+          <div className="function-captures-heading">
+            <strong>Captures</strong>
+            <button
+              type="button"
+              onClick={() =>
+                setCaptures((current) => [
+                  ...current,
+                  {
+                    draftId: nextDraftId.current++,
+                    key: `capture_${current.length + 1}`,
+                    type: "nat",
+                  },
+                ])
+              }
+            >
+              Add capture
+            </button>
+          </div>
+          {captures.length === 0 ? (
+            <p>No captures declared.</p>
+          ) : (
+            captures.map((capture, index) => (
+              <div className="function-capture-row" key={capture.draftId}>
+                <label>
+                  <span className="visually-hidden">
+                    Capture {index + 1} name
+                  </span>
+                  <input
+                    aria-label={`Capture ${index + 1} name`}
+                    value={capture.key}
+                    aria-invalid={Boolean(errors[`capture-${capture.draftId}`])}
+                    onChange={(event) =>
+                      updateCapture(capture.draftId, {
+                        key: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <CoreTypeEditor
+                  label={`Capture ${index + 1} type`}
+                  value={capture.type}
+                  onChange={(type) => updateCapture(capture.draftId, { type })}
+                />
+                <button
+                  type="button"
+                  aria-label={`Remove capture ${index + 1}`}
+                  onClick={() =>
+                    setCaptures((current) =>
+                      current.filter((item) => item.draftId !== capture.draftId),
+                    )
+                  }
+                >
+                  ×
+                </button>
+                {errors[`capture-${capture.draftId}`] && (
+                  <p className="inline-error">
+                    {errors[`capture-${capture.draftId}`]}
+                  </p>
+                )}
+              </div>
+            ))
+          )}
+        </section>
+        <button type="submit" disabled={hasErrors}>
+          Apply captures
+        </button>
+      </form>
+    </div>
+  );
+}
+
 function CoreTypeField({
   label,
   value,
@@ -583,10 +760,14 @@ export function Inspector({
   onFocusTemplate,
   onFocusEntry,
   onEditSignature,
+  onEditCaptures,
+  onFitContainer,
   onError,
 }: InspectorProps) {
   const [editingSignature, setEditingSignature] =
     useState<SurfaceFunctionMetadata | null>(null);
+  const [editingCaptures, setEditingCaptures] =
+    useState<ProjectDocument["geometry"]["containers"][number] | null>(null);
   let content = (
     <div className="empty-inspector">
       <div className="empty-icon" aria-hidden="true">
@@ -718,11 +899,39 @@ export function Inspector({
               {formatCoreType(container.kind.resultType)}
             </span>
           )}
+          {container.kind.kind === "template" && (
+            <section className="readout">
+              <h3>Captures</h3>
+              {templateCaptureDrafts(document, container.kind.templateId).length === 0 ? (
+                <span>No captures</span>
+              ) : (
+                templateCaptureDrafts(document, container.kind.templateId).map(
+                  (capture) => (
+                    <code key={capture.key}>
+                      {capture.key}: {formatCoreType(capture.type)}
+                    </code>
+                  ),
+                )
+              )}
+              <button
+                type="button"
+                onClick={() => setEditingCaptures(container)}
+              >
+                Edit captures
+              </button>
+            </section>
+          )}
           <span>
             {container.kind.dependencies.length === 0
               ? "No template dependencies"
               : `Dependencies: ${container.kind.dependencies.join(", ")}`}
           </span>
+          <section className="readout">
+            <h3>Container geometry</h3>
+            <button type="button" onClick={() => onFitContainer(container.id)}>
+              Fit to content
+            </button>
+          </section>
           {container.kind.dependencies.length > 0 && (
             <section className="readout">
               <h3>Open dependency</h3>
@@ -741,10 +950,26 @@ export function Inspector({
             <section className="readout">
               <h3>Template deletion</h3>
               {functionReferences.length === 0 ? (
-                <span>
-                  No external Function references. This template can be
-                  deleted with its contents.
-                </span>
+                <>
+                  <span>
+                    No external Function references. This template can be
+                    deleted with its contents.
+                  </span>
+                  <button
+                    type="button"
+                    className="danger-action"
+                    onClick={() => {
+                      const label = surfaceFunction?.name ?? container.kind.templateId;
+                      if (
+                        window.confirm(`Delete function ${label}? This cannot be undone except through Undo.`)
+                      ) {
+                        onDelete();
+                      }
+                    }}
+                  >
+                    Delete function
+                  </button>
+                </>
               ) : (
                 <>
                   <span>Delete these Function references first:</span>
@@ -759,9 +984,13 @@ export function Inspector({
             {container.bounds.x}, {container.bounds.y} ·{" "}
             {container.bounds.width}×{container.bounds.height}
           </code>
-          <p className="limitation">
-            Container movement is intentionally read-only in this version.
-          </p>
+          {container.kind.kind === "entry" ? (
+            <p className="limitation">Entry geometry is not movable.</p>
+          ) : (
+            <p className="limitation">
+              Drag the template header to move the container and its contents.
+            </p>
+          )}
         </>
       );
     }
@@ -892,6 +1121,17 @@ export function Inspector({
           surfaceFunction={editingSignature}
           onCancel={() => setEditingSignature(null)}
           onApply={onEditSignature}
+        />
+      )}
+      {editingCaptures && editingCaptures.kind.kind === "template" && (
+        <CaptureEditDialog
+          templateId={editingCaptures.kind.templateId}
+          initialCaptures={templateCaptureDrafts(
+            document,
+            editingCaptures.kind.templateId,
+          )}
+          onCancel={() => setEditingCaptures(null)}
+          onApply={onEditCaptures}
         />
       )}
     </aside>
