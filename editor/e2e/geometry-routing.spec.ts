@@ -124,6 +124,42 @@ function pathHitsRect(
   );
 }
 
+function pointKey(point: { x: number; y: number }) {
+  return `${point.x},${point.y}`;
+}
+
+function expectSimpleNonBranchingPath(
+  points: readonly { x: number; y: number }[],
+) {
+  expect(points.length).toBeGreaterThanOrEqual(2);
+  for (let index = 1; index < points.length; index += 1) {
+    expect(pointKey(points[index]!)).not.toBe(pointKey(points[index - 1]!));
+  }
+  for (let index = 2; index < points.length; index += 1) {
+    expect(pointKey(points[index]!)).not.toBe(pointKey(points[index - 2]!));
+  }
+
+  const neighbors = new Map<string, Set<string>>();
+  for (let index = 1; index < points.length; index += 1) {
+    const from = pointKey(points[index - 1]!);
+    const to = pointKey(points[index]!);
+    neighbors.set(from, neighbors.get(from) ?? new Set());
+    neighbors.set(to, neighbors.get(to) ?? new Set());
+    neighbors.get(from)!.add(to);
+    neighbors.get(to)!.add(from);
+  }
+
+  const source = pointKey(points[0]!);
+  const target = pointKey(points.at(-1)!);
+  expect(neighbors.get(source)?.size).toBe(1);
+  expect(neighbors.get(target)?.size).toBe(1);
+  for (const [key, adjacent] of neighbors) {
+    if (key !== source && key !== target) {
+      expect(adjacent.size, key).toBe(2);
+    }
+  }
+}
+
 test("keeps resize geometry, ports, wires, undo, and import in sync", async ({
   page,
 }, testInfo) => {
@@ -165,6 +201,53 @@ test("keeps resize geometry, ports, wires, undo, and import in sync", async ({
     "data-semantic-points",
     `80,70 ${input.x},${input.y}`,
   );
+  await expectNoBrowserIssues(issues);
+});
+
+test("renders Nat-to-NatRec base routes without dead-end polyline branches", async ({
+  page,
+}) => {
+  const issues = watchBrowserIssues(page);
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Add Nat", exact: true }).click();
+  const nat = page.locator('g.element-node.selected[data-node-kind="nat_literal"]');
+  await expect(nat).toBeVisible();
+  const natId = await nat.getAttribute("data-node-id");
+  expect(natId).not.toBeNull();
+  await setSelectedBounds(page, "96", "168");
+
+  await page.getByRole("button", { name: "Add NatRec" }).click();
+  const natRec = page.locator('g.element-node.selected[data-node-kind="nat_rec"]');
+  await expect(natRec).toBeVisible();
+  const natRecId = await natRec.getAttribute("data-node-id");
+  expect(natRecId).not.toBeNull();
+  await setSelectedBounds(page, "280", "22");
+
+  await dragTo(
+    page,
+    port(page, natId!, "value", "output"),
+    port(page, natRecId!, "base", "input"),
+  );
+  const natRecWire = page.locator(
+    `[data-source-node-id="${natId}"][data-target-node-id="${natRecId}"]`,
+  );
+  await expect(natRecWire).toBeVisible();
+  const firstRoute = parsePoints(await natRecWire.getAttribute("points"));
+  expectSimpleNonBranchingPath(firstRoute);
+  expect(pathHitsRect(firstRoute.slice(1), await svgRect(element(page, natId!)))).toBe(
+    false,
+  );
+  expect(pathHitsRect(firstRoute.slice(0, -1), await svgRect(element(page, natRecId!)))).toBe(false);
+
+  await selectElement(page, natRecId!);
+  await setSelectedBounds(page, "220", "190");
+  const rerouted = parsePoints(await natRecWire.getAttribute("points"));
+  expectSimpleNonBranchingPath(rerouted);
+  expect(rerouted.at(-1)).toEqual(
+    await portAnchor(port(page, natRecId!, "base", "input")),
+  );
+  expect(pathHitsRect(rerouted.slice(0, -1), await svgRect(element(page, natRecId!)))).toBe(false);
   await expectNoBrowserIssues(issues);
 });
 

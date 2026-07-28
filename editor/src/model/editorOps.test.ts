@@ -20,6 +20,7 @@ import {
 } from "./editorOps";
 import { exportProjectJson, parseProjectJson } from "./importProject";
 import { collectConnectablePorts } from "./portConnections";
+import { preflightProjectDiagnostics } from "./sourceDiagnostics";
 
 function disconnectedPair() {
   let project = parseProjectJson(exampleJson);
@@ -356,6 +357,171 @@ describe("editor operations", () => {
       "value",
     ]);
     expect(step.type).toEqual(functionValue.type);
+  });
+
+  it("creates complete curried templates with Function.value wired to the outer result", () => {
+    const project = parseProjectJson(exampleJson);
+    const result = addFunctionTemplate(project, "entry", {
+      templateId: "isZeroStep",
+      parameters: [
+        { name: "index", type: "nat" },
+        { name: "previous", type: "nat" },
+      ],
+      resultName: "result",
+      resultType: "nat",
+    });
+    if ("error" in result) throw new Error(result.error);
+
+    const outer = result.document.geometry.containers.find(
+      (container) =>
+        container.kind.kind === "template" &&
+        container.kind.templateId === "isZeroStep",
+    )!;
+    const inner = result.document.geometry.containers.find(
+      (container) =>
+        container.kind.kind === "template" &&
+        container.kind.templateId === "isZeroStep_curried_1",
+    )!;
+    const outerResult = outer.boundaryPorts.find(
+      (boundary) => boundary.role === "result",
+    )!;
+    const innerFunction = result.document.geometry.elements.find(
+      (element) =>
+        element.kind === "function" &&
+        element.properties.templateId === "isZeroStep_curried_1",
+    )!;
+    const resultWire = result.document.geometry.wires.find(
+      (wire) =>
+        wire.sourceHint?.kind === "element_port" &&
+        wire.sourceHint.elementId === innerFunction.id &&
+        wire.sourceHint.port === "value" &&
+        wire.targetHint?.kind === "boundary_port" &&
+        wire.targetHint.containerId === outer.id &&
+        wire.targetHint.boundaryId === outerResult.id,
+    );
+    expect(resultWire).toBeDefined();
+
+    const ports = collectConnectablePorts(result.document);
+    const functionValue = ports.find(
+      (port) =>
+        port.ownerId === innerFunction.id &&
+        port.name === "value" &&
+        port.direction === "output",
+    )!;
+    const resultPort = ports.find(
+      (port) =>
+        port.hint.kind === "boundary_port" &&
+        port.hint.containerId === outer.id &&
+        port.hint.boundaryId === outerResult.id,
+    )!;
+    expect(functionValue.type).toEqual({ arrow: ["nat", "nat"] });
+    expect(resultPort.type).toEqual(functionValue.type);
+    expect(preflightProjectDiagnostics(result.document)).toEqual([]);
+
+    const innerParameter = inner.boundaryPorts.find(
+      (boundary) => boundary.role === "parameter",
+    )!;
+    const innerResult = inner.boundaryPorts.find(
+      (boundary) => boundary.role === "result",
+    )!;
+    expect(
+      result.document.geometry.wires.some(
+        (wire) => {
+          const targetHint = wire.targetHint;
+          return (
+            wire.sourceHint?.kind === "boundary_port" &&
+            wire.sourceHint.containerId === inner.id &&
+            wire.sourceHint.boundaryId === innerParameter.id &&
+            targetHint?.kind === "element_port" &&
+            result.document.geometry.elements.some(
+              (element) =>
+                element.id === targetHint.elementId &&
+                element.kind === "drop",
+            )
+          );
+        },
+      ),
+    ).toBe(true);
+    expect(
+      result.document.geometry.wires.some(
+        (wire) =>
+          wire.targetHint?.kind === "boundary_port" &&
+          wire.targetHint.containerId === inner.id &&
+          wire.targetHint.boundaryId === innerResult.id,
+      ),
+    ).toBe(true);
+
+    const imported = parseProjectJson(exportProjectJson(result.document));
+    expect(preflightProjectDiagnostics(imported)).toEqual([]);
+    expect(
+      imported.geometry.wires.some(
+        (wire) =>
+          wire.sourceHint?.kind === "element_port" &&
+          wire.sourceHint.elementId === innerFunction.id &&
+          wire.sourceHint.port === "value" &&
+          wire.targetHint?.kind === "boundary_port" &&
+          wire.targetHint.containerId === outer.id &&
+          wire.targetHint.boundaryId === outerResult.id,
+      ),
+    ).toBe(true);
+  });
+
+  it("connects generated isZeroStep Function.value to NatRec.step", () => {
+    const project = parseProjectJson(exampleJson);
+    const result = addFunctionTemplate(project, "entry", {
+      templateId: "isZeroStep",
+      parameters: [
+        { name: "index", type: "nat" },
+        { name: "previous", type: "nat" },
+      ],
+      resultName: "result",
+      resultType: "nat",
+    });
+    if ("error" in result) throw new Error(result.error);
+    const hostDropWire = result.document.geometry.wires.find(
+      (wire) =>
+        wire.sourceHint?.kind === "element_port" &&
+        wire.sourceHint.elementId === result.element.id &&
+        wire.sourceHint.port === "value" &&
+        wire.targetHint?.kind === "element_port" &&
+        result.document.geometry.elements.some(
+          (element) =>
+            wire.targetHint?.kind === "element_port" &&
+            element.id === wire.targetHint.elementId &&
+            element.kind === "drop",
+        ),
+    );
+    expect(hostDropWire).toBeDefined();
+    const hostDropHint = hostDropWire!.targetHint;
+    if (hostDropHint?.kind !== "element_port") {
+      throw new Error("expected host Drop target");
+    }
+    const withoutStarter = deleteSelection(result.document, {
+      type: "element",
+      id: hostDropHint.elementId,
+    });
+    if ("error" in withoutStarter) throw new Error(withoutStarter.error);
+    const natRec = addElement(withoutStarter.document, "nat_rec", {
+      x: 500,
+      y: 180,
+    });
+    const ports = collectConnectablePorts(natRec.document);
+    const functionValue = ports.find(
+      (port) =>
+        port.ownerId === result.element.id &&
+        port.name === "value" &&
+        port.direction === "output",
+    )!;
+    const step = ports.find(
+      (port) =>
+        port.ownerId === natRec.element.id &&
+        port.name === "step" &&
+        port.direction === "input",
+    )!;
+
+    const wired = addWire(natRec.document, functionValue, step);
+
+    expect(wired).not.toHaveProperty("error");
   });
 
   it("rejects duplicate function names and duplicate argument names", () => {

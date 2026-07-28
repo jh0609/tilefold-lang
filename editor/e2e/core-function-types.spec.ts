@@ -53,6 +53,12 @@ function port(page: Page, id: string, name: string, direction: string) {
   );
 }
 
+function boundaryPort(page: Page, containerId: string, name: string, direction: string) {
+  return page.locator(
+    `[data-container-id="${containerId}"][data-port-name="${name}"][data-port-direction="${direction}"]`,
+  );
+}
+
 async function selectAndDelete(
   page: Page,
   locator: ReturnType<Page["locator"]>,
@@ -185,18 +191,22 @@ test("keeps Apply signature arguments separate from captures for NatRec step fun
     ),
   ).toHaveCount(0);
 
+  const starterDropWire = page.locator(
+    `polyline[data-source-node-id="${functionNodeId}"][data-source-port-name="value"][data-target-node-kind="drop"]`,
+  );
+  await expect(starterDropWire).toBeVisible();
+  const starterDropId = await starterDropWire.getAttribute("data-target-node-id");
+  expect(starterDropId).not.toBeNull();
   await selectAndDelete(
     page,
-    page.locator(
-      `polyline[data-source-node-id="${functionNodeId}"][data-source-port-name="value"][data-target-node-kind="drop"]`,
-    ),
+    page.locator(`[data-node-id="${starterDropId}"].element-node`),
   );
   await page.getByRole("button", { name: "Add NatRec" }).click();
   const natRecNode = page.locator('g.element-node.selected[data-node-kind="nat_rec"]');
   await expect(natRecNode).toBeVisible();
   const natRecId = await natRecNode.getAttribute("data-node-id");
   expect(natRecId).not.toBeNull();
-  await setSelectedBounds(page, "240", "160");
+  await setSelectedBounds(page, "100", "60");
   await dragTo(
     page,
     port(page, functionNodeId!, "value", "output"),
@@ -207,6 +217,33 @@ test("keeps Apply signature arguments separate from captures for NatRec step fun
       `polyline[data-source-node-id="${functionNodeId}"][data-source-port-name="value"][data-target-node-id="${natRecId}"][data-target-port-name="step"]`,
     ),
   ).toHaveCount(1);
+
+  await selectAndDelete(page, page.locator('[data-node-id="node_succ"].element-node'));
+  await dragTo(
+    page,
+    port(page, "node_nat_2", "value", "output"),
+    port(page, natRecId!, "count", "input"),
+  );
+  await page.getByRole("button", { name: "Add Nat", exact: true }).click();
+  const baseNat = page.locator('g.element-node.selected[data-node-kind="nat_literal"]');
+  await expect(baseNat).toBeVisible();
+  const baseNatId = await baseNat.getAttribute("data-node-id");
+  expect(baseNatId).not.toBeNull();
+  await setSelectedBounds(page, "4", "200");
+  await page.getByLabel("Nat value").fill("1");
+  await dragTo(
+    page,
+    port(page, baseNatId!, "value", "output"),
+    port(page, natRecId!, "base", "input"),
+  );
+  await dragTo(
+    page,
+    port(page, natRecId!, "result", "output"),
+    boundaryPort(page, "entry", "result", "input"),
+  );
+  await page.getByRole("button", { name: "Run" }).click();
+  await expect(page.getByText(/Result:/)).toContainText("Nat(0)");
+  await expect(page.getByRole("region", { name: /Diagnostics/ })).toHaveCount(0);
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export JSON" }).click();

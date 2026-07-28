@@ -65,6 +65,27 @@ function succNode(
   };
 }
 
+function natRecNode(
+  id: string,
+  x: number,
+  y: number,
+  width = 152,
+  height = 112,
+): ProjectElement {
+  return {
+    id,
+    kind: "nat_rec",
+    bounds: { x, y, width, height },
+    properties: { type: "nat" },
+    portAnchors: [
+      { port: "count", x, y: y + height * 0.25 },
+      { port: "base", x, y: y + height * 0.5 },
+      { port: "step", x, y: y + height * 0.75 },
+      { port: "result", x: x + width, y: y + height * 0.5 },
+    ],
+  };
+}
+
 function wireBetween(
   id: string,
   source: ProjectElement,
@@ -88,12 +109,113 @@ function wireBetween(
   };
 }
 
+function wireToPort(
+  id: string,
+  source: ProjectElement,
+  sourcePort: string,
+  target: ProjectElement,
+  targetPort: string,
+): ProjectDocument["geometry"]["wires"][number] {
+  const sourceAnchor = source.portAnchors.find(
+    (anchor) => anchor.port === sourcePort,
+  )!;
+  const targetAnchor = target.portAnchors.find(
+    (anchor) => anchor.port === targetPort,
+  )!;
+  return {
+    id,
+    points: [sourceAnchor, targetAnchor],
+    sourceHint: {
+      kind: "element_port",
+      elementId: source.id,
+      port: sourcePort,
+    },
+    targetHint: {
+      kind: "element_port",
+      elementId: target.id,
+      port: targetPort,
+    },
+  };
+}
+
 function routeAfterFirstSegment(points: readonly { x: number; y: number }[]) {
   return points.slice(1);
 }
 
 function routeBeforeLastSegment(points: readonly { x: number; y: number }[]) {
   return points.slice(0, -1);
+}
+
+function pointKey(point: { x: number; y: number }): string {
+  return `${point.x},${point.y}`;
+}
+
+function expectSimpleNonBranchingPath(
+  points: readonly { x: number; y: number }[],
+) {
+  expect(points.length).toBeGreaterThanOrEqual(2);
+  for (let index = 1; index < points.length; index += 1) {
+    expect(pointKey(points[index]!)).not.toBe(pointKey(points[index - 1]!));
+  }
+  for (let index = 2; index < points.length; index += 1) {
+    expect(pointKey(points[index]!)).not.toBe(pointKey(points[index - 2]!));
+  }
+
+  const neighbors = new Map<string, Set<string>>();
+  for (let index = 1; index < points.length; index += 1) {
+    const from = pointKey(points[index - 1]!);
+    const to = pointKey(points[index]!);
+    neighbors.set(from, neighbors.get(from) ?? new Set());
+    neighbors.set(to, neighbors.get(to) ?? new Set());
+    neighbors.get(from)!.add(to);
+    neighbors.get(to)!.add(from);
+  }
+
+  const source = pointKey(points[0]!);
+  const target = pointKey(points.at(-1)!);
+  expect(neighbors.get(source)?.size).toBe(1);
+  expect(neighbors.get(target)?.size).toBe(1);
+  for (const [key, adjacent] of neighbors) {
+    if (key !== source && key !== target) {
+      expect(adjacent.size, key).toBe(2);
+    }
+  }
+}
+
+function segments(points: readonly { x: number; y: number }[]) {
+  return points.slice(1).map((point, index) => ({
+    a: points[index]!,
+    b: point,
+  }));
+}
+
+function overlapLength(
+  a1: number,
+  a2: number,
+  b1: number,
+  b2: number,
+): number {
+  const low = Math.max(Math.min(a1, a2), Math.min(b1, b2));
+  const high = Math.min(Math.max(a1, a2), Math.max(b1, b2));
+  return Math.max(0, high - low);
+}
+
+function sharedAxisLength(
+  left: readonly { x: number; y: number }[],
+  right: readonly { x: number; y: number }[],
+): number {
+  let shared = 0;
+  for (const a of segments(left)) {
+    for (const b of segments(right)) {
+      if (a.a.y === a.b.y && b.a.y === b.b.y && a.a.y === b.a.y) {
+        shared += overlapLength(a.a.x, a.b.x, b.a.x, b.b.x);
+      }
+      if (a.a.x === a.b.x && b.a.x === b.b.x && a.a.x === b.a.x) {
+        shared += overlapLength(a.a.y, a.b.y, b.a.y, b.b.y);
+      }
+    }
+  }
+  return shared;
 }
 
 describe("edge routing", () => {
@@ -176,6 +298,78 @@ describe("edge routing", () => {
 
     expect(routeIntersectsObstacle(routeAfterFirstSegment(routed), source.bounds)).toBe(false);
     expect(routeIntersectsObstacle(routeBeforeLastSegment(routed), moved.bounds)).toBe(false);
+  });
+
+  it("normalizes Nat-to-NatRec base routes to a single non-branching path", () => {
+    const source = natNode("source", 96, 168);
+    const target = natRecNode("target", 280, 40);
+    const wire = wireToPort("wire", source, "value", target, "base");
+    const routedDocument = withElements(example(), [source, target], wire);
+
+    const routed = routeWire(routedDocument, wire);
+
+    expect(routed[0]).toEqual({ x: source.portAnchors[0]!.x, y: source.portAnchors[0]!.y });
+    expect(routed.at(-1)).toEqual(
+      (() => {
+        const anchor = target.portAnchors.find((candidate) => candidate.port === "base")!;
+        return { x: anchor.x, y: anchor.y };
+      })(),
+    );
+    expectSimpleNonBranchingPath(routed);
+    expect(routeIntersectsObstacle(routeAfterFirstSegment(routed), source.bounds)).toBe(false);
+    expect(routeIntersectsObstacle(routeBeforeLastSegment(routed), target.bounds)).toBe(false);
+  });
+
+  it("keeps rerouted NatRec base paths free of stale dead-end segments", () => {
+    const source = natNode("source", 96, 168);
+    const target = natRecNode("target", 280, 40);
+    const wire = wireToPort("wire", source, "value", target, "base");
+    const initialDocument = withElements(example(), [source, target], wire);
+    const initial = routeWire(initialDocument, wire);
+    const moved = natRecNode("target", 230, 220);
+    const movedDocument = withElements(example(), [source, moved], wire);
+
+    const rerouted = routeWire(movedDocument, wire);
+
+    expectSimpleNonBranchingPath(initial);
+    expectSimpleNonBranchingPath(rerouted);
+    expect(rerouted.at(-1)).toEqual(
+      (() => {
+        const anchor = moved.portAnchors.find((candidate) => candidate.port === "base")!;
+        return { x: anchor.x, y: anchor.y };
+      })(),
+    );
+    expect(routeIntersectsObstacle(routeBeforeLastSegment(rerouted), moved.bounds)).toBe(false);
+  });
+
+  it("separates simultaneous NatRec input lanes instead of sharing long segments", () => {
+    const baseSource = natNode("base_source", 80, 90);
+    const stepSource = natNode("step_source", 80, 140);
+    const countSource = natNode("count_source", 80, 190);
+    const natRec = natRecNode("target", 360, 120);
+    const wires = [
+      wireToPort("wire_base", baseSource, "value", natRec, "base"),
+      wireToPort("wire_step", stepSource, "value", natRec, "step"),
+      wireToPort("wire_count", countSource, "value", natRec, "count"),
+    ];
+    const routedDocument = {
+      ...example(),
+      geometry: {
+        ...example().geometry,
+        elements: [baseSource, stepSource, countSource, natRec],
+        wires,
+      },
+    };
+
+    const routed = wires.map((wire) => routeWire(routedDocument, wire));
+
+    for (const points of routed) {
+      expectSimpleNonBranchingPath(points);
+      expect(routeIntersectsObstacle(routeBeforeLastSegment(points), natRec.bounds)).toBe(false);
+    }
+    expect(sharedAxisLength(routed[0]!, routed[1]!)).toBe(0);
+    expect(sharedAxisLength(routed[0]!, routed[2]!)).toBe(0);
+    expect(sharedAxisLength(routed[1]!, routed[2]!)).toBe(0);
   });
 
   it("updates ports and semantic wire endpoints when an element is resized", () => {
