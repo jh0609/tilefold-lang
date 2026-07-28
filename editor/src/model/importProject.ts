@@ -1,10 +1,19 @@
 import {
   ELEMENT_KINDS,
   type Bounds,
+  type EndpointHint,
   type ProjectDocument,
   type ProjectElement,
+  type ProjectWire,
   type SurfaceFunctionMetadata,
 } from "./project";
+import { collectConnectablePorts } from "./portConnections";
+import {
+  isAutoResourceFlowElement,
+  isAutoResourceFlowWire,
+  materializeResourceFlows,
+  portIdForHint,
+} from "./surfaceResourceFlow";
 
 export class StructureError extends Error {
   constructor(
@@ -119,23 +128,62 @@ function elementAt(value: unknown, path: string): ProjectElement {
           required(provenance, "kind", `${path}.properties.provenance`),
           `${path}.properties.provenance.kind`,
         );
-        if (kind !== "auto_function_output_drop") {
+        if (kind === "auto_resource_flow") {
+          stringAt(
+            required(
+              provenance,
+              "sourcePortId",
+              `${path}.properties.provenance`,
+            ),
+            `${path}.properties.provenance.sourcePortId`,
+          );
+        } else if (kind !== "auto_function_output_drop") {
           throw new StructureError(
             `${path}.properties.provenance.kind`,
             "unknown Drop provenance",
           );
+        } else {
+          stringAt(
+            required(
+              provenance,
+              "sourceElementId",
+              `${path}.properties.provenance`,
+            ),
+            `${path}.properties.provenance.sourceElementId`,
+          );
         }
-        stringAt(
-          required(
-            provenance,
-            "sourceElementId",
-            `${path}.properties.provenance`,
-          ),
-          `${path}.properties.provenance.sourceElementId`,
-        );
       }
       break;
     case "copy":
+      coreTypeAt(
+        required(properties, "type", `${path}.properties`),
+        `${path}.properties.type`,
+      );
+      if ("provenance" in properties) {
+        const provenance = objectAt(
+          properties.provenance,
+          `${path}.properties.provenance`,
+        );
+        const kind = stringAt(
+          required(provenance, "kind", `${path}.properties.provenance`),
+          `${path}.properties.provenance.kind`,
+        );
+        if (kind !== "auto_resource_flow") {
+          throw new StructureError(
+            `${path}.properties.provenance.kind`,
+            "unknown Copy provenance",
+          );
+        }
+        stringAt(
+          required(provenance, "sourcePortId", `${path}.properties.provenance`),
+          `${path}.properties.provenance.sourcePortId`,
+        );
+        stringAt(
+          required(provenance, "connectionId", `${path}.properties.provenance`),
+          `${path}.properties.provenance.connectionId`,
+        );
+      }
+      break;
     case "nat_rec":
       coreTypeAt(
         required(properties, "type", `${path}.properties`),
@@ -346,6 +394,35 @@ function wireAt(value: unknown, path: string): void {
   arrayAt(required(wire, "points", path), `${path}.points`).forEach(
     (point, index) => pointAt(point, `${path}.points[${index}]`),
   );
+  if ("provenance" in wire) {
+    const provenance = objectAt(wire.provenance, `${path}.provenance`);
+    const kind = stringAt(
+      required(provenance, "kind", `${path}.provenance`),
+      `${path}.provenance.kind`,
+    );
+    if (kind !== "auto_resource_flow") {
+      throw new StructureError(`${path}.provenance.kind`, "unknown wire provenance");
+    }
+    stringAt(
+      required(provenance, "sourcePortId", `${path}.provenance`),
+      `${path}.provenance.sourcePortId`,
+    );
+    const role = stringAt(
+      required(provenance, "role", `${path}.provenance`),
+      `${path}.provenance.role`,
+    );
+    if (
+      role !== "root-wire" &&
+      role !== "chain-wire" &&
+      role !== "consumer-wire" &&
+      role !== "drop-wire"
+    ) {
+      throw new StructureError(`${path}.provenance.role`, "unknown wire role");
+    }
+    if (provenance.connectionId !== undefined) {
+      stringAt(provenance.connectionId, `${path}.provenance.connectionId`);
+    }
+  }
 }
 
 function checkRenderingReferences(
@@ -583,6 +660,207 @@ function checkFunctionCaptureReferences(
   });
 }
 
+function surfaceConnectionAt(value: unknown, path: string): void {
+  const record = objectAt(value, path);
+  idAt(record, path);
+  stringAt(required(record, "sourcePortId", path), `${path}.sourcePortId`);
+  stringAt(required(record, "targetPortId", path), `${path}.targetPortId`);
+  const order = integerAt(required(record, "order", path), `${path}.order`);
+  if (order < 0 || !Number.isSafeInteger(order)) {
+    throw new StructureError(`${path}.order`, "expected non-negative safe integer");
+  }
+}
+
+function surfaceResourceFlowAt(value: unknown, path: string): void {
+  const record = objectAt(value, path);
+  stringAt(required(record, "sourcePortId", path), `${path}.sourcePortId`);
+}
+
+function canonicalAutoDocument(document: ProjectDocument): ProjectDocument {
+  return materializeResourceFlows({
+    ...document,
+    geometry: {
+      ...document.geometry,
+      elements: document.geometry.elements.filter(
+        (element) => !isAutoResourceFlowElement(element),
+      ),
+      wires: document.geometry.wires.filter((wire) => !isAutoResourceFlowWire(wire)),
+    },
+  });
+}
+
+function stableJson(value: unknown): string {
+  return JSON.stringify(value);
+}
+
+function autoElementShape(element: ProjectElement) {
+  return {
+    id: element.id,
+    kind: element.kind,
+    properties: element.properties,
+  };
+}
+
+function autoWireShape(wire: ProjectWire) {
+  return {
+    id: wire.id,
+    sourceHint: wire.sourceHint,
+    targetHint: wire.targetHint,
+    provenance: wire.provenance,
+  };
+}
+
+function byId<T extends { id: string }>(left: T, right: T) {
+  return left.id.localeCompare(right.id);
+}
+
+function checkSurfaceResourceFlowReferences(document: ProjectDocument): void {
+  const ports = collectConnectablePorts(document);
+  const portsByKey = new Map(ports.map((port) => [port.key, port]));
+  const flowSources = new Set<string>();
+  (document.surfaceResourceFlows ?? []).forEach((flow, index) => {
+    const path = `$.surfaceResourceFlows[${index}].sourcePortId`;
+    if (flowSources.has(flow.sourcePortId)) {
+      throw new StructureError(path, `duplicate resource-flow source ${flow.sourcePortId}`);
+    }
+    flowSources.add(flow.sourcePortId);
+    const source = portsByKey.get(flow.sourcePortId);
+    if (!source) throw new StructureError(path, `unknown source port ${flow.sourcePortId}`);
+    if (source.direction !== "output") {
+      throw new StructureError(path, "resource-flow source must be an output port");
+    }
+    const sourceHint = source.hint;
+    if (sourceHint.kind !== "boundary_port") {
+      throw new StructureError(path, "resource-flow source must be a Capture boundary output");
+    }
+    const container = document.geometry.containers.find(
+      (candidate) => candidate.id === sourceHint.containerId,
+    );
+    const boundary = container?.boundaryPorts.find(
+      (candidate) => candidate.id === sourceHint.boundaryId,
+    );
+    if (boundary?.role !== "capture") {
+      throw new StructureError(path, "resource-flow source must be a Capture boundary output");
+    }
+  });
+  const connectionIds = new Set<string>();
+  const targets = new Set<string>();
+  const sourceOrders = new Map<string, Set<number>>();
+  (document.surfaceConnections ?? []).forEach((connection, index) => {
+    const path = `$.surfaceConnections[${index}]`;
+    if (connectionIds.has(connection.id)) {
+      throw new StructureError(`${path}.id`, `duplicate Surface connection ${connection.id}`);
+    }
+    connectionIds.add(connection.id);
+    if (!flowSources.has(connection.sourcePortId)) {
+      throw new StructureError(
+        `${path}.sourcePortId`,
+        `connection source ${connection.sourcePortId} is not managed by a resource flow`,
+      );
+    }
+    const source = portsByKey.get(connection.sourcePortId);
+    const target = portsByKey.get(connection.targetPortId);
+    if (!source) {
+      throw new StructureError(`${path}.sourcePortId`, `unknown source port ${connection.sourcePortId}`);
+    }
+    if (!target) {
+      throw new StructureError(`${path}.targetPortId`, `unknown target port ${connection.targetPortId}`);
+    }
+    if (source.direction !== "output") {
+      throw new StructureError(`${path}.sourcePortId`, "Surface connection source must be an output port");
+    }
+    if (target.direction !== "input") {
+      throw new StructureError(`${path}.targetPortId`, "Surface connection target must be an input port");
+    }
+    if (targets.has(connection.targetPortId)) {
+      throw new StructureError(`${path}.targetPortId`, `duplicate target input ${connection.targetPortId}`);
+    }
+    targets.add(connection.targetPortId);
+    let orders = sourceOrders.get(connection.sourcePortId);
+    if (!orders) {
+      orders = new Set();
+      sourceOrders.set(connection.sourcePortId, orders);
+    }
+    if (orders.has(connection.order)) {
+      throw new StructureError(`${path}.order`, `duplicate order ${connection.order} for ${connection.sourcePortId}`);
+    }
+    orders.add(connection.order);
+  });
+  for (const element of document.geometry.elements) {
+    if (!isAutoResourceFlowElement(element)) continue;
+    const provenance =
+      element.kind === "copy" || element.kind === "drop"
+        ? element.properties.provenance
+        : undefined;
+    const sourcePortId =
+      provenance?.kind === "auto_resource_flow"
+        ? provenance.sourcePortId
+        : undefined;
+    if (!sourcePortId || !flowSources.has(sourcePortId)) {
+      throw new StructureError(
+        "$.geometry.elements",
+        `automatic resource-flow element ${element.id} references an unknown source`,
+      );
+    }
+  }
+  for (const wire of document.geometry.wires) {
+    if (!isAutoResourceFlowWire(wire)) continue;
+    const provenance = wire.provenance;
+    if (!provenance || !flowSources.has(provenance.sourcePortId)) {
+      throw new StructureError(
+        "$.geometry.wires",
+        `automatic resource-flow wire ${wire.id} references an unknown source`,
+      );
+    }
+    if (
+      provenance.connectionId &&
+      !connectionIds.has(provenance.connectionId)
+    ) {
+      throw new StructureError(
+        "$.geometry.wires",
+        `automatic resource-flow wire ${wire.id} references an unknown connection`,
+      );
+    }
+  }
+  for (const wire of document.geometry.wires) {
+    if (isAutoResourceFlowWire(wire) || !wire.sourceHint) continue;
+    const sourcePortId = portIdForHint(wire.sourceHint);
+    if (flowSources.has(sourcePortId)) {
+      throw new StructureError(
+        "$.geometry.wires",
+        `resource-flow source ${sourcePortId} has a non-automatic outgoing wire ${wire.id}`,
+      );
+    }
+  }
+  const canonical = canonicalAutoDocument(document);
+  const actualAuto = {
+    elements: document.geometry.elements
+      .filter(isAutoResourceFlowElement)
+      .sort(byId)
+      .map(autoElementShape),
+    wires: document.geometry.wires
+      .filter(isAutoResourceFlowWire)
+      .sort(byId)
+      .map(autoWireShape),
+  };
+  const expectedAuto = {
+    elements: canonical.geometry.elements
+      .filter(isAutoResourceFlowElement)
+      .sort(byId)
+      .map(autoElementShape),
+    wires: canonical.geometry.wires
+      .filter(isAutoResourceFlowWire)
+      .sort(byId)
+      .map(autoWireShape),
+  };
+  if (stableJson(actualAuto) !== stableJson(expectedAuto)) {
+    throw new StructureError(
+      "$.surfaceResourceFlows",
+      "stored automatic resource-flow materialization does not match Surface connections",
+    );
+  }
+}
+
 function junctionAt(value: unknown, path: string): void {
   const junction = objectAt(value, path);
   idAt(junction, path);
@@ -662,12 +940,25 @@ export function parseProjectJson(text: string): ProjectDocument {
           (value, index) =>
             surfaceFunctionAt(value, `$.surfaceFunctions[${index}]`),
         );
+  if (document.surfaceConnections !== undefined) {
+    arrayAt(document.surfaceConnections, "$.surfaceConnections").forEach(
+      (value, index) =>
+        surfaceConnectionAt(value, `$.surfaceConnections[${index}]`),
+    );
+  }
+  if (document.surfaceResourceFlows !== undefined) {
+    arrayAt(document.surfaceResourceFlows, "$.surfaceResourceFlows").forEach(
+      (value, index) =>
+        surfaceResourceFlowAt(value, `$.surfaceResourceFlows[${index}]`),
+    );
+  }
   if (document.currentContainerId !== undefined) {
     stringAt(document.currentContainerId, "$.currentContainerId");
   }
   checkRenderingReferences(elements, containers, wires, junctions);
   checkFunctionCaptureReferences(elements, containers, wires);
   checkSurfaceFunctionReferences(surfaceFunctions, containers);
+  checkSurfaceResourceFlowReferences(parsed as ProjectDocument);
   if (document.view !== undefined) {
     const view = objectAt(document.view, "$.view");
     integerAt(required(view, "cameraX", "$.view"), "$.view.cameraX");

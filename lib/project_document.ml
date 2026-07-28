@@ -269,23 +269,65 @@ let decode_drop_provenance path fields =
   | None -> Ok ()
   | Some json ->
       let* provenance_fields = object_at (path ^ ".provenance") json in
+      let* kind_json = field (path ^ ".provenance") "kind" provenance_fields in
+      let* kind = string_at (path ^ ".provenance.kind") kind_json in
+      if String.equal kind "auto_function_output_drop" then
+        let* () =
+          reject_unknown (path ^ ".provenance") [ "kind"; "sourceElementId" ]
+            provenance_fields
+        in
+        let* source_json =
+          field (path ^ ".provenance") "sourceElementId" provenance_fields
+        in
+        let* _source =
+          string_at (path ^ ".provenance.sourceElementId") source_json
+        in
+        Ok ()
+      else if String.equal kind "auto_resource_flow" then
+        let* () =
+          reject_unknown (path ^ ".provenance") [ "kind"; "sourcePortId" ]
+            provenance_fields
+        in
+        let* source_json =
+          field (path ^ ".provenance") "sourcePortId" provenance_fields
+        in
+        let* _source =
+          string_at (path ^ ".provenance.sourcePortId") source_json
+        in
+        Ok ()
+      else
+        error (path ^ ".provenance.kind")
+          (Invalid_value ("unknown drop provenance " ^ kind))
+
+let decode_copy_provenance path fields =
+  match optional_field "provenance" fields with
+  | None -> Ok ()
+  | Some json ->
+      let* provenance_fields = object_at (path ^ ".provenance") json in
       let* () =
-        reject_unknown (path ^ ".provenance") [ "kind"; "sourceElementId" ]
+        reject_unknown (path ^ ".provenance")
+          [ "kind"; "sourcePortId"; "connectionId" ]
           provenance_fields
       in
       let* kind_json = field (path ^ ".provenance") "kind" provenance_fields in
       let* kind = string_at (path ^ ".provenance.kind") kind_json in
       let* () =
-        if String.equal kind "auto_function_output_drop" then Ok ()
+        if String.equal kind "auto_resource_flow" then Ok ()
         else
           error (path ^ ".provenance.kind")
-            (Invalid_value ("unknown drop provenance " ^ kind))
+            (Invalid_value ("unknown copy provenance " ^ kind))
       in
       let* source_json =
-        field (path ^ ".provenance") "sourceElementId" provenance_fields
+        field (path ^ ".provenance") "sourcePortId" provenance_fields
       in
       let* _source =
-        string_at (path ^ ".provenance.sourceElementId") source_json
+        string_at (path ^ ".provenance.sourcePortId") source_json
+      in
+      let* connection_json =
+        field (path ^ ".provenance") "connectionId" provenance_fields
+      in
+      let* _connection =
+        string_at (path ^ ".provenance.connectionId") connection_json
       in
       Ok ()
 
@@ -314,10 +356,15 @@ let decode_element_kind path json =
       let* () = decode_drop_provenance path fields in
       let* typ = type_field "type" in
       Ok (Drop typ)
-  | "copy" | "nat_rec" ->
+  | "copy" ->
+      let* () = reject_unknown path [ "kind"; "type"; "provenance" ] fields in
+      let* () = decode_copy_provenance path fields in
+      let* typ = type_field "type" in
+      Ok (Copy typ)
+  | "nat_rec" ->
       let* () = reject_unknown path [ "kind"; "type" ] fields in
       let* typ = type_field "type" in
-      Ok (if kind = "copy" then Copy typ else NatRec typ)
+      Ok (NatRec typ)
   | "apply" ->
       let* () =
         reject_unknown path [ "kind"; "parameterType"; "resultType" ] fields
@@ -487,7 +534,9 @@ let decode_hint path json =
 
 let decode_wire path json =
   let* fields = object_at path json in
-  let* () = reject_unknown path [ "id"; "points"; "sourceHint"; "targetHint" ] fields in
+  let* () =
+    reject_unknown path [ "id"; "points"; "sourceHint"; "targetHint"; "provenance" ] fields
+  in
   let* id_json = field path "id" fields in
   let* id = string_at (path ^ ".id") id_json in
   let* points_json = field path "points" fields in
@@ -501,6 +550,49 @@ let decode_wire path json =
   in
   let* source_hint = decode_optional "sourceHint" in
   let* target_hint = decode_optional "targetHint" in
+  let* () =
+    match optional_field "provenance" fields with
+    | None -> Ok ()
+    | Some json ->
+        let* provenance_fields = object_at (path ^ ".provenance") json in
+        let* () =
+          reject_unknown (path ^ ".provenance")
+            [ "kind"; "sourcePortId"; "role"; "connectionId" ]
+            provenance_fields
+        in
+        let* kind_json = field (path ^ ".provenance") "kind" provenance_fields in
+        let* kind = string_at (path ^ ".provenance.kind") kind_json in
+        let* () =
+          if String.equal kind "auto_resource_flow" then Ok ()
+          else
+            error (path ^ ".provenance.kind")
+              (Invalid_value ("unknown wire provenance " ^ kind))
+        in
+        let* source_json =
+          field (path ^ ".provenance") "sourcePortId" provenance_fields
+        in
+        let* _source =
+          string_at (path ^ ".provenance.sourcePortId") source_json
+        in
+        let* role_json = field (path ^ ".provenance") "role" provenance_fields in
+        let* role = string_at (path ^ ".provenance.role") role_json in
+        let* () =
+          if
+            List.exists (String.equal role)
+              [ "root-wire"; "chain-wire"; "consumer-wire"; "drop-wire" ]
+          then Ok ()
+          else
+            error (path ^ ".provenance.role")
+              (Invalid_value ("unknown wire role " ^ role))
+        in
+        (match optional_field "connectionId" provenance_fields with
+        | None -> Ok ()
+        | Some connection_json ->
+            let* _connection =
+              string_at (path ^ ".provenance.connectionId") connection_json
+            in
+            Ok ())
+  in
   Ok { id; points; source_hint; target_hint }
 
 let decode_outlet path json =
@@ -546,7 +638,16 @@ let decode_json text =
   let* fields = object_at "$" json in
   let* () =
     reject_unknown "$"
-      [ "format"; "version"; "geometry"; "view"; "surfaceFunctions"; "currentContainerId" ]
+      [
+        "format";
+        "version";
+        "geometry";
+        "view";
+        "surfaceFunctions";
+        "currentContainerId";
+        "surfaceConnections";
+        "surfaceResourceFlows";
+      ]
       fields
   in
   let* format_json = field "$" "format" fields in

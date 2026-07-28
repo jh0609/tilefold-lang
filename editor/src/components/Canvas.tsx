@@ -29,6 +29,10 @@ import {
   type ConnectablePort,
   type WireEndpoint,
 } from "../model/portConnections";
+import {
+  managedCaptureSourcePort,
+  resourceFlowSourceIds,
+} from "../model/surfaceResourceFlow";
 import type {
   CoreType,
   EndpointHint,
@@ -369,6 +373,10 @@ export function Canvas({
           connection.kind === "reconnect"
             ? connection.wireId
             : replaceableAutoDropWireId(document, source),
+        allowSourceFanOut:
+          connection.kind === "new" &&
+          (managedCaptureSourcePort(document, source) ||
+            resourceFlowSourceIds(document).has(source.key)),
       });
       if ("error" in validation) rejected.add(candidate.key);
       else compatible.add(candidate.key);
@@ -762,6 +770,10 @@ export function Canvas({
             connection.kind === "reconnect"
               ? connection.wireId
               : replaceableAutoDropWireId(document, source),
+          allowSourceFanOut:
+            connection.kind === "new" &&
+            (managedCaptureSourcePort(document, source) ||
+              resourceFlowSourceIds(document).has(source.key)),
         });
         if ("error" in validation) rejection = validation.error;
         else validHover = hover;

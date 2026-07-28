@@ -305,6 +305,7 @@ async function createPredStep(page: Page) {
     page,
     boundaryPort(page, innerId!, "capture:index", "output"),
     port(page, copyId, "input", "input"),
+    0,
   );
   await dragConnect(
     page,

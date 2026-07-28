@@ -187,6 +187,115 @@ let () =
     | _ -> assert false
   in
   ignore (decode (Yojson.Safe.to_string with_drop_provenance));
+  let with_resource_flow_metadata =
+    Yojson.Safe.from_string (P.encode_json project)
+    |> function
+    | `Assoc fields ->
+        let geometry =
+          match List.assoc "geometry" fields with
+          | `Assoc geometry_fields ->
+              let elements =
+                match List.assoc "elements" geometry_fields with
+                | `List values ->
+                    let patched = ref false in
+                    `List
+                      (List.map
+                         (function
+                           | `Assoc element_fields
+                             when not !patched ->
+                               patched := true;
+                               `Assoc
+                                 (List.map
+                                    (fun (name, value) ->
+                                      if String.equal name "kind" then
+                                        (name, `String "copy")
+                                      else if String.equal name "properties" then
+                                        ( name,
+                                          `Assoc
+                                            [
+                                              ("type", `String "nat");
+                                              ( "provenance",
+                                                `Assoc
+                                                  [
+                                                    ( "kind",
+                                                      `String
+                                                        "auto_resource_flow" );
+                                                    ( "sourcePortId",
+                                                      `String "entry:capture:index" );
+                                                    ( "connectionId",
+                                                      `String "surface_connection_1" );
+                                                  ] );
+                                            ] )
+                                      else (name, value))
+                                    element_fields)
+                           | value -> value)
+                         values)
+                | value -> value
+              in
+              let wires =
+                match List.assoc "wires" geometry_fields with
+                | `List values ->
+                    let patched = ref false in
+                    `List
+                      (List.map
+                         (function
+                           | `Assoc wire_fields when not !patched ->
+                               patched := true;
+                               `Assoc
+                                 (wire_fields
+                                 @ [
+                                     ( "provenance",
+                                       `Assoc
+                                         [
+                                           ("kind", `String "auto_resource_flow");
+                                           ( "sourcePortId",
+                                             `String "entry:capture:index" );
+                                           ("role", `String "consumer-wire");
+                                           ( "connectionId",
+                                             `String "surface_connection_1" );
+                                         ] );
+                                   ])
+                           | value -> value)
+                         values)
+                | value -> value
+              in
+              `Assoc
+                (List.map
+                   (fun (name, value) ->
+                     if String.equal name "elements" then (name, elements)
+                     else if String.equal name "wires" then (name, wires)
+                     else (name, value))
+                   geometry_fields)
+          | value -> value
+        in
+        `Assoc
+          (List.map
+             (fun (name, value) ->
+               if String.equal name "geometry" then (name, geometry)
+               else (name, value))
+             fields
+          @ [
+              ( "surfaceResourceFlows",
+                `List
+                  [
+                    `Assoc
+                      [ ("sourcePortId", `String "entry:capture:index") ];
+                  ] );
+              ( "surfaceConnections",
+                `List
+                  [
+                    `Assoc
+                      [
+                        ("id", `String "surface_connection_1");
+                        ("sourcePortId", `String "entry:capture:index");
+                        ("targetPortId", `String "node_drop_1:input");
+                        ("order", `Int 0);
+                      ];
+                  ] );
+            ])
+    | _ -> assert false
+  in
+  ignore (decode (Yojson.Safe.to_string with_resource_flow_metadata));
   let raw =
     match P.to_raw_scene checked with
     | Ok value -> value

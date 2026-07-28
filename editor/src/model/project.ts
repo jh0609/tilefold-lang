@@ -39,14 +39,27 @@ export type ProjectElement =
       properties: Record<string, never>;
     })
   | (ElementBase & {
-      kind: "copy" | "nat_rec";
+      kind: "copy";
+      properties: {
+        type: CoreType;
+        provenance?: {
+          kind: "auto_resource_flow";
+          sourcePortId: StableId;
+          connectionId: StableId;
+        };
+      };
+    })
+  | (ElementBase & {
+      kind: "nat_rec";
       properties: { type: CoreType };
     })
   | (ElementBase & {
       kind: "drop";
       properties: {
         type: CoreType;
-        provenance?: { kind: "auto_function_output_drop"; sourceElementId: StableId };
+        provenance?:
+          | { kind: "auto_function_output_drop"; sourceElementId: StableId }
+          | { kind: "auto_resource_flow"; sourcePortId: StableId };
       };
     })
   | (ElementBase & {
@@ -122,6 +135,12 @@ export interface ProjectWire {
   points: Point[];
   sourceHint?: EndpointHint;
   targetHint?: EndpointHint;
+  provenance?: {
+    kind: "auto_resource_flow";
+    sourcePortId: StableId;
+    role: "root-wire" | "chain-wire" | "consumer-wire" | "drop-wire";
+    connectionId?: StableId;
+  };
 }
 
 export interface JunctionOutlet {
@@ -168,9 +187,22 @@ export interface ProjectDocument {
     wires: ProjectWire[];
     junctions: ProjectJunction[];
   };
+  surfaceConnections?: SurfaceConnection[];
+  surfaceResourceFlows?: SurfaceResourceFlow[];
   surfaceFunctions?: SurfaceFunctionMetadata[];
   currentContainerId?: StableId;
   view?: SavedView;
+}
+
+export interface SurfaceConnection {
+  id: StableId;
+  sourcePortId: StableId;
+  targetPortId: StableId;
+  order: number;
+}
+
+export interface SurfaceResourceFlow {
+  sourcePortId: StableId;
 }
 
 export type Selection =

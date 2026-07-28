@@ -205,6 +205,7 @@ export function resolveEndpointHint(
 
 export interface ConnectionValidationOptions {
   excludeWireId?: string;
+  allowSourceFanOut?: boolean;
 }
 
 export type ConnectionValidation =
@@ -270,6 +271,7 @@ export function validateConnection(
     return { error: "This input port already has an incoming wire." };
   }
   if (
+    !options.allowSourceFanOut &&
     otherWires.some((wire) => endpointHintEqual(wire.sourceHint, source.hint))
   ) {
     return {

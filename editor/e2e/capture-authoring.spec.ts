@@ -94,7 +94,7 @@ test("authors a curried lexical capture through the UI", async ({ page }) => {
   expect(outerContainerId).not.toBeNull();
   expect(innerContainerId).not.toBeNull();
 
-  await innerContainer.click();
+  await innerContainer.click({ force: true });
   await page.getByRole("button", { name: "Edit captures" }).click();
   await page.getByRole("button", { name: "Add capture" }).click();
   await page.getByLabel("Capture 1 name").fill("index");
@@ -121,7 +121,7 @@ test("authors a curried lexical capture through the UI", async ({ page }) => {
   ).toHaveCount(1);
 
   await page.getByRole("button", { name: "Fit view" }).click();
-  await innerContainer.click();
+  await innerContainer.click({ force: true });
   const oldResultWire = page.locator(
     `polyline[data-target-container-id="${innerContainerId}"][data-target-boundary-role="result"][data-source-node-kind="nat_literal"]`,
   );
@@ -130,6 +130,7 @@ test("authors a curried lexical capture through the UI", async ({ page }) => {
     page,
     boundaryPort(page, innerContainerId!, "capture:index", "output"),
     boundaryPort(page, innerContainerId!, "result", "input"),
+    0,
   );
   await expect(
     page.locator(

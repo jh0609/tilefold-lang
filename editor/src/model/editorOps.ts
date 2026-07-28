@@ -21,6 +21,16 @@ import {
   type WireEndpoint,
 } from "./portConnections";
 import {
+  addSurfaceResourceConnection,
+  isAutoResourceFlowElement,
+  isAutoResourceFlowWire,
+  managedCaptureSourcePort,
+  materializeResourceFlows,
+  removeSurfaceConnectionForWire,
+  removeSurfaceConnectionsForDeletedElement,
+  resourceFlowSourceIds,
+} from "./surfaceResourceFlow";
+import {
   primitiveCoreType,
   formatCoreType,
   type PrimitiveCoreType,
@@ -2735,7 +2745,30 @@ export function editTemplateCaptures(
       ),
     },
   };
-  return { document: nextDocument };
+  const retainedCaptureSourceIds = new Set(
+    newCaptureBoundaries.map((boundary) => `boundary:${template.id}:${boundary.id}`),
+  );
+  const newlyManaged = newCaptureBoundaries
+    .filter((boundary) => !oldCaptureBoundaries.some((old) => old.id === boundary.id))
+    .map((boundary) => ({ sourcePortId: `boundary:${template.id}:${boundary.id}` }));
+  return {
+    document: materializeResourceFlows({
+      ...nextDocument,
+      surfaceResourceFlows: [
+        ...(nextDocument.surfaceResourceFlows ?? []).filter(
+          (flow) =>
+            !flow.sourcePortId.startsWith(`boundary:${template.id}:`) ||
+            retainedCaptureSourceIds.has(flow.sourcePortId),
+        ),
+        ...newlyManaged,
+      ],
+      surfaceConnections: (nextDocument.surfaceConnections ?? []).filter(
+        (connection) =>
+          !connection.sourcePortId.startsWith(`boundary:${template.id}:`) ||
+          retainedCaptureSourceIds.has(connection.sourcePortId),
+      ),
+    }),
+  };
 }
 
 export function addElement(
@@ -2894,6 +2927,22 @@ export function addWire(
   source: ConnectablePort,
   target: ConnectablePort,
 ): { document: ProjectDocument; wire: ProjectWire } | { error: string } {
+  if (
+    managedCaptureSourcePort(document, source) ||
+    resourceFlowSourceIds(document).has(source.key)
+  ) {
+    const result = addSurfaceResourceConnection(document, source, target);
+    if ("error" in result) return result;
+    const wire =
+      result.document.geometry.wires.find(
+        (candidate) =>
+          candidate.provenance?.kind === "auto_resource_flow" &&
+          candidate.provenance.connectionId === result.connection.id &&
+          endpointHintEqual(candidate.targetHint, target.hint),
+      ) ?? result.document.geometry.wires.at(-1);
+    if (!wire) return { error: "Managed resource flow did not create a wire." };
+    return { document: result.document, wire };
+  }
   const autoDrop = findReplaceableAutoDrop(document, source);
   const validation = validateConnection(document, source, target, {
     excludeWireId: autoDrop?.wire.id,
@@ -3809,6 +3858,8 @@ export function deleteSelection(
     ) {
       return { document, error: `Wire ${selection.id} does not exist.` };
     }
+    const managed = removeSurfaceConnectionForWire(document, selection.id);
+    if (managed) return { document: managed };
     return {
       document: {
         ...document,
@@ -3907,15 +3958,19 @@ export function deleteSelection(
   ) {
     return { document, error: `Element ${selection.id} does not exist.` };
   }
+  const withoutLogicalConsumers = removeSurfaceConnectionsForDeletedElement(
+    document,
+    selection.id,
+  );
   return {
     document: {
-      ...document,
+      ...withoutLogicalConsumers,
       geometry: {
-        ...document.geometry,
-        elements: document.geometry.elements.filter(
+        ...withoutLogicalConsumers.geometry,
+        elements: withoutLogicalConsumers.geometry.elements.filter(
           (element) => element.id !== selection.id,
         ),
-        wires: document.geometry.wires.filter(
+        wires: withoutLogicalConsumers.geometry.wires.filter(
           (wire) =>
             !hintReferencesElement(wire.sourceHint, selection.id) &&
             !hintReferencesElement(wire.targetHint, selection.id),
