@@ -158,6 +158,49 @@ same editor checkout. Each suite builds and refreshes `dist/`; parallel
 fail with `EBUSY`. Run Playwright verification sequentially, or use isolated
 worktrees when parallel browser checks are necessary.
 
+If a full Playwright run fails only because Chromium reports
+`Failed to load resource: net::ERR_NO_BUFFER_SPACE`, rerun the failed spec by
+itself before changing product code. This is a local browser/network resource
+exhaustion signal, not an editor diagnostic. Treat it as non-deterministic only
+when the isolated rerun passes without console or page errors; then rerun the
+full suite once to confirm a clean pass. Do not filter the console error in the
+test, and do not mark the run successful if the same error repeats.
+
+When regenerating the checked-in browser runner on Windows, the script may print
+an opam root warning such as:
+
+```text
+C:\Users\<user>\AppData\Local\opam exists, but does not appear to be a valid opam root
+```
+
+The warning can appear even after `public/tilefold_runner.js` is generated.
+Always verify the artifact with `npm run runner:check`, then run the OCaml
+reference validation from the known WSL opam environment, for example:
+
+```sh
+wsl bash -lc "cd '/mnt/c/Users/<user>/Desktop/tilefold-lang' && opam exec -- dune build && opam exec -- dune runtest"
+```
+
+Do not rely on ad hoc PowerShell-to-WSL path expansion helpers such as `wslvar`;
+they are not guaranteed to exist. Use a literal `/mnt/c/...` path or a verified
+`wslpath` result.
+
+Surface expansion bugs can pass editor preflight but fail in the browser OCaml
+runner as internal diagnostics. Two examples to check before assuming a user
+wire is wrong:
+
+- `element without owner: ...__std_apply_...` or
+  `...__call_apply_...` means generated Core element bounds are outside the
+  owning container. The folded Surface node and every generated internal element
+  must use bounds that are fully contained by the same container.
+- `function capture order mismatch ... expected ..., actual ...` means generated
+  closure capture declarations and generated Function port order disagree. Use
+  the same deterministic capture ordering as the Core validator; do not depend
+  on the visual parameter order when Core has sorted capture keys.
+
+For these cases, add or update a regression test that reaches the browser
+runner. A passing Surface preflight test alone is not enough.
+
 ## Visual direction
 
 The first version borrows only a restrained subset of three familiar tools:
