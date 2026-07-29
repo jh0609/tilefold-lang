@@ -112,7 +112,10 @@ function nodeSignature(element: ProjectElement, ports: ConnectablePort[]) {
         .sort((left, right) => left.name.localeCompare(right.name));
       const result = output("result");
       return result
-        ? `${inputs.map((port) => formatCoreType(port.type)).join(" · ")} → ${formatCoreType(result)}`
+        ? `${inputs.map((port) => port.label ?? port.name).join(" · ")} → ${
+            ports.find((port) => port.direction === "output" && port.name === "result")
+              ?.label ?? "result"
+          }`
         : "";
     }
   }
@@ -135,6 +138,10 @@ function nodeDisplayLabel(element: ProjectElement): string {
     return element.properties.templateId;
   }
   return KIND_LABELS[element.kind];
+}
+
+function isLiteralElement(element: ProjectElement): boolean {
+  return element.kind === "nat_literal" || element.kind === "bool_literal";
 }
 
 function portHitCenter(
@@ -182,6 +189,7 @@ export function ElementNode({
         : undefined;
   const signature = nodeSignature(element, ports);
   const displayLabel = nodeDisplayLabel(element);
+  const literal = isLiteralElement(element);
   const standardDefinition =
     element.kind === "function" || element.kind === "library_call"
       ? standardLibraryFunction(element.properties.templateId)
@@ -262,15 +270,17 @@ export function ElementNode({
           aria-hidden="true"
         />
       )}
-      <text
-        className="element-kind"
-        data-testid={`element-${element.id}-kind-label`}
-        x={compact ? contentLeft - 14 : contentLeft}
-        y={y + (compact ? 7 : 22)}
-        fontSize={compact ? 5 : undefined}
-      >
-        {displayLabel}
-      </text>
+      {!literal && (
+        <text
+          className="element-kind"
+          data-testid={`element-${element.id}-kind-label`}
+          x={compact ? contentLeft - 14 : contentLeft}
+          y={y + (compact ? 7 : 22)}
+          fontSize={compact ? 5 : undefined}
+        >
+          {displayLabel}
+        </text>
+      )}
       {standardDefinition && !compact && (
         <text
           className="element-library-source"
@@ -293,7 +303,7 @@ export function ElementNode({
           {value}
         </text>
       )}
-      {!compact && (
+      {!compact && !literal && (
         <text
           className="element-signature"
           data-testid={`element-${element.id}-signature`}
@@ -377,7 +387,7 @@ export function ElementNode({
                 data-port-direction={port.direction}
                 role="button"
                 tabIndex={0}
-                aria-label={`${port.direction} port ${anchor.port} on ${element.id}${port.direction === "output" ? ", drag to connect" : ", connection target"}`}
+                aria-label={`${port.direction} port ${port.label ?? anchor.port} on ${element.id}${port.direction === "output" ? ", drag to connect" : ", connection target"}`}
                 onPointerDown={(event) => onPortPointerDown(event, port)}
               />
             )}
@@ -389,9 +399,9 @@ export function ElementNode({
               r={portVisibleRadius}
               aria-hidden="true"
             >
-              <title>{`${anchor.port} · ${output ? "output" : "input"}${output ? " · drag to connect" : " · drop target"}`}</title>
+              <title>{`${port?.label ?? anchor.port} · ${output ? "output" : "input"}${output ? " · drag to connect" : " · drop target"}`}</title>
             </circle>
-            {!compact && (
+            {!compact && !literal && (
               <text
                 className="port-label"
                 data-testid={`port-label-${element.id}-${anchor.port}`}
@@ -399,11 +409,11 @@ export function ElementNode({
                 y={anchor.y + 7}
                 textAnchor={output ? "end" : "start"}
               >
-                {anchor.port}
+                {port?.label ?? anchor.port}
               </text>
             )}
             {port && (
-              <title>{`${anchor.port} · ${port.direction} · ${formatCoreType(port.type)}`}</title>
+              <title>{`${port.label ?? anchor.port} · ${port.direction} · ${formatCoreType(port.type)}`}</title>
             )}
           </g>
         );

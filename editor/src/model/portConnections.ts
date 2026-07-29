@@ -2,9 +2,11 @@ import type {
   CoreType,
   EndpointHint,
   Point,
+  ProjectContainer,
   ProjectDocument,
   ProjectElement,
   ProjectWire,
+  BoundaryPort,
 } from "./project";
 export { coreTypeEqual } from "./coreTypes";
 import { coreTypeEqual } from "./coreTypes";
@@ -16,6 +18,7 @@ export interface ConnectablePort {
   key: string;
   ownerId: string;
   name: string;
+  label?: string;
   direction: PortDirection;
   type: CoreType;
   anchor: Point;
@@ -168,6 +171,7 @@ export function collectConnectablePorts(
         key: `element:${element.id}:${anchor.port}`,
         ownerId: element.id,
         name: anchor.port,
+        label: elementPortLabel(document, element, anchor.port),
         ...schema,
         anchor: { x: anchor.x, y: anchor.y },
         hint: {
@@ -189,6 +193,7 @@ export function collectConnectablePorts(
           boundary.role === "capture"
             ? `capture:${boundary.captureKey}`
             : boundary.role,
+        label: boundaryPortLabel(document, container, boundary),
         direction,
         type: boundary.type,
         anchor: {
@@ -204,6 +209,45 @@ export function collectConnectablePorts(
     }
   }
   return ports;
+}
+
+function elementPortLabel(
+  document: ProjectDocument,
+  element: ProjectElement,
+  port: string,
+): string | undefined {
+  if (element.kind === "project_call") {
+    const functionInfo = surfaceFunctionForElement(
+      document,
+      element.properties.templateId,
+    );
+    if (!functionInfo) return undefined;
+    const match = /^arg_(\d+)$/.exec(port);
+    if (match) return functionInfo.parameters[Number(match[1])]?.name;
+    if (port === "result") return functionInfo.result.name;
+  }
+  return undefined;
+}
+
+function boundaryPortLabel(
+  document: ProjectDocument,
+  container: ProjectContainer,
+  boundary: BoundaryPort,
+): string | undefined {
+  const functionInfo = document.surfaceFunctions?.find(
+    (candidate) => candidate.bodyContainerId === container.id,
+  );
+  if (!functionInfo) {
+    if (boundary.role === "capture") return boundary.captureKey;
+    return undefined;
+  }
+  if (boundary.role === "result") return functionInfo.result.name;
+  if (boundary.role === "capture") return boundary.captureKey;
+  const parameters = container.boundaryPorts
+    .filter((candidate) => candidate.role === "parameter")
+    .sort((left, right) => left.anchor.y - right.anchor.y || left.id.localeCompare(right.id));
+  const index = parameters.findIndex((candidate) => candidate.id === boundary.id);
+  return index >= 0 ? functionInfo.parameters[index]?.name : undefined;
 }
 
 export function endpointHintEqual(

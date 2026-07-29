@@ -338,6 +338,12 @@ async function runAndExpect(page: Page, expected: string) {
   await expect(page.getByRole("region", { name: /Diagnostics/ })).toHaveCount(0);
 }
 
+async function boundaryLabels(page: Page, containerId: string) {
+  return page
+    .locator(`text.boundary-port-label[data-testid^="boundary-label-${containerId}-"]`)
+    .evaluateAll((labels) => labels.map((label) => label.textContent ?? ""));
+}
+
 test("authors flat multi-argument clamp and calls it as one node", async ({
   page,
 }, testInfo) => {
@@ -413,5 +419,221 @@ test("authors flat multi-argument between with explicit Copy", async ({
   await page.getByLabel("Open JSON file").setInputFiles(savedPath);
   await expect(page.getByText("flat-between.tilefold.json")).toBeVisible();
   await runAndExpect(page, "Nat(0)");
+  await expectNoBrowserIssues(issues);
+});
+
+test("shows Surface argument names on function boundaries and call ports", async ({
+  page,
+}, testInfo) => {
+  const issues = watchBrowserIssues(page);
+  await page.goto("/");
+  const containerId = await createNat3Function(page, "namedClamp");
+  await openContainer(page, containerId);
+  await expect
+    .poll(() => boundaryLabels(page, containerId))
+    .toEqual(["n", "lower", "upper", "result"]);
+  expect((await boundaryLabels(page, containerId)).join(" ")).not.toMatch(/Nat|Bool/);
+
+  await page.locator(`g.container-shape[data-container-id="${containerId}"]`).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("lower: Nat")).toBeVisible();
+  await page.getByRole("button", { name: "Edit signature" }).click();
+  await page.getByLabel("Parameter 1 name").fill("value");
+  await page.getByLabel("Parameter 2 name").fill("minValue");
+  await page.getByLabel("Parameter 3 name").fill("maxValue");
+  await page.getByRole("button", { name: "Move parameter 3 up" }).click();
+  await page.getByLabel("Result name").fill("clamped");
+  await page.getByRole("button", { name: "Apply signature" }).click();
+  await expect
+    .poll(() => boundaryLabels(page, containerId))
+    .toEqual(["value", "maxValue", "minValue", "clamped"]);
+
+  await returnToEntry(page, containerId);
+  await enlargeEntryForMultiArgumentCall(page);
+  const callId = await addProjectCall(page, "namedClamp");
+  await expect(page.getByTestId(`port-label-${callId}-arg_0`)).toHaveText("value");
+  await expect(page.getByTestId(`port-label-${callId}-arg_1`)).toHaveText("maxValue");
+  await expect(page.getByTestId(`port-label-${callId}-arg_2`)).toHaveText("minValue");
+  await expect(page.getByTestId(`port-label-${callId}-result`)).toHaveText("clamped");
+  await expect(page.getByTestId(`element-${callId}-signature`)).toHaveText(
+    "value · maxValue · minValue → clamped",
+  );
+  await expect(page.getByTestId(`element-${callId}-signature`)).not.toContainText(/Nat|Bool/);
+
+  await openContainer(page, containerId);
+  await page.getByRole("button", { name: "Fit to content" }).click();
+  const labelGeometry = await page.evaluate((id) => {
+    const container = document.querySelector(
+      `g.container-shape[data-container-id="${id}"] rect`,
+    ) as SVGRectElement | null;
+    const labels = Array.from(
+      document.querySelectorAll(
+        `text.boundary-port-label[data-testid^="boundary-label-${id}-"]`,
+      ),
+    ) as SVGTextElement[];
+    if (!container) return null;
+    const bounds = container.getBBox();
+    return {
+      left: bounds.x,
+      top: bounds.y,
+      right: bounds.x + bounds.width,
+      bottom: bounds.y + bounds.height,
+      labels: labels.map((label) => {
+        const labelBox = label.getBBox();
+        return {
+          left: labelBox.x,
+          top: labelBox.y,
+          right: labelBox.x + labelBox.width,
+          bottom: labelBox.y + labelBox.height,
+        };
+      }),
+    };
+  }, containerId);
+  expect(labelGeometry).not.toBeNull();
+  for (const label of labelGeometry!.labels) {
+    expect(label.left).toBeGreaterThanOrEqual(labelGeometry!.left);
+    expect(label.top).toBeGreaterThanOrEqual(labelGeometry!.top);
+    expect(label.right).toBeLessThanOrEqual(labelGeometry!.right);
+    expect(label.bottom).toBeLessThanOrEqual(labelGeometry!.bottom);
+  }
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export JSON" }).click();
+  const download = await downloadPromise;
+  const savedPath = testInfo.outputPath("named-arguments.tilefold.json");
+  await download.saveAs(savedPath);
+  await page.reload();
+  await page.getByLabel("Open JSON file").setInputFiles(savedPath);
+  await expect(page.getByText("named-arguments.tilefold.json")).toBeVisible();
+  await openContainer(page, containerId);
+  await expect
+    .poll(() => boundaryLabels(page, containerId))
+    .toEqual(["value", "maxValue", "minValue", "clamped"]);
+  await returnToEntry(page, containerId);
+  await expect(page.getByTestId(`port-label-${callId}-arg_1`)).toHaveText("maxValue");
+  await expectNoBrowserIssues(issues);
+});
+
+test("renders Nat and Bool literal values without redundant label collisions", async ({
+  page,
+}) => {
+  const issues = watchBrowserIssues(page);
+  await page.goto("/");
+  const natId = await addNodeAndGetId(page, "Add Nat", "nat_literal");
+  await setNatValue(page, natId, 123456);
+  const boolId = await addNodeAndGetId(page, "Add Bool", "bool_literal");
+  await setElementPosition(page, boolId, 520, 260);
+
+  await expect(page.getByTestId(`element-${natId}-kind-label`)).toHaveCount(0);
+  await expect(page.getByTestId(`element-${boolId}-kind-label`)).toHaveCount(0);
+  await expect(page.getByTestId(`port-label-${natId}-value`)).toHaveCount(0);
+  await expect(page.getByTestId(`port-label-${boolId}-value`)).toHaveCount(0);
+  await expect(page.getByTestId(`element-${natId}-primary-value`)).toHaveText("123456");
+  await expect(page.getByTestId(`element-${boolId}-primary-value`)).toHaveText("False");
+  await element(page, natId).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId(`element-${natId}-primary-value`)).toHaveText("123456");
+
+  const collisions = await page.evaluate((ids) => {
+    function overlap(a: DOMRect, b: DOMRect) {
+      return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+    }
+    return ids.map((id) => {
+      const value = document.querySelector(
+        `[data-testid="element-${id}-primary-value"]`,
+      ) as SVGTextElement | null;
+      const port = document.querySelector(
+        `[data-testid="port-visible-${id}-value"]`,
+      ) as SVGCircleElement | null;
+      const badge = document.querySelector(
+        `g[data-node-id="${id}"] .selection-badge`,
+      ) as SVGTextElement | null;
+      if (!value || !port) return { id, valuePort: true, valueBadge: true };
+      const valueBox = value.getBoundingClientRect();
+      const portBox = port.getBoundingClientRect();
+      return {
+        id,
+        valuePort: overlap(valueBox, portBox),
+        valueBadge: badge ? overlap(valueBox, badge.getBoundingClientRect()) : false,
+      };
+    });
+  }, [natId, boolId]);
+  expect(collisions).toEqual([
+    { id: natId, valuePort: false, valueBadge: false },
+    { id: boolId, valuePort: false, valueBadge: false },
+  ]);
+  await expectNoBrowserIssues(issues);
+});
+
+test("fits auto-placed multi-argument containers without clipping bottom boundary ports", async ({
+  page,
+}, testInfo) => {
+  const issues = watchBrowserIssues(page);
+  await page.goto("/");
+  const containerId = await createNat3Function(page, "fitClamp");
+  await openContainer(page, containerId);
+
+  const initialDrops = await page
+    .locator(`g.element-node[data-node-kind="drop"]`)
+    .evaluateAll((nodes) =>
+      nodes.map((node) => node.getAttribute("data-node-id") ?? ""),
+    );
+  for (const dropId of initialDrops) {
+    const owner = await element(page, dropId).evaluate((node, id) => {
+      const bounds = (node as SVGGraphicsElement).getBBox();
+      const container = document.querySelector(
+        `g.container-shape[data-container-id="${id}"] rect`,
+      ) as SVGRectElement | null;
+      if (!container) return false;
+      const containerBox = container.getBBox();
+      return (
+        bounds.x >= containerBox.x &&
+        bounds.y >= containerBox.y &&
+        bounds.x + bounds.width <= containerBox.x + containerBox.width &&
+        bounds.y + bounds.height <= containerBox.y + containerBox.height
+      );
+    }, containerId);
+    if (owner) await selectAndDelete(page, element(page, dropId));
+  }
+  await clearFunctionResultLiteral(page, containerId);
+
+  await page.locator(`g.container-shape[data-container-id="${containerId}"]`).focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: "Fit to content" }).click();
+
+  const geometry = await page.evaluate((id) => {
+    const container = document.querySelector(
+      `g.container-shape[data-container-id="${id}"] rect`,
+    ) as SVGRectElement | null;
+    const ports = Array.from(
+      document.querySelectorAll(
+        `circle[data-port-kind="boundary"][data-container-id="${id}"]`,
+      ),
+    ) as SVGCircleElement[];
+    if (!container) return null;
+    const bounds = container.getBBox();
+    return {
+      bottom: bounds.y + bounds.height,
+      ports: ports.map((port) => ({
+        cy: Number(port.getAttribute("cy")),
+        r: Number(port.getAttribute("r")),
+      })),
+    };
+  }, containerId);
+  expect(geometry).not.toBeNull();
+  for (const portGeometry of geometry!.ports) {
+    expect(portGeometry.cy + portGeometry.r).toBeLessThanOrEqual(
+      geometry!.bottom,
+    );
+  }
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export JSON" }).click();
+  const download = await downloadPromise;
+  const savedPath = testInfo.outputPath("fit-multi-argument.tilefold.json");
+  await download.saveAs(savedPath);
+  await page.reload();
+  await page.getByLabel("Open JSON file").setInputFiles(savedPath);
+  await expect(page.getByText("fit-multi-argument.tilefold.json")).toBeVisible();
   await expectNoBrowserIssues(issues);
 });

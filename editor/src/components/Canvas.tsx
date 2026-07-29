@@ -12,6 +12,7 @@ import {
   parseViewBox,
   zoomViewBox,
 } from "../model/coordinates";
+import { formatCoreType } from "../model/coreTypes";
 import {
   findElementOwnerContainer,
   moveContainer,
@@ -144,7 +145,26 @@ function portTypeClass(type: CoreType): string {
   return "type-arrow";
 }
 
+function containerBoundaryLabel(
+  document: ProjectDocument,
+  container: ProjectContainer,
+  boundary: ProjectContainer["boundaryPorts"][number],
+): string | null {
+  if (boundary.role === "capture") return boundary.captureKey;
+  const surfaceFunction = document.surfaceFunctions?.find(
+    (candidate) => candidate.bodyContainerId === container.id,
+  );
+  if (!surfaceFunction) return null;
+  if (boundary.role === "result") return surfaceFunction.result.name;
+  const parameters = container.boundaryPorts
+    .filter((candidate) => candidate.role === "parameter")
+    .sort((left, right) => left.anchor.y - right.anchor.y || left.id.localeCompare(right.id));
+  const index = parameters.findIndex((candidate) => candidate.id === boundary.id);
+  return index >= 0 ? surfaceFunction.parameters[index]?.name ?? null : null;
+}
+
 function ContainerShape({
+  document,
   container,
   selected,
   selectedBoundaryId,
@@ -153,6 +173,7 @@ function ContainerShape({
   onResizePointerDown,
   onMovePointerDown,
 }: {
+  document: ProjectDocument;
   container: ProjectContainer;
   selected: boolean;
   selectedBoundaryId: string | null;
@@ -256,18 +277,34 @@ function ContainerShape({
       <text x={x + 12} y={y + 20}>
         {container.kind.kind.toUpperCase()} · {container.id}
       </text>
-      {container.boundaryPorts.map((boundary) => (
-        <circle
-          key={boundary.id}
-          className={`boundary-port role-${boundary.role} ${portTypeClass(boundary.type)}${selectedBoundaryId === boundary.id ? " selected" : ""}`}
-          cx={x + boundary.anchor.x}
-          cy={y + boundary.anchor.y}
-          r={boundaryPortRadius}
-          aria-hidden="true"
-        >
-          <title>{`${boundary.role} boundary ${boundary.id}`}</title>
-        </circle>
-      ))}
+      {container.boundaryPorts.map((boundary) => {
+        const label = containerBoundaryLabel(document, container, boundary);
+        const output = boundary.role !== "result";
+        return (
+          <g key={boundary.id} className={`boundary-port-group role-${boundary.role}`}>
+            <circle
+              className={`boundary-port role-${boundary.role} ${portTypeClass(boundary.type)}${selectedBoundaryId === boundary.id ? " selected" : ""}`}
+              cx={x + boundary.anchor.x}
+              cy={y + boundary.anchor.y}
+              r={boundaryPortRadius}
+              aria-hidden="true"
+            >
+              <title>{`${label ?? boundary.role} · ${formatCoreType(boundary.type)}`}</title>
+            </circle>
+            {label && (
+              <text
+                className="boundary-port-label"
+                data-testid={`boundary-label-${container.id}-${boundary.id}`}
+                x={x + boundary.anchor.x + (output ? 14 : -14)}
+                y={y + boundary.anchor.y + 4}
+                textAnchor={output ? "start" : "end"}
+              >
+                {label}
+              </text>
+            )}
+          </g>
+        );
+      })}
       {selected &&
         handles.map((handle) => (
           <g
@@ -1202,6 +1239,7 @@ export function Canvas({
         {renderedDocument.geometry.containers.map((container) => (
           <ContainerShape
             key={container.id}
+            document={renderedDocument}
             container={container}
             selected={
               selection?.type === "container" && selection.id === container.id

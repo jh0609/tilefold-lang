@@ -3006,7 +3006,7 @@ export function editSurfaceFunctionSignature(
       id: existing?.id ?? allocate("boundary_parameter_"),
       role: "parameter",
       type: parameter.type,
-      anchor: existing?.anchor ?? { x: 0, y: 60 + index * 48 },
+      anchor: { x: 0, y: 60 + index * 48 },
     });
   });
   if (resultBoundary) {
@@ -4232,6 +4232,10 @@ export function resizeOrMoveElement(
 const CONTAINER_MIN_WIDTH = 220;
 const CONTAINER_MIN_HEIGHT = 140;
 const CONTAINER_PADDING = 24;
+const CONTAINER_PORT_CLEARANCE = 12;
+const CONTAINER_BOUNDARY_LABEL_OFFSET = 14;
+const CONTAINER_BOUNDARY_LABEL_HEIGHT = 14;
+const CONTAINER_BOUNDARY_LABEL_CHAR_WIDTH = 7;
 
 function containerHeaderMinWidth(
   document: ProjectDocument,
@@ -4249,9 +4253,47 @@ function childContentBounds(
   document: ProjectDocument,
   container: ProjectContainer,
 ): Bounds | null {
-  const childBounds = document.geometry.elements
+  const contentBounds: Bounds[] = [];
+  document.geometry.elements
     .filter((element) => findElementOwnerContainer(document, element)?.id === container.id)
-    .map((element) => element.bounds);
+    .forEach((element) => {
+      contentBounds.push(element.bounds);
+      element.portAnchors.forEach((anchor) => {
+        contentBounds.push({
+          x: anchor.x - CONTAINER_PORT_CLEARANCE,
+          y: anchor.y - CONTAINER_PORT_CLEARANCE,
+          width: CONTAINER_PORT_CLEARANCE * 2,
+          height: CONTAINER_PORT_CLEARANCE * 2,
+        });
+      });
+    });
+  document.geometry.containers
+    .filter((candidate) => containerParent(document.geometry.containers, candidate)?.id === container.id)
+    .forEach((candidate) => contentBounds.push(candidate.bounds));
+  container.boundaryPorts.forEach((boundary) => {
+    const anchor = {
+      x: container.bounds.x,
+      y: container.bounds.y + boundary.anchor.y,
+    };
+    contentBounds.push({
+      x: anchor.x,
+      y: anchor.y - CONTAINER_PORT_CLEARANCE,
+      width: 0,
+      height: CONTAINER_PORT_CLEARANCE * 2,
+    });
+    const label = boundaryDisplayLabel(document, container, boundary);
+    if (label) {
+      const width = label.length * CONTAINER_BOUNDARY_LABEL_CHAR_WIDTH;
+      const portY = container.bounds.y + boundary.anchor.y;
+      contentBounds.push({
+        x: container.bounds.x,
+        y: portY - CONTAINER_BOUNDARY_LABEL_HEIGHT / 2,
+        width: width + CONTAINER_BOUNDARY_LABEL_OFFSET,
+        height: CONTAINER_BOUNDARY_LABEL_HEIGHT,
+      });
+    }
+  });
+  const childBounds = contentBounds;
   const xs = [
     ...childBounds.flatMap((bounds) => [bounds.x, bounds.x + bounds.width]),
   ];
@@ -4264,6 +4306,22 @@ function childContentBounds(
   const minY = Math.min(...ys);
   const maxY = Math.max(...ys);
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+function boundaryDisplayLabel(
+  document: ProjectDocument,
+  container: ProjectContainer,
+  boundary: BoundaryPort,
+): string | null {
+  if (boundary.role === "capture") return boundary.captureKey;
+  const functionInfo = functionMetadata(document, container.kind.templateId);
+  if (!functionInfo) return null;
+  if (boundary.role === "result") return functionInfo.result.name;
+  const parameters = container.boundaryPorts
+    .filter((candidate) => candidate.role === "parameter")
+    .sort((left, right) => left.anchor.y - right.anchor.y || left.id.localeCompare(right.id));
+  const index = parameters.findIndex((candidate) => candidate.id === boundary.id);
+  return index >= 0 ? functionInfo.parameters[index]?.name ?? null : null;
 }
 
 export function containerMinimumBounds(

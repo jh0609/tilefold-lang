@@ -370,6 +370,92 @@ describe("editor operations", () => {
     });
   });
 
+  it("fits flat multi-argument containers to boundary ports when generated Drops are gone", () => {
+    const created = addFunctionTemplate(parseProjectJson(exampleJson), "entry", {
+      templateId: "clamp",
+      parameters: [
+        { name: "n", type: "nat" },
+        { name: "lower", type: "nat" },
+        { name: "upper", type: "nat" },
+      ],
+      resultName: "result",
+      resultType: "nat",
+    });
+    if ("error" in created) throw new Error(created.error);
+    const templateId = created.container.id;
+    const stripped = {
+      ...created.document,
+      geometry: {
+        ...created.document.geometry,
+        elements: created.document.geometry.elements.filter(
+          (element) =>
+            findElementOwnerContainer(created.document, element)?.id !== templateId,
+        ),
+        wires: created.document.geometry.wires.filter(
+          (wire) =>
+            wire.sourceHint?.kind !== "boundary_port" &&
+            wire.targetHint?.kind !== "boundary_port",
+        ),
+      },
+    };
+
+    const fitted = fitContainerBoundsToContent(stripped, templateId);
+    const lastParameter = created.container.boundaryPorts
+      .filter((boundary) => boundary.role === "parameter")
+      .sort((left, right) => left.anchor.y - right.anchor.y)
+      .at(-1)!;
+
+    expect(fitted.height).toBeGreaterThanOrEqual(lastParameter.anchor.y + 36);
+    expect(
+      fitted.y + fitted.height,
+    ).toBeGreaterThanOrEqual(
+      created.container.bounds.y + lastParameter.anchor.y + 36,
+    );
+  });
+
+  it("fits manual-curried containers to low capture boundary ports", () => {
+    const created = addFunctionTemplate(parseProjectJson(exampleJson), "entry", {
+      templateId: "captured_identity",
+      parameters: [{ name: "value", type: "nat" }],
+      captures: [
+        { key: "captured_1", type: "nat" },
+        { key: "captured_2", type: "nat" },
+      ],
+      resultName: "result",
+      resultType: "nat",
+    });
+    if ("error" in created) throw new Error(created.error);
+    const templateId = created.container.id;
+    const stripped = {
+      ...created.document,
+      geometry: {
+        ...created.document.geometry,
+        elements: created.document.geometry.elements.filter(
+          (element) =>
+            findElementOwnerContainer(created.document, element)?.id !== templateId,
+        ),
+        wires: created.document.geometry.wires.filter(
+          (wire) =>
+            wire.sourceHint?.kind !== "boundary_port" &&
+            wire.targetHint?.kind !== "boundary_port",
+        ),
+      },
+    };
+
+    const fitted = fitContainerBoundsToContent(stripped, templateId);
+    const lastCapture = created.container.boundaryPorts
+      .filter((boundary) => boundary.role === "capture")
+      .sort((left, right) => left.anchor.y - right.anchor.y)
+      .at(-1)!;
+
+    expect(fitted.height).toBeGreaterThanOrEqual(lastCapture.anchor.y + 36);
+    expect(
+      fitted.y + fitted.height,
+    ).toBeGreaterThanOrEqual(
+      created.container.bounds.y + lastCapture.anchor.y + 36,
+    );
+  });
+
   it("round-trips container geometry and automatic Drop provenance", () => {
     const project = parseProjectJson(exampleJson);
     const created = addFunctionTemplate(project, "entry", {
@@ -936,6 +1022,16 @@ describe("editor operations", () => {
       "arg_1",
       "result",
     ]);
+    expect(
+      collectConnectablePorts(called.document)
+        .filter((port) => port.ownerId === called.functionElement.id)
+        .sort((left, right) => left.name.localeCompare(right.name))
+        .map((port) => [port.name, port.label]),
+    ).toEqual([
+      ["arg_0", "left"],
+      ["arg_1", "right"],
+      ["result", "result"],
+    ]);
     expect(called.applyElement).toBeNull();
     expect(called.document.surfaceProjectCalls).toEqual([
       {
@@ -1205,6 +1301,29 @@ describe("editor operations", () => {
           wire.targetHint.port === "arg_1",
       ),
     ).toBe(true);
+    expect(
+      collectConnectablePorts(edited.document)
+        .filter((port) => port.ownerId === callElement.id)
+        .sort((left, right) => left.name.localeCompare(right.name))
+        .map((port) => [port.name, port.label]),
+    ).toEqual([
+      ["arg_0", "ignored"],
+      ["arg_1", "value"],
+      ["result", "answer"],
+    ]);
+    const editedContainer = edited.document.geometry.containers.find(
+      (container) => container.id === authored.container.id,
+    )!;
+    expect(
+      collectConnectablePorts(edited.document)
+        .filter(
+          (port) =>
+            port.hint.kind === "boundary_port" &&
+            port.hint.containerId === editedContainer.id,
+        )
+        .sort((left, right) => left.anchor.y - right.anchor.y || left.name.localeCompare(right.name))
+        .map((port) => port.label),
+    ).toEqual(["ignored", "answer", "value"]);
     expect(() =>
       parseProjectJson(exportProjectJson(edited.document)),
     ).not.toThrow();
