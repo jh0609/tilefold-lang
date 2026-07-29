@@ -1,7 +1,7 @@
 # Tilefold minimal 2D editor
 
 This directory contains a small, independent visual editor for
-`Tilefold project JSON v1`. Its source of truth is the TypeScript
+`Tilefold project JSON v2`. Its source of truth is the TypeScript
 `ProjectDocument` state, never the SVG DOM. Editing remains independent of
 semantics; **Run** explicitly sends a snapshot to the browser-compiled OCaml
 reference pipeline.
@@ -173,7 +173,7 @@ automatic routing, resize handles, dark mode, or elaborate transitions. A
 persistent left palette exposes the implemented Core node kinds by category,
 searches names, signatures, descriptions, and keywords, and includes a compact
 Function template authoring form plus an existing-template Call action.
-Result is represented by the orange result boundary defined by project JSON v1
+Result is represented by the orange result boundary defined by Project JSON v2
 rather than inventing a Result element kind.
 
 Styles are split by responsibility under `src/styles/`: tokens, shell/layout,
@@ -185,18 +185,18 @@ kind and port-type colors, spacing, and radius.
 
 - The top toolbar is limited to project I/O, deletion, undo/redo, and the
   primary Run/Cancel action.
-- The persistent left palette searches and explains Unit, Nat, Succ, Drop,
-  Copy, Function, Call, Apply, and NatRec creation plus the Result boundary action.
+- The persistent left palette searches and explains Unit, Bool, Nat, Succ, Drop,
+  Copy, Function, Call, Apply, NatRec, and BoolRec creation plus the Result boundary action.
   Function asks for a user-facing function name, ordered Core arguments, a named
   Core result, and optional explicit captures before creating the editable body
-  template. Core type fields support `Unit`, `Nat`, and nested function types.
+  template. Core type fields support `Unit`, `Nat`, `Bool`, and nested function types.
 - The SVG canvas renders containers, relative boundary anchors, elements,
   absolute port anchors, wire polylines, junctions, and explicit outlets. The
   wheel zooms around the pointer and a middle-button drag pans the camera.
   Floating controls provide Zoom in/out, Fit, and Reset without competing with
   project commands in the top toolbar.
-- The Inspector edits element integer bounds, canonical Nat strings, and
-  recursive Core types for Drop/Copy/Apply/NatRec. It shows read-only
+- The Inspector edits element integer bounds, canonical Nat and Bool literals, and
+  recursive Core types for Drop/Copy/Apply/NatRec/BoolRec. It shows read-only
   information for containers, boundaries, wires, junctions, and saved view.
 - The status bar distinguishes the editor structure check from the unavailable
   Tilefold semantic validation.
@@ -204,16 +204,16 @@ kind and port-type colors, spacing, and radius.
 ## Project JSON model
 
 `src/model/project.ts` mirrors the discriminated unions in
-`lib/project_document.mli` and `docs/project-json-v1.md`. Nat values remain
-decimal strings. UI selection, inspector drafts, camera reset state, and drag
-state are separate from `ProjectDocument` and are never exported.
+`lib/project_document.mli`. Nat values remain decimal strings and Bool literal
+values are JSON booleans. UI selection, inspector drafts, camera reset state,
+and drag state are separate from `ProjectDocument` and are never exported.
 
 The example registry imports Project JSON directly from `../examples/` through
 Vite raw imports; there is no manually maintained browser copy. Local imports
 perform only a protective structure check:
 
 The toolbar **Example** picker opens the original project and three independent
-Project JSON v1 natural-number examples:
+Project JSON v2 natural-number examples:
 
 - **Successor — 2 → 3** evaluates `Succ(2)` to `Nat(3)`;
 - **Addition — 2 + 3 = 5** applies a captured-operand addition template whose
@@ -231,16 +231,34 @@ execution output, and undo/redo history, then fits the complete graph.
 The checked-in files are generated deterministically and can be verified with
 `npm run examples:check`.
 
+The Standard Library palette exposes immutable folded calls for:
+
+- `add : Nat -> Nat -> Nat`
+- `multiply : Nat -> Nat -> Nat`
+- `double : Nat -> Nat`
+- `square : Nat -> Nat`
+- `pred : Nat -> Nat`
+- `subtract : Nat -> Nat -> Nat`
+- `isZero : Nat -> Bool`
+- `not : Bool -> Bool`
+- `and : Bool -> Bool -> Bool`
+- `or : Bool -> Bool -> Bool`
+
+Transparent execution expands these calls to canonical read-only Core
+definitions. Fast execution dispatches only by verified `tilefold.std` identity
+and version. Bool results display as `Bool(True)` or `Bool(False)`, never as
+`Nat(0)` or `Nat(1)`.
+
 - object, format, and version;
 - required geometry arrays;
 - stable IDs and required geometry fields' basic types;
 - integer coordinates and sizes;
-- known v1 element/container kinds;
+- known v2 element/container kinds;
 - rendering-critical anchors, points, and outlet order.
 
 This is explicitly not a replacement for `Project_document.validate`.
-Unknown element kinds are rejected because v1 defines a closed union and its
-unknown-field policy is strict. Every currently valid v1 element kind renders;
+Unknown element kinds are rejected because v2 defines a closed union and its
+unknown-field policy is strict. Every currently valid v2 element kind renders;
 kinds without specialized visuals use a labeled generic node and are preserved.
 An import failure leaves the current document untouched and reports a JSON path.
 
@@ -253,10 +271,10 @@ need not match the OCaml canonical byte layout.
 
 New IDs use the smallest unused positive integer for a stable prefix such as
 `node_nat_1`; array length is never used. Unit, Nat, Succ, Drop, Copy, Apply,
-and NatRec prefer the current viewport center with fixed v1 port schemas.
-Drop, Copy, and NatRec default to `Nat`; Apply defaults to `Nat -> Nat`.
-The shared Core type editor can build arbitrary nested `Unit`, `Nat`, and
-`A -> B` types, with quick presets for common first-order arrows. Type edits
+and NatRec prefer the current viewport center with fixed v2 port schemas.
+Drop, Copy, and NatRec default to `Nat`; BoolRec defaults to `Bool`; Apply defaults to `Nat -> Nat`.
+The shared Core type editor can build arbitrary nested `Unit`, `Nat`, `Bool`,
+and `A -> B` types, with quick presets for common first-order arrows. Type edits
 are blocked while the element has connected wires so a valid connection cannot
 silently become ill-typed.
 
@@ -265,7 +283,7 @@ units of clearance, the editor checks a deterministic 120×80 grid around the
 center, starting to the right and proceeding clockwise. The chosen center is
 stored in the typed add command, so Undo/Redo reuses exactly the same geometry.
 Wires, junctions, and container boundaries are not treated as placement
-obstacles. Result means a container Result boundary, since v1 has no `result`
+obstacles. Result means a container Result boundary, since v2 has no `result`
 element kind; adding it is blocked when the first container already has one.
 
 Function authoring creates a referenced template container, Parameter and
@@ -294,7 +312,7 @@ also supported. The generated template explicitly Drops each unused capture.
 The host supplies deterministic temporary `Unit` or `Nat(0)` literals for
 materializable capture types. Function-typed captures are left unconnected
 instead of receiving a fake closure, and Run reports a source-mapped diagnostic
-until the user wires a real function value. Capture keys must be unique v1
+until the user wires a real function value. Capture keys must be unique v2
 identifiers and cannot use the reserved Function output key `value`.
 
 Call authoring lists compatible existing templates for the selected host and
@@ -321,11 +339,11 @@ Removing an argument or changing a connected argument/result type is blocked
 until the user disconnects the affected body or Call wiring; the editor does
 not silently delete those wires or coerce values.
 
-Function names and template IDs use the v1 identifier alphabet and must be
+Function names and template IDs use the v2 identifier alphabet and must be
 unique among containers. Generated stable IDs use the normal smallest-unused
 policy. Authoring refuses to expand the host container when doing so would
 overlap another container. The editor supports the Core type grammar
-`Unit | Nat | Type -> Type` without changing Project JSON v1. It does not infer
+`Unit | Nat | Bool | Type -> Type` in Project JSON v2. It does not infer
 captures, synthesize default function values, expose generated Core graphs, or
 perform destructive signature migrations; those remain future work.
 

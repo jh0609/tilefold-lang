@@ -3,17 +3,17 @@ import { describe, expect, it } from "vitest";
 import { addFunctionCall, addFunctionTemplate, editTemplateCaptures } from "./editorOps";
 import { exportProjectJson, parseProjectJson, StructureError } from "./importProject";
 
-describe("Project JSON v1 import and export", () => {
+describe("Project JSON v2 import and export", () => {
   it("parses the shared OCaml example", () => {
     const project = parseProjectJson(exampleJson);
     expect(project.format).toBe("tilefold-project");
-    expect(project.version).toBe(1);
+    expect(project.version).toBe(2);
     expect(project.geometry.elements).toHaveLength(3);
   });
 
   it.each([
     ["format", { format: "other" }, "$.format"],
-    ["version", { version: 2 }, "$.version"],
+    ["version", { version: 1 }, "$.version"],
   ])("rejects a mismatched %s", (_name, patch, path) => {
     const input = { ...JSON.parse(exampleJson), ...patch };
     expect(() => parseProjectJson(JSON.stringify(input))).toThrow(
@@ -43,7 +43,7 @@ describe("Project JSON v1 import and export", () => {
     );
   });
 
-  it("rejects unknown v1 element kinds instead of dropping them", () => {
+  it("rejects unknown v2 element kinds instead of dropping them", () => {
     const input = JSON.parse(exampleJson);
     input.geometry.elements[0].kind = "future_kind";
     expect(() => parseProjectJson(JSON.stringify(input))).toThrow(
@@ -174,6 +174,39 @@ describe("Project JSON v1 import and export", () => {
     expect(exported).not.toContain("selection");
     expect(exported).not.toContain('"drag"');
     expect(parseProjectJson(exported)).toEqual(project);
+  });
+
+  it("round-trips Bool literal and BoolRec Project JSON v2 elements", () => {
+    const input = JSON.parse(exampleJson);
+    input.geometry.elements.push(
+      {
+        id: "node_bool_1",
+        kind: "bool_literal",
+        bounds: { x: 320, y: 120, width: 88, height: 56 },
+        properties: { value: true },
+        portAnchors: [{ port: "value", x: 408, y: 148 }],
+      },
+      {
+        id: "node_bool_rec_1",
+        kind: "bool_rec",
+        bounds: { x: 460, y: 100, width: 136, height: 112 },
+        properties: { type: "bool" },
+        portAnchors: [
+          { port: "condition", x: 460, y: 128 },
+          { port: "false_case", x: 460, y: 156 },
+          { port: "true_case", x: 460, y: 184 },
+          { port: "result", x: 596, y: 156 },
+        ],
+      },
+    );
+    const parsed = parseProjectJson(JSON.stringify(input));
+    expect(
+      parsed.geometry.elements.find((element) => element.id === "node_bool_1"),
+    ).toMatchObject({
+      kind: "bool_literal",
+      properties: { value: true },
+    });
+    expect(parseProjectJson(exportProjectJson(parsed))).toEqual(parsed);
   });
 
   it("round-trips and validates Standard Library call metadata", () => {

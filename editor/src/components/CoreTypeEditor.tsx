@@ -6,15 +6,15 @@ import {
   normalizeCoreType,
 } from "../model/coreTypes";
 
-type TypeKind = "unit" | "nat" | "function";
+type TypeKind = "unit" | "bool" | "nat" | "function";
 
 function typeKind(type: CoreType): TypeKind {
-  if (type === "unit" || type === "nat") return type;
+  if (type === "unit" || type === "bool" || type === "nat") return type;
   return "function";
 }
 
 function defaultTypeForKind(kind: TypeKind): CoreType {
-  if (kind === "unit" || kind === "nat") return kind;
+  if (kind === "unit" || kind === "bool" || kind === "nat") return kind;
   return { arrow: ["nat", "nat"] };
 }
 
@@ -51,6 +51,7 @@ export function CoreTypeEditor({
           }
         >
           <option value="unit">Unit</option>
+          <option value="bool">Bool</option>
           <option value="nat">Nat</option>
           <option value="function">Function</option>
         </select>

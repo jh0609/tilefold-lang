@@ -139,6 +139,7 @@ let edge id source target = { CG.id = edge_id id; source; target }
 let literal_node_kind payload =
   match payload with
   | Runtime_value.Unit -> Ok CG.Unit_literal
+  | Runtime_value.Bool value -> Ok (CG.Bool_literal value)
   | Runtime_value.Nat nat -> Ok (CG.Nat_literal nat)
   | Runtime_value.Closure _ -> Error "closure program literals are not supported"
 

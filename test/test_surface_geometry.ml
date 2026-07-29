@@ -93,6 +93,7 @@ let run package =
 let payload_string value =
   match Runtime_value.payload value with
   | Unit -> "Unit"
+  | Bool value -> if value then "Bool(True)" else "Bool(False)"
   | Nat nat -> "Nat(" ^ Nat.to_string nat ^ ")"
   | Closure closure -> "Closure(" ^ Function_template_id.to_string closure.template_id ^ ")"
 

@@ -152,7 +152,7 @@ describe("wire endpoint reconnection", () => {
     expect(
       validateConnection(document, { ...source, ownerId: "missing" }, target),
     ).toMatchObject({
-      error: "This port is not available in Project JSON v1.",
+      error: "This port is not available in Project JSON v2.",
     });
     const occupied = collectConnectablePorts(document).find(
       (port) => port.key === "element:node_succ:input",
@@ -171,6 +171,21 @@ describe("wire endpoint reconnection", () => {
     });
     expect(validateConnection(document, source, occupied)).toMatchObject({
       error: "This connection already exists.",
+    });
+  });
+
+  it("rejects Bool outputs connected to Nat inputs", () => {
+    let document = parseProjectJson(exampleJson);
+    document = addElement(document, "bool_literal", { x: 300, y: 180 }).document;
+    const ports = collectConnectablePorts(document);
+    const boolSource = ports.find(
+      (port) => port.key === "element:node_bool_1:value",
+    )!;
+    const natTarget = ports.find(
+      (port) => port.key === "element:node_succ:input",
+    )!;
+    expect(validateConnection(document, boolSource, natTarget)).toMatchObject({
+      error: "The port types are not compatible.",
     });
   });
 

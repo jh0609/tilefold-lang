@@ -8,6 +8,7 @@ type port_anchor = { port : string; at : point }
 
 type element_kind =
   | Unit_literal
+  | Bool_literal of bool
   | Nat_literal of string
   | Succ
   | Drop of Core_type.t
@@ -26,6 +27,7 @@ type element_kind =
     }
   | Apply of { parameter_type : Core_type.t; result_type : Core_type.t }
   | NatRec of Core_type.t
+  | BoolRec of Core_type.t
 
 type element = {
   id : string;
@@ -227,6 +229,7 @@ let decode_bounds path json =
 
 let rec decode_type path = function
   | `String "unit" -> Ok Core_type.Unit
+  | `String "bool" -> Ok Core_type.Bool
   | `String "nat" -> Ok Core_type.Nat
   | `Assoc fields ->
       let* () = reject_unknown path [ "arrow" ] fields in
@@ -349,6 +352,14 @@ let decode_element_kind path json =
   | "unit_literal" ->
       let* () = reject_unknown path [ "kind" ] fields in
       Ok Unit_literal
+  | "bool_literal" ->
+      let* () = reject_unknown path [ "kind"; "value" ] fields in
+      let* json = field path "value" fields in
+      (match json with
+      | `Bool value -> Ok (Bool_literal value)
+      | _ ->
+          error (path ^ ".value")
+            (Invalid_value "Bool literal must be a JSON boolean"))
   | "nat_literal" ->
       let* () = reject_unknown path [ "kind"; "value" ] fields in
       let* json = field path "value" fields in
@@ -371,6 +382,10 @@ let decode_element_kind path json =
       let* () = reject_unknown path [ "kind"; "type" ] fields in
       let* typ = type_field "type" in
       Ok (NatRec typ)
+  | "bool_rec" ->
+      let* () = reject_unknown path [ "kind"; "type" ] fields in
+      let* typ = type_field "type" in
+      Ok (BoolRec typ)
   | "apply" ->
       let* () =
         reject_unknown path [ "kind"; "parameterType"; "resultType" ] fields
@@ -417,6 +432,12 @@ let decode_element_kind path json =
               | Standard_library.Multiply -> "nat.multiply"
               | Standard_library.Double -> "nat.double"
               | Standard_library.Square -> "nat.square"
+              | Standard_library.Pred -> "nat.pred"
+              | Standard_library.Subtract -> "nat.subtract"
+              | Standard_library.IsZero -> "nat.isZero"
+              | Standard_library.Not -> "bool.not"
+              | Standard_library.And -> "bool.and"
+              | Standard_library.Or -> "bool.or"
             in
             if not (String.equal info.Standard_library.stable_id template_id) then
               error (path ^ ".templateId")
@@ -703,7 +724,7 @@ let decode_json text =
   let* version_json = field "$" "version" fields in
   let* version = int_at "$.version" version_json in
   let* () =
-    if version = 1 then Ok () else error "$.version" (Unsupported_version version)
+    if version = 2 then Ok () else error "$.version" (Unsupported_version version)
   in
   let* geometry_json = field "$" "geometry" fields in
   let* geometry = object_at "$.geometry" geometry_json in
@@ -745,6 +766,7 @@ let json_bounds (value : bounds) =
 
 let rec json_type = function
   | Core_type.Unit -> `String "unit"
+  | Core_type.Bool -> `String "bool"
   | Core_type.Nat -> `String "nat"
   | Core_type.Arrow (left, right) -> `Assoc [ ("arrow", `List [ json_type left; json_type right ]) ]
 
@@ -756,11 +778,13 @@ let json_captures captures =
 
 let json_element_kind = function
   | Unit_literal -> ("unit_literal", `Assoc [])
+  | Bool_literal value -> ("bool_literal", `Assoc [ ("value", `Bool value) ])
   | Nat_literal value -> ("nat_literal", `Assoc [ ("value", `String value) ])
   | Succ -> ("succ", `Assoc [])
   | Drop typ -> ("drop", `Assoc [ ("type", json_type typ) ])
   | Copy typ -> ("copy", `Assoc [ ("type", json_type typ) ])
   | NatRec typ -> ("nat_rec", `Assoc [ ("type", json_type typ) ])
+  | BoolRec typ -> ("bool_rec", `Assoc [ ("type", json_type typ) ])
   | Apply { parameter_type; result_type } ->
       ( "apply",
         `Assoc
@@ -981,6 +1005,7 @@ let valid_id value =
 
 let core_kind = function
   | Unit_literal -> Ok C.Unit_literal
+  | Bool_literal value -> Ok (C.Bool_literal value)
   | Nat_literal value ->
       (match Nat.of_string value with
       | Ok value -> Ok (C.Nat_literal value)
@@ -989,6 +1014,7 @@ let core_kind = function
   | Drop typ -> Ok (C.Drop typ)
   | Copy typ -> Ok (C.Copy typ)
   | NatRec typ -> Ok (C.NatRec typ)
+  | BoolRec typ -> Ok (C.BoolRec typ)
   | Apply { parameter_type; result_type } ->
       Ok
         (C.Apply
@@ -1211,6 +1237,19 @@ let generated_bounds points =
 let generated_wire id source target =
   { G.id = id; points = [ source; target ] }
 
+let standard_library_apply_types info =
+  let rec loop remaining typ acc =
+    if remaining = 0 then Ok (List.rev acc)
+    else
+      match typ with
+      | Core_type.Arrow (parameter_type, result_type) ->
+          loop (remaining - 1) result_type ((parameter_type, result_type) :: acc)
+      | _ -> Error ()
+  in
+  loop (Standard_library.arity info.Standard_library.id)
+    (Core_type.Arrow (info.parameter_type, info.result_type))
+    []
+
 let standard_library_generated_scene (element : element) =
   match element.kind with
   | Library_call { template_id; _ } -> (
@@ -1228,95 +1267,94 @@ let standard_library_generated_scene (element : element) =
               if Option.is_none result_anchor || List.exists Option.is_none argument_anchors then
                 ([], [])
               else
-                let result_point = point_of_anchor (Option.get result_anchor) in
-                let argument_points =
-                  argument_anchors
-                  |> List.map (fun value -> point_of_anchor (Option.get value))
-                in
-                let function_value =
-                  {
-                    G.x = element.bounds.x + 12;
-                    y = element.bounds.y + (element.bounds.height / 2);
-                  }
-                in
-                let function_input index =
-                  {
-                    G.x = element.bounds.x + 32 + (index * 22);
-                    y = element.bounds.y + 16 + (index * 10);
-                  }
-                in
-                let apply_result index =
-                  if index = arity - 1 then result_point
-                  else
-                    {
-                      G.x = element.bounds.x + element.bounds.width - 48 + (index * 8);
-                      y = element.bounds.y + 22 + (index * 14);
-                    }
-                in
-                let node_id suffix =
-                  match S.Element_id.of_string (element.id ^ "__std_" ^ suffix) with
-                  | Ok id -> id
-                  | Error _ -> assert false
-                in
-                let wire_id suffix =
-                  match G.Wire_id.of_string (element.id ^ "__std_" ^ suffix) with
-                  | Ok id -> id
-                  | Error _ -> assert false
-                in
-                let function_element =
-                  {
-                    G.id = node_id "function";
-                    kind =
-                      C.Function
+                match standard_library_apply_types info with
+                | Error () -> ([], [])
+                | Ok apply_types ->
+                    let result_point = point_of_anchor (Option.get result_anchor) in
+                    let argument_points =
+                      argument_anchors
+                      |> List.map (fun value -> point_of_anchor (Option.get value))
+                    in
+                    let function_value =
+                      {
+                        G.x = element.bounds.x + 12;
+                        y = element.bounds.y + (element.bounds.height / 2);
+                      }
+                    in
+                    let function_input index =
+                      {
+                        G.x = element.bounds.x + 32 + (index * 22);
+                        y = element.bounds.y + 16 + (index * 10);
+                      }
+                    in
+                    let apply_result index =
+                      if index = arity - 1 then result_point
+                      else
                         {
-                          template_id = Standard_library.function_template_id info.id;
-                          parameter_type = info.parameter_type;
-                          result_type = info.result_type;
-                          captures = [];
-                        };
-                    bounds = generated_bounds [ function_value ];
-                    ports = [ (C.Port_key.value, function_value) ];
-                  }
-                in
-                let apply_elements =
-                  argument_points
-                  |> List.mapi (fun index argument_point ->
-                         let function_point = function_input index in
-                         let result_point = apply_result index in
-                         let result_type =
-                           if index = arity - 1 then Core_type.Nat
-                           else Core_type.Arrow (Core_type.Nat, Core_type.Nat)
-                         in
-                         {
-                           G.id = node_id ("apply_" ^ string_of_int index);
-                           kind =
-                             C.Apply
-                               {
-                                 apply_parameter_type = Core_type.Nat;
-                                 apply_result_type = result_type;
-                               };
-                           bounds =
-                             generated_bounds
-                               [ function_point; argument_point; result_point ];
-                           ports =
-                             [
-                               (C.Port_key.function_input, function_point);
-                               (C.Port_key.argument, argument_point);
-                               (C.Port_key.result, result_point);
-                             ];
-                         })
-                in
-                let internal_wires =
-                  argument_points
-                  |> List.mapi (fun index _ ->
-                         let source =
-                           if index = 0 then function_value else apply_result (index - 1)
-                         in
-                         generated_wire
-                           (wire_id ("wire_function_" ^ string_of_int index))
-                           source (function_input index))
-                in
-                (function_element :: apply_elements, internal_wires)))
+                          G.x = element.bounds.x + element.bounds.width - 48 + (index * 8);
+                          y = element.bounds.y + 22 + (index * 14);
+                        }
+                    in
+                    let node_id suffix =
+                      match S.Element_id.of_string (element.id ^ "__std_" ^ suffix) with
+                      | Ok id -> id
+                      | Error _ -> assert false
+                    in
+                    let wire_id suffix =
+                      match G.Wire_id.of_string (element.id ^ "__std_" ^ suffix) with
+                      | Ok id -> id
+                      | Error _ -> assert false
+                    in
+                    let function_element =
+                      {
+                        G.id = node_id "function";
+                        kind =
+                          C.Function
+                            {
+                              template_id = Standard_library.function_template_id info.id;
+                              parameter_type = info.parameter_type;
+                              result_type = info.result_type;
+                              captures = [];
+                            };
+                        bounds = generated_bounds [ function_value ];
+                        ports = [ (C.Port_key.value, function_value) ];
+                      }
+                    in
+                    let apply_elements =
+                      List.combine argument_points apply_types
+                      |> List.mapi (fun index (argument_point, (parameter_type, result_type)) ->
+                             let function_point = function_input index in
+                             let result_point = apply_result index in
+                             {
+                               G.id = node_id ("apply_" ^ string_of_int index);
+                               kind =
+                                 C.Apply
+                                   {
+                                     apply_parameter_type = parameter_type;
+                                     apply_result_type = result_type;
+                                   };
+                               bounds =
+                                 generated_bounds
+                                   [ function_point; argument_point; result_point ];
+                               ports =
+                                 [
+                                   (C.Port_key.function_input, function_point);
+                                   (C.Port_key.argument, argument_point);
+                                   (C.Port_key.result, result_point);
+                                 ];
+                             })
+                    in
+                    let internal_wires =
+                      argument_points
+                      |> List.mapi (fun index _ ->
+                             let source =
+                               if index = 0 then function_value else apply_result (index - 1)
+                             in
+                             generated_wire
+                               (wire_id ("wire_function_" ^ string_of_int index))
+                               source (function_input index))
+                    in
+                    (function_element :: apply_elements, internal_wires)))
   | _ -> ([], [])
 
 let to_raw_scene document =

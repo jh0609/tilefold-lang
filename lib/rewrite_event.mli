@@ -13,6 +13,8 @@ type rule =
   | NatRecStepAccumulatorEnter
   | NatRecStepAccumulatorReturn
   | NatRecComplete
+  | BoolRecFalse
+  | BoolRecTrue
 
 type t = {
   index : int;

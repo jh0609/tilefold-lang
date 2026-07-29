@@ -29,6 +29,8 @@ function elementPortType(
   switch (element.kind) {
     case "unit_literal":
       return port === "value" ? { direction: "output", type: "unit" } : null;
+    case "bool_literal":
+      return port === "value" ? { direction: "output", type: "bool" } : null;
     case "nat_literal":
       return port === "value" ? { direction: "output", type: "nat" } : null;
     case "succ":
@@ -82,6 +84,15 @@ function elementPortType(
             ],
           },
         };
+      return port === "result"
+        ? { direction: "output", type: element.properties.type }
+        : null;
+    case "bool_rec":
+      if (port === "condition") return { direction: "input", type: "bool" };
+      if (port === "false_case")
+        return { direction: "input", type: element.properties.type };
+      if (port === "true_case")
+        return { direction: "input", type: element.properties.type };
       return port === "result"
         ? { direction: "output", type: element.properties.type }
         : null;
@@ -250,7 +261,7 @@ export function validateConnection(
   const source = canonicalPort(document, sourceCandidate);
   const target = canonicalPort(document, targetCandidate);
   if (!source || !target) {
-    return { error: "This port is not available in Project JSON v1." };
+    return { error: "This port is not available in Project JSON v2." };
   }
   if (source.direction !== "output") {
     return { error: "Connections must start at an output port." };

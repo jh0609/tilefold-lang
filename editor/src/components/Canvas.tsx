@@ -139,6 +139,7 @@ type ConnectionDrag =
 
 function portTypeClass(type: CoreType): string {
   if (type === "nat") return "type-nat";
+  if (type === "bool") return "type-bool";
   if (type === "unit") return "type-unit";
   return "type-arrow";
 }

@@ -5,6 +5,7 @@ let usage () =
 let payload_to_string value =
   match Tilefold.Runtime_value.payload value with
   | Unit -> "Unit"
+  | Bool value -> if value then "Bool(True)" else "Bool(False)"
   | Nat nat -> "Nat(" ^ Tilefold.Nat.to_string nat ^ ")"
   | Closure closure ->
       "Closure("

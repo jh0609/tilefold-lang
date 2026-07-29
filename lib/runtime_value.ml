@@ -107,6 +107,7 @@ and closure = {
 
 and payload =
   | Unit
+  | Bool of bool
   | Nat of Nat.t
   | Closure of closure
 
@@ -129,6 +130,7 @@ let origin value = value.origin
 
 let payload_type = function
   | Unit -> Core_type.Unit
+  | Bool _ -> Core_type.Bool
   | Nat _ -> Core_type.Nat
   | Closure closure -> Core_type.Arrow (closure.parameter_type, closure.result_type)
 
@@ -137,6 +139,7 @@ let typ value = payload_type value.payload
 let rec payload_equal left right =
   match (left, right) with
   | Unit, Unit -> true
+  | Bool left, Bool right -> Bool.equal left right
   | Nat left, Nat right -> Nat.equal left right
   | Closure left, Closure right -> closure_equal left right
   | _ -> false
@@ -160,6 +163,7 @@ and equal left right =
 
 let payload_to_string = function
   | Unit -> "Unit"
+  | Bool value -> if value then "Bool(True)" else "Bool(False)"
   | Nat value -> "Nat(" ^ Nat.to_string value ^ ")"
   | Closure closure ->
       "Closure("

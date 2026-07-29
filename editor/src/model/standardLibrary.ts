@@ -17,6 +17,7 @@ export interface StandardLibraryFunction {
 }
 
 const natToNat: CoreType = { arrow: ["nat", "nat"] };
+const boolToBool: CoreType = { arrow: ["bool", "bool"] };
 
 export const STANDARD_LIBRARY_FUNCTIONS: StandardLibraryFunction[] = [
   {
@@ -72,6 +73,87 @@ export const STANDARD_LIBRARY_FUNCTIONS: StandardLibraryFunction[] = [
     parameterType: "nat",
     templateResultType: "nat",
     resultType: "nat",
+  },
+  {
+    library: STANDARD_LIBRARY_NAMESPACE,
+    functionId: "nat.pred",
+    templateId: "tilefold.std.nat.pred",
+    displayName: "pred",
+    version: STANDARD_LIBRARY_VERSION,
+    parameters: [{ name: "value", type: "nat" }],
+    resultName: "result",
+    parameterType: "nat",
+    templateResultType: "nat",
+    resultType: "nat",
+  },
+  {
+    library: STANDARD_LIBRARY_NAMESPACE,
+    functionId: "nat.subtract",
+    templateId: "tilefold.std.nat.subtract",
+    displayName: "subtract",
+    version: STANDARD_LIBRARY_VERSION,
+    parameters: [
+      { name: "minuend", type: "nat" },
+      { name: "subtrahend", type: "nat" },
+    ],
+    resultName: "difference",
+    parameterType: "nat",
+    templateResultType: natToNat,
+    resultType: "nat",
+  },
+  {
+    library: STANDARD_LIBRARY_NAMESPACE,
+    functionId: "nat.isZero",
+    templateId: "tilefold.std.nat.isZero",
+    displayName: "isZero",
+    version: STANDARD_LIBRARY_VERSION,
+    parameters: [{ name: "value", type: "nat" }],
+    resultName: "result",
+    parameterType: "nat",
+    templateResultType: "bool",
+    resultType: "bool",
+  },
+  {
+    library: STANDARD_LIBRARY_NAMESPACE,
+    functionId: "bool.not",
+    templateId: "tilefold.std.bool.not",
+    displayName: "not",
+    version: STANDARD_LIBRARY_VERSION,
+    parameters: [{ name: "value", type: "bool" }],
+    resultName: "result",
+    parameterType: "bool",
+    templateResultType: "bool",
+    resultType: "bool",
+  },
+  {
+    library: STANDARD_LIBRARY_NAMESPACE,
+    functionId: "bool.and",
+    templateId: "tilefold.std.bool.and",
+    displayName: "and",
+    version: STANDARD_LIBRARY_VERSION,
+    parameters: [
+      { name: "left", type: "bool" },
+      { name: "right", type: "bool" },
+    ],
+    resultName: "result",
+    parameterType: "bool",
+    templateResultType: boolToBool,
+    resultType: "bool",
+  },
+  {
+    library: STANDARD_LIBRARY_NAMESPACE,
+    functionId: "bool.or",
+    templateId: "tilefold.std.bool.or",
+    displayName: "or",
+    version: STANDARD_LIBRARY_VERSION,
+    parameters: [
+      { name: "left", type: "bool" },
+      { name: "right", type: "bool" },
+    ],
+    resultName: "result",
+    parameterType: "bool",
+    templateResultType: boolToBool,
+    resultType: "bool",
   },
 ];
 

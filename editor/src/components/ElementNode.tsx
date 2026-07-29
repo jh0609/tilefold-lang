@@ -35,6 +35,7 @@ export type ResizeHandle = "east" | "south" | "south-east";
 
 const KIND_LABELS: Record<ProjectElement["kind"], string> = {
   unit_literal: "Unit",
+  bool_literal: "Bool",
   nat_literal: "Nat",
   succ: "Succ",
   drop: "Drop",
@@ -42,6 +43,7 @@ const KIND_LABELS: Record<ProjectElement["kind"], string> = {
   function: "Function",
   library_call: "Library Call",
   apply: "Apply",
+  bool_rec: "BoolRec",
   nat_rec: "NatRec",
 };
 
@@ -50,6 +52,7 @@ const PORT_SIDE_SAFE_INSET = 20;
 
 function typeClass(type: CoreType): string {
   if (type === "nat") return "type-nat";
+  if (type === "bool") return "type-bool";
   if (type === "unit") return "type-unit";
   return "type-arrow";
 }
@@ -62,6 +65,8 @@ function nodeSignature(element: ProjectElement, ports: ConnectablePort[]) {
   switch (element.kind) {
     case "unit_literal":
       return "Unit value";
+    case "bool_literal":
+      return "Bool value";
     case "nat_literal":
       return "Nat value";
     case "succ":
@@ -84,6 +89,10 @@ function nodeSignature(element: ProjectElement, ports: ConnectablePort[]) {
     case "nat_rec": {
       const result = output("result");
       return result ? `Nat fold -> ${formatCoreType(result)}` : "";
+    }
+    case "bool_rec": {
+      const result = output("result");
+      return result ? `Bool branch -> ${formatCoreType(result)}` : "";
     }
     case "function": {
       const value = output("value");
@@ -151,7 +160,13 @@ export function ElementNode({
   const { x, y, width, height } = element.bounds;
   const compact = width < 72 || height < 44;
   const value =
-    element.kind === "nat_literal" ? element.properties.value : undefined;
+    element.kind === "nat_literal"
+      ? element.properties.value
+      : element.kind === "bool_literal"
+        ? element.properties.value
+          ? "True"
+          : "False"
+        : undefined;
   const signature = nodeSignature(element, ports);
   const displayLabel = nodeDisplayLabel(element);
   const standardDefinition =

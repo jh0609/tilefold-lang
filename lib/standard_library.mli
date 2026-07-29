@@ -9,6 +9,12 @@ type function_id =
   | Multiply
   | Double
   | Square
+  | Pred
+  | Subtract
+  | IsZero
+  | Not
+  | And
+  | Or
 
 type function_info = {
   id : function_id;
@@ -31,3 +37,4 @@ val function_template_id : function_id -> Core_graph.Function_template_id.t
 val arity : function_id -> int
 val id_of_template_id : Core_graph.Function_template_id.t -> function_id option
 val evaluate_nat : function_id -> Nat.t list -> (Nat.t, string) result
+val evaluate : function_id -> Runtime_value.payload list -> (Runtime_value.payload, string) result

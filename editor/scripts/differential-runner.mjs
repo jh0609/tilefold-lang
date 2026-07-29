@@ -244,7 +244,7 @@ function standardCallProject({
   });
   return JSON.stringify({
     format: "tilefold-project",
-    version: 1,
+    version: 2,
     geometry: {
       snapTolerance: 8,
       elements,
@@ -291,13 +291,13 @@ function standardCallProject({
   });
 }
 
-function foldedStandardCallProject({ functionId, templateId, args }) {
+function foldedStandardCallProject({ functionId, templateId, args, resultType = "nat" }) {
   const height = Math.max(82, 58 + args.length * 24);
   const spacing = height / (args.length + 1);
   const argY = (index) => Math.round(220 + spacing * (index + 1));
   return JSON.stringify({
     format: "tilefold-project",
-    version: 1,
+    version: 2,
     geometry: {
       snapTolerance: 8,
       elements: [
@@ -327,13 +327,23 @@ function foldedStandardCallProject({ functionId, templateId, args }) {
             { port: "result", x: 376, y: 220 + Math.round(height / 2) },
           ],
         },
-        ...args.map((value, index) => ({
-          id: `argument-${index}`,
-          kind: "nat_literal",
-          bounds: { x: 80, y: argY(index) - 28, width: 96, height: 56 },
-          properties: { value },
-          portAnchors: [{ port: "value", x: 176, y: argY(index) }],
-        })),
+        ...args.map((value, index) =>
+          typeof value === "boolean"
+            ? {
+                id: `argument-${index}`,
+                kind: "bool_literal",
+                bounds: { x: 88, y: argY(index) - 28, width: 88, height: 56 },
+                properties: { value },
+                portAnchors: [{ port: "value", x: 176, y: argY(index) }],
+              }
+            : {
+                id: `argument-${index}`,
+                kind: "nat_literal",
+                bounds: { x: 80, y: argY(index) - 28, width: 96, height: 56 },
+                properties: { value },
+                portAnchors: [{ port: "value", x: 176, y: argY(index) }],
+              },
+        ),
       ],
       containers: [
         {
@@ -341,7 +351,7 @@ function foldedStandardCallProject({ functionId, templateId, args }) {
           kind: {
             kind: "entry",
             templateId: "entry_template",
-            resultType: "nat",
+            resultType,
             dependencies: [templateId],
           },
           bounds: { x: 0, y: 0, width: 600, height: 420 },
@@ -355,7 +365,7 @@ function foldedStandardCallProject({ functionId, templateId, args }) {
             {
               id: "entry-result",
               role: "result",
-              type: "nat",
+              type: resultType,
               anchor: { x: 600, y: 220 + Math.round(height / 2) },
             },
           ],
@@ -502,6 +512,58 @@ fixtures.set(
     functionId: "nat.square",
     templateId: "tilefold.std.nat.square",
     args: ["5"],
+  }),
+);
+fixtures.set(
+  "standard-library-pred-folded",
+  foldedStandardCallProject({
+    functionId: "nat.pred",
+    templateId: "tilefold.std.nat.pred",
+    args: ["5"],
+  }),
+);
+fixtures.set(
+  "standard-library-subtract-folded",
+  foldedStandardCallProject({
+    functionId: "nat.subtract",
+    templateId: "tilefold.std.nat.subtract",
+    args: ["3", "5"],
+  }),
+);
+fixtures.set(
+  "standard-library-iszero-folded",
+  foldedStandardCallProject({
+    functionId: "nat.isZero",
+    templateId: "tilefold.std.nat.isZero",
+    args: ["0"],
+    resultType: "bool",
+  }),
+);
+fixtures.set(
+  "standard-library-not-folded",
+  foldedStandardCallProject({
+    functionId: "bool.not",
+    templateId: "tilefold.std.bool.not",
+    args: [true],
+    resultType: "bool",
+  }),
+);
+fixtures.set(
+  "standard-library-and-folded",
+  foldedStandardCallProject({
+    functionId: "bool.and",
+    templateId: "tilefold.std.bool.and",
+    args: [true, false],
+    resultType: "bool",
+  }),
+);
+fixtures.set(
+  "standard-library-or-folded",
+  foldedStandardCallProject({
+    functionId: "bool.or",
+    templateId: "tilefold.std.bool.or",
+    args: [true, false],
+    resultType: "bool",
   }),
 );
 const naturalNumberExpectations = new Map([

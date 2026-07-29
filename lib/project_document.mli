@@ -8,6 +8,7 @@ type port_anchor = { port : string; at : point }
 
 type element_kind =
   | Unit_literal
+  | Bool_literal of bool
   | Nat_literal of string
   | Succ
   | Drop of Core_type.t
@@ -29,6 +30,7 @@ type element_kind =
       result_type : Core_type.t;
     }
   | NatRec of Core_type.t
+  | BoolRec of Core_type.t
 
 type element = {
   id : string;

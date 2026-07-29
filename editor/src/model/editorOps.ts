@@ -121,11 +121,13 @@ const NEW_ELEMENT_SIZE: Record<
   { width: number; height: number }
 > = {
   unit_literal: { width: 88, height: 56 },
+  bool_literal: { width: 88, height: 56 },
   nat_literal: { width: 96, height: 56 },
   succ: { width: 88, height: 56 },
   drop: { width: 88, height: 56 },
   copy: { width: 104, height: 72 },
   apply: { width: 120, height: 90 },
+  bool_rec: { width: 136, height: 112 },
   nat_rec: { width: 128, height: 112 },
 };
 const ELEMENT_PLACEMENT_CLEARANCE = 12;
@@ -478,6 +480,16 @@ export function callableFunctionTemplates(
   return [...standardTemplates, ...projectTemplates];
 }
 
+function literalPrefix(type: PrimitiveCoreType): string {
+  if (type === "nat") return "node_nat_";
+  if (type === "bool") return "node_bool_";
+  return "node_unit_";
+}
+
+function literalWidth(type: PrimitiveCoreType): number {
+  return type === "nat" ? 96 : 88;
+}
+
 export function addFunctionTemplate(
   document: ProjectDocument,
   hostContainerId: string,
@@ -658,37 +670,14 @@ export function addFunctionTemplate(
     const literalBounds: Bounds = {
       x: host.bounds.x + 4,
       y: functionBounds.y + index * 64,
-      width: capture.type === "nat" ? 96 : 88,
+      width: literalWidth(capture.type),
       height: 56,
     };
-    const literal: ProjectElement =
-      capture.type === "nat"
-        ? {
-            id: allocate("node_nat_"),
-            kind: "nat_literal",
-            bounds: literalBounds,
-            properties: { value: "0" },
-            portAnchors: [
-              {
-                port: "value",
-                x: literalBounds.x + literalBounds.width,
-                y: literalBounds.y + literalBounds.height / 2,
-              },
-            ],
-          }
-        : {
-            id: allocate("node_unit_"),
-            kind: "unit_literal",
-            bounds: literalBounds,
-            properties: {},
-            portAnchors: [
-              {
-                port: "value",
-                x: literalBounds.x + literalBounds.width,
-                y: literalBounds.y + literalBounds.height / 2,
-              },
-            ],
-          };
+    const literal = makeLiteralForType(
+      allocate(literalPrefix(capture.type)),
+      capture.type,
+      literalBounds,
+    );
     const source = literal.portAnchors[0]!;
     const target = functionElement.portAnchors.find(
       (anchor) => anchor.port === capture.key,
@@ -1015,37 +1004,14 @@ export function addFunctionTemplate(
     const literalBounds: Bounds = {
       x: templateBounds.x + 220,
       y: templateBounds.y + 32,
-      width: templateResultType === "nat" ? 96 : 88,
+      width: literalWidth(templateResultType),
       height: 56,
     };
-    const literal: ProjectElement =
-      templateResultType === "nat"
-        ? {
-            id: allocate("node_nat_"),
-            kind: "nat_literal",
-            bounds: literalBounds,
-            properties: { value: "0" },
-            portAnchors: [
-              {
-                port: "value",
-                x: literalBounds.x + literalBounds.width,
-                y: literalBounds.y + literalBounds.height / 2,
-              },
-            ],
-          }
-        : {
-            id: allocate("node_unit_"),
-            kind: "unit_literal",
-            bounds: literalBounds,
-            properties: {},
-            portAnchors: [
-              {
-                port: "value",
-                x: literalBounds.x + literalBounds.width,
-                y: literalBounds.y + literalBounds.height / 2,
-              },
-            ],
-          };
+    const literal = makeLiteralForType(
+      allocate(literalPrefix(templateResultType)),
+      templateResultType,
+      literalBounds,
+    );
     templateElements.push(bodyDrop, literal);
     templateWires.push(
       {
@@ -1240,11 +1206,11 @@ export function addFunctionTemplate(
         const literalBounds: Bounds = {
           x: nestedBounds.x + 220,
           y: nestedBounds.y + 32,
-          width: nestedResultType === "nat" ? 96 : 88,
+          width: literalWidth(nestedResultType),
           height: 56,
         };
         const literal = makeLiteralForType(
-          allocate(nestedResultType === "nat" ? "node_nat_" : "node_unit_"),
+          allocate(literalPrefix(nestedResultType)),
           nestedResultType,
           literalBounds,
         );
@@ -1394,11 +1360,11 @@ export function addFunctionTemplate(
           const literalBounds: Bounds = {
             x: deeperBounds.x + 220,
             y: deeperBounds.y + 32,
-            width: deeperResultType === "nat" ? 96 : 88,
+            width: literalWidth(deeperResultType),
             height: 56,
           };
           const literal = makeLiteralForType(
-            allocate(deeperResultType === "nat" ? "node_nat_" : "node_unit_"),
+            allocate(literalPrefix(deeperResultType)),
             deeperResultType,
             literalBounds,
           );
@@ -1600,37 +1566,14 @@ export function addFunctionCall(
     const bounds: Bounds = {
       x: host.bounds.x + 4,
       y: functionBounds.y + index * 64,
-      width: capture.type === "nat" ? 96 : 88,
+      width: literalWidth(capture.type),
       height: 56,
     };
-    const literal: ProjectElement =
-      capture.type === "nat"
-        ? {
-            id: allocate("node_nat_"),
-            kind: "nat_literal",
-            bounds,
-            properties: { value: "0" },
-            portAnchors: [
-              {
-                port: "value",
-                x: bounds.x + bounds.width,
-                y: bounds.y + bounds.height / 2,
-              },
-            ],
-          }
-        : {
-            id: allocate("node_unit_"),
-            kind: "unit_literal",
-            bounds,
-            properties: {},
-            portAnchors: [
-              {
-                port: "value",
-                x: bounds.x + bounds.width,
-                y: bounds.y + bounds.height / 2,
-              },
-            ],
-          };
+    const literal = makeLiteralForType(
+      allocate(literalPrefix(capture.type)),
+      capture.type,
+      bounds,
+    );
     const source = literal.portAnchors[0]!;
     const target = functionElement.portAnchors.find(
       (anchor) => anchor.port === capture.key,
@@ -1692,38 +1635,18 @@ export function addFunctionCall(
   const argumentBounds: Bounds = {
     x: host.bounds.x + 4,
     y: applyBounds.y + 32,
-    width: primitiveCoreType(descriptor.parameterType) && descriptor.parameterType === "nat" ? 96 : 88,
+    width: primitiveCoreType(descriptor.parameterType)
+      ? literalWidth(descriptor.parameterType)
+      : 88,
     height: 56,
   };
   const argument: ProjectElement | null =
     primitiveCoreType(descriptor.parameterType)
-      ? descriptor.parameterType === "nat"
-      ? {
-          id: allocate("node_nat_"),
-          kind: "nat_literal",
-          bounds: argumentBounds,
-          properties: { value: "0" },
-          portAnchors: [
-            {
-              port: "value",
-              x: argumentBounds.x + argumentBounds.width,
-              y: argumentBounds.y + argumentBounds.height / 2,
-            },
-          ],
-        }
-      : {
-          id: allocate("node_unit_"),
-          kind: "unit_literal",
-          bounds: argumentBounds,
-          properties: {},
-          portAnchors: [
-            {
-              port: "value",
-              x: argumentBounds.x + argumentBounds.width,
-              y: argumentBounds.y + argumentBounds.height / 2,
-            },
-          ],
-        }
+      ? makeLiteralForType(
+          allocate(literalPrefix(descriptor.parameterType)),
+          descriptor.parameterType,
+          argumentBounds,
+        )
       : null;
 
   const resultDropBounds: Bounds = {
@@ -1954,37 +1877,14 @@ function addStandardLibraryFunctionCall(
       const argumentBounds: Bounds = {
         x: callBounds.x - 144,
         y: inputAnchor.y - 28,
-        width: parameter.type === "nat" ? 96 : 88,
+        width: literalWidth(parameter.type),
         height: 56,
       };
-      const argument: ProjectElement =
-        parameter.type === "nat"
-          ? {
-              id: allocate("node_nat_"),
-              kind: "nat_literal",
-              bounds: argumentBounds,
-              properties: { value: "0" },
-              portAnchors: [
-                {
-                  port: "value",
-                  x: argumentBounds.x + argumentBounds.width,
-                  y: argumentBounds.y + argumentBounds.height / 2,
-                },
-              ],
-            }
-          : {
-              id: allocate("node_unit_"),
-              kind: "unit_literal",
-              bounds: argumentBounds,
-              properties: {},
-              portAnchors: [
-                {
-                  port: "value",
-                  x: argumentBounds.x + argumentBounds.width,
-                  y: argumentBounds.y + argumentBounds.height / 2,
-                },
-              ],
-            };
+      const argument = makeLiteralForType(
+        allocate(literalPrefix(parameter.type)),
+        parameter.type,
+        argumentBounds,
+      );
       arguments_.push(argument);
       const argumentOutput = argument.portAnchors[0]!;
       wires.push({
@@ -2201,8 +2101,8 @@ function makeLiteralForType(
   type: PrimitiveCoreType,
   bounds: Bounds,
 ): ProjectElement {
-  return type === "nat"
-    ? {
+  if (type === "nat") {
+    return {
         id,
         kind: "nat_literal",
         bounds,
@@ -2214,20 +2114,36 @@ function makeLiteralForType(
             y: bounds.y + bounds.height / 2,
           },
         ],
-      }
-    : {
-        id,
-        kind: "unit_literal",
-        bounds,
-        properties: {},
-        portAnchors: [
-          {
-            port: "value",
-            x: bounds.x + bounds.width,
-            y: bounds.y + bounds.height / 2,
-          },
-        ],
       };
+  }
+  if (type === "bool") {
+    return {
+      id,
+      kind: "bool_literal",
+      bounds,
+      properties: { value: false },
+      portAnchors: [
+        {
+          port: "value",
+          x: bounds.x + bounds.width,
+          y: bounds.y + bounds.height / 2,
+        },
+      ],
+    };
+  }
+  return {
+    id,
+    kind: "unit_literal",
+    bounds,
+    properties: {},
+    portAnchors: [
+      {
+        port: "value",
+        x: bounds.x + bounds.width,
+        y: bounds.y + bounds.height / 2,
+      },
+    ],
+  };
 }
 
 function updateBoundaryWireEndpoints(
@@ -2581,7 +2497,7 @@ export function editSurfaceFunctionSignature(
       near: Point;
     },
   ) => {
-    const width = target.type === "nat" ? 96 : 88;
+    const width = literalWidth(target.type);
     const height = 56;
     let x = Math.round(target.near.x);
     let y = Math.round(target.near.y);
@@ -2627,7 +2543,7 @@ export function editSurfaceFunctionSignature(
       height,
     };
     const literal = makeLiteralForType(
-      allocate(target.type === "nat" ? "node_nat_" : "node_unit_"),
+      allocate(literalPrefix(target.type)),
       target.type,
       bounds,
     );
@@ -3064,11 +2980,13 @@ export function addElement(
   const { x, y, width, height } = bounds;
   const prefixes: Record<AddableElementKind, string> = {
     unit_literal: "node_unit_",
+    bool_literal: "node_bool_",
     nat_literal: "node_nat_",
     succ: "node_succ_",
     drop: "node_drop_",
     copy: "node_copy_",
     apply: "node_apply_",
+    bool_rec: "node_bool_rec_",
     nat_rec: "node_nat_rec_",
   };
   const id = nextStableId(document, prefixes[kind]);
@@ -3080,6 +2998,15 @@ export function addElement(
         kind,
         bounds,
         properties: {},
+        portAnchors: [{ port: "value", x: x + width, y: y + height / 2 }],
+      };
+      break;
+    case "bool_literal":
+      element = {
+        id,
+        kind,
+        bounds,
+        properties: { value: false },
         portAnchors: [{ port: "value", x: x + width, y: y + height / 2 }],
       };
       break;
@@ -3135,6 +3062,20 @@ export function addElement(
         portAnchors: [
           { port: "function", x, y: y + height / 3 },
           { port: "argument", x, y: y + (height * 2) / 3 },
+          { port: "result", x: x + width, y: y + height / 2 },
+        ],
+      };
+      break;
+    case "bool_rec":
+      element = {
+        id,
+        kind,
+        bounds,
+        properties: { type: "bool" },
+        portAnchors: [
+          { port: "condition", x, y: y + height / 4 },
+          { port: "false_case", x, y: y + height / 2 },
+          { port: "true_case", x, y: y + (height * 3) / 4 },
           { port: "result", x: x + width, y: y + height / 2 },
         ],
       };
@@ -3876,6 +3817,7 @@ export function updateElementType(
   if (
     element.kind !== "drop" &&
     element.kind !== "copy" &&
+    element.kind !== "bool_rec" &&
     element.kind !== "nat_rec"
   ) {
     return {
@@ -3900,6 +3842,7 @@ export function updateElementType(
             candidate.id !== id ||
             (candidate.kind !== "drop" &&
               candidate.kind !== "copy" &&
+              candidate.kind !== "bool_rec" &&
               candidate.kind !== "nat_rec")
           ) {
             return candidate;
@@ -3968,6 +3911,24 @@ function removeSurfaceLibraryCallsForDeletedElements(
         !deletedElementIds.has(call.functionElementId) &&
         call.applyElementIds.every((id) => !deletedElementIds.has(id)),
     ),
+  };
+}
+
+export function updateBoolValue(
+  document: ProjectDocument,
+  id: string,
+  value: boolean,
+): ProjectDocument {
+  return {
+    ...document,
+    geometry: {
+      ...document.geometry,
+      elements: document.geometry.elements.map((element) =>
+        element.id === id && element.kind === "bool_literal"
+          ? { ...element, properties: { value } }
+          : element,
+      ),
+    },
   };
 }
 

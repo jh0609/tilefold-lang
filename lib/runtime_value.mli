@@ -52,6 +52,7 @@ type closure = {
 
 type payload =
   | Unit
+  | Bool of bool
   | Nat of Nat.t
   | Closure of closure
 

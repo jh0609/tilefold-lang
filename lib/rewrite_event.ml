@@ -13,6 +13,8 @@ type rule =
   | NatRecStepAccumulatorEnter
   | NatRecStepAccumulatorReturn
   | NatRecComplete
+  | BoolRecFalse
+  | BoolRecTrue
 
 type t = {
   index : int;
@@ -41,6 +43,8 @@ let rule_to_string = function
   | NatRecStepAccumulatorEnter -> "NatRecStepAccumulatorEnter"
   | NatRecStepAccumulatorReturn -> "NatRecStepAccumulatorReturn"
   | NatRecComplete -> "NatRecComplete"
+  | BoolRecFalse -> "BoolRecFalse"
+  | BoolRecTrue -> "BoolRecTrue"
 
 let render_ids ids =
   ids |> List.map Runtime_value.Value_id.to_string |> String.concat ","

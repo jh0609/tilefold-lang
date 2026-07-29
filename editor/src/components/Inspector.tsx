@@ -28,6 +28,7 @@ interface InspectorProps {
   error: string | null;
   onBoundsChange: (id: string, bounds: Bounds) => void;
   onNatValueChange: (id: string, value: string) => void;
+  onBoolValueChange: (id: string, value: boolean) => void;
   onElementTypeChange: (id: string, type: CoreType) => void;
   onApplyTypesChange: (
     id: string,
@@ -577,6 +578,7 @@ function ElementInspector({
   surfaceFunction,
   onBoundsChange,
   onNatValueChange,
+  onBoolValueChange,
   onElementTypeChange,
   onApplyTypesChange,
   onFocusTemplate,
@@ -588,6 +590,7 @@ function ElementInspector({
   surfaceFunction?: NonNullable<ProjectDocument["surfaceFunctions"]>[number];
   onBoundsChange: (id: string, bounds: Bounds) => void;
   onNatValueChange: (id: string, value: string) => void;
+  onBoolValueChange: (id: string, value: boolean) => void;
   onElementTypeChange: (id: string, type: CoreType) => void;
   onApplyTypesChange: (
     id: string,
@@ -649,8 +652,25 @@ function ElementInspector({
           />
         </label>
       )}
+      {element.kind === "bool_literal" && (
+        <label htmlFor="bool-value">
+          Bool value
+          <select
+            id="bool-value"
+            value={element.properties.value ? "true" : "false"}
+            onChange={(event) => {
+              onError(null);
+              onBoolValueChange(element.id, event.target.value === "true");
+            }}
+          >
+            <option value="true">True</option>
+            <option value="false">False</option>
+          </select>
+        </label>
+      )}
       {(element.kind === "drop" ||
         element.kind === "copy" ||
+        element.kind === "bool_rec" ||
         element.kind === "nat_rec") && (
         <CoreTypeField
           label="Value type"
@@ -819,6 +839,7 @@ export function Inspector({
   error,
   onBoundsChange,
   onNatValueChange,
+  onBoolValueChange,
   onElementTypeChange,
   onApplyTypesChange,
   canDelete,
@@ -908,6 +929,7 @@ export function Inspector({
           }
           onBoundsChange={onBoundsChange}
           onNatValueChange={onNatValueChange}
+          onBoolValueChange={onBoolValueChange}
           onElementTypeChange={onElementTypeChange}
           onApplyTypesChange={onApplyTypesChange}
           onFocusTemplate={onFocusTemplate}

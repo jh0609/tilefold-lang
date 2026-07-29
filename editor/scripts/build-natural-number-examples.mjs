@@ -88,7 +88,7 @@ class ProjectBuilder {
   document(view) {
     return {
       format: "tilefold-project",
-      version: 1,
+      version: 2,
       geometry: {
         snapTolerance: 0,
         elements: this.elements,

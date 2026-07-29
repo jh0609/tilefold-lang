@@ -15,6 +15,7 @@ import {
   resizeOrMoveElement,
   type ContainerResizeHandle,
   updateApplyTypes,
+  updateBoolValue,
   updateElementType,
   updateNatValue,
   type AddableElementKind,
@@ -109,6 +110,12 @@ export type EditorCommand =
       id: string;
       before: string;
       after: string;
+    }
+  | {
+      type: "set_bool_value";
+      id: string;
+      before: boolean;
+      after: boolean;
     }
   | {
       type: "set_element_type";
@@ -314,6 +321,10 @@ export function applyEditorCommand(
       return {
         document: updateNatValue(document, command.id, command.after),
       };
+    case "set_bool_value":
+      return {
+        document: updateBoolValue(document, command.id, command.after),
+      };
     case "set_element_type":
       return updateElementType(document, command.id, command.after);
     case "set_apply_types":
@@ -328,11 +339,13 @@ export function applyEditorCommand(
 
 const ELEMENT_LABELS: Record<AddableElementKind, string> = {
   unit_literal: "Unit",
+  bool_literal: "Bool",
   nat_literal: "Nat",
   succ: "Succ",
   drop: "Drop",
   copy: "Copy",
   apply: "Apply",
+  bool_rec: "BoolRec",
   nat_rec: "NatRec",
 };
 
@@ -367,6 +380,7 @@ export function editorCommandLabel(command: EditorCommand): string {
     case "fit_container_to_content":
       return `Fit ${command.id} to content`;
     case "set_nat_value":
+    case "set_bool_value":
       return `Edit value for ${command.id}`;
     case "set_element_type":
       return `Edit type for ${command.id}`;
@@ -390,6 +404,7 @@ export function isNoOpCommand(command: EditorCommand): boolean {
         command.before.height === command.after.height
       );
     case "set_nat_value":
+    case "set_bool_value":
       return command.before === command.after;
     case "set_element_type":
       return coreTypeEqual(command.before, command.after);

@@ -1,9 +1,10 @@
 import type { CoreType } from "./project";
 
-export type PrimitiveCoreType = Extract<CoreType, "unit" | "nat">;
+export type PrimitiveCoreType = Extract<CoreType, "unit" | "bool" | "nat">;
 
 export const CORE_TYPE_PRESETS: Array<{ label: string; value: CoreType }> = [
   { label: "Unit", value: "unit" },
+  { label: "Bool", value: "bool" },
   { label: "Nat", value: "nat" },
   { label: "Unit -> Unit", value: { arrow: ["unit", "unit"] } },
   { label: "Unit -> Nat", value: { arrow: ["unit", "nat"] } },
@@ -16,7 +17,7 @@ export function coreTypeKey(type: CoreType): string {
 }
 
 export function primitiveCoreType(type: CoreType): type is PrimitiveCoreType {
-  return type === "unit" || type === "nat";
+  return type === "unit" || type === "bool" || type === "nat";
 }
 
 export function coreTypeEqual(left: CoreType, right: CoreType): boolean {
@@ -31,6 +32,7 @@ export function coreTypeEqual(left: CoreType, right: CoreType): boolean {
 
 export function formatCoreType(type: CoreType): string {
   if (type === "unit") return "Unit";
+  if (type === "bool") return "Bool";
   if (type === "nat") return "Nat";
   const left = formatCoreType(type.arrow[0]);
   const right = formatCoreType(type.arrow[1]);

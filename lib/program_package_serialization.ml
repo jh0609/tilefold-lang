@@ -60,6 +60,7 @@ let encode_string sexp = render_sexp sexp ^ "\n"
 
 let rec render_type = function
   | Core_type.Unit -> tagged "Unit" []
+  | Bool -> tagged "Bool" []
   | Nat -> tagged "Nat" []
   | Arrow (input, output) -> tagged "Arrow" [ render_type input; render_type output ]
 
@@ -92,6 +93,7 @@ let render_apply_signature signature =
 
 let render_node_kind = function
   | CG.Unit_literal -> tagged "UnitLiteral" []
+  | Bool_literal value -> tagged "BoolLiteral" [ atom (if value then "true" else "false") ]
   | Nat_literal nat -> tagged "NatLiteral" [ atom (Nat.to_string nat) ]
   | Parameter typ -> tagged "Parameter" [ render_type typ ]
   | Capture capture -> tagged "Capture" [ render_capture capture ]
@@ -102,6 +104,7 @@ let render_node_kind = function
   | Function signature -> render_function_signature signature
   | Apply signature -> render_apply_signature signature
   | NatRec typ -> tagged "NatRec" [ render_type typ ]
+  | BoolRec typ -> tagged "BoolRec" [ render_type typ ]
 
 let render_node (node : CG.node) =
   tagged "node" [ atom (CG.Node_id.to_string node.CG.id); render_node_kind node.kind ]
@@ -116,6 +119,7 @@ let render_edge (edge : CG.edge) =
 
 let render_payload = function
   | Runtime_value.Unit -> tagged "Unit" []
+  | Bool value -> tagged "Bool" [ atom (if value then "true" else "false") ]
   | Nat nat -> tagged "Nat" [ atom (Nat.to_string nat) ]
   | Closure _ -> tagged "Closure" []
 
@@ -297,6 +301,7 @@ let parse_nat value =
 let rec parse_type sexp =
   match sexp with
   | List [ Atom "Unit" ] -> Ok Core_type.Unit
+  | List [ Atom "Bool" ] -> Ok Core_type.Bool
   | List [ Atom "Nat" ] -> Ok Core_type.Nat
   | List [ Atom "Arrow"; input; output ] ->
       let* input = parse_type input in
@@ -335,6 +340,8 @@ let parse_captures sexp =
 let parse_node_kind sexp =
   match sexp with
   | List [ Atom "UnitLiteral" ] -> Ok CG.Unit_literal
+  | List [ Atom "BoolLiteral"; Atom "true" ] -> Ok (CG.Bool_literal true)
+  | List [ Atom "BoolLiteral"; Atom "false" ] -> Ok (CG.Bool_literal false)
   | List [ Atom "NatLiteral"; Atom value ] ->
       let* nat = parse_nat value in
       Ok (CG.Nat_literal nat)
@@ -367,6 +374,9 @@ let parse_node_kind sexp =
   | List [ Atom "NatRec"; typ ] ->
       let* typ = parse_type typ in
       Ok (CG.NatRec typ)
+  | List [ Atom "BoolRec"; typ ] ->
+      let* typ = parse_type typ in
+      Ok (CG.BoolRec typ)
   | _ -> Error Invalid_node_kind
 
 let parse_node sexp =
@@ -522,6 +532,8 @@ let parse_template sexp =
 
 let parse_payload = function
   | List [ Atom "Unit" ] -> Ok Runtime_value.Unit
+  | List [ Atom "Bool"; Atom "true" ] -> Ok (Runtime_value.Bool true)
+  | List [ Atom "Bool"; Atom "false" ] -> Ok (Runtime_value.Bool false)
   | List [ Atom "Nat"; Atom value ] ->
       let* nat = parse_nat value in
       Ok (Runtime_value.Nat nat)

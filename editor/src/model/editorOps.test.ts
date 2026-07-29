@@ -1820,7 +1820,7 @@ describe("editor operations", () => {
     expect(
       addWire(project, { ...source, ownerId: "missing" }, target),
     ).toMatchObject({
-      error: "This port is not available in Project JSON v1.",
+      error: "This port is not available in Project JSON v2.",
     });
   });
 });
@@ -1958,7 +1958,7 @@ describe("container geometry editing", () => {
     expect(afterElement.bounds.x - beforeElement.bounds.x).toBe(75);
     expect(afterElement.bounds.y - beforeElement.bounds.y).toBe(45);
     expect(parseProjectJson(exportProjectJson(moved.document))).toMatchObject({
-      version: 1,
+      version: 2,
     });
   });
 

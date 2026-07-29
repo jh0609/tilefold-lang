@@ -4,6 +4,10 @@
 
 Proposed.
 
+Superseded in part by Decision 0033 for Project JSON v2, `Bool`, `BoolRec`,
+and the expanded Standard Library. This decision remains the record for the
+first folded-call and fast-path trust-boundary slice.
+
 ## Context
 
 Tilefold Core remains the semantic reference for program execution. Editor

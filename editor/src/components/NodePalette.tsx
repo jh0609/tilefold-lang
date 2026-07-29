@@ -63,6 +63,15 @@ const PALETTE_GROUPS: PaletteGroup[] = [
         tone: "value",
         action: { kind: "element", elementKind: "nat_literal" },
       },
+      {
+        name: "Bool",
+        symbol: "B",
+        signature: "value · Bool",
+        description: "A canonical True or False value.",
+        keywords: "literal boolean true false logic",
+        tone: "value",
+        action: { kind: "element", elementKind: "bool_literal" },
+      },
     ],
   },
   {
@@ -85,6 +94,15 @@ const PALETTE_GROUPS: PaletteGroup[] = [
         keywords: "recursion fold control natural",
         tone: "operation",
         action: { kind: "element", elementKind: "nat_rec" },
+      },
+      {
+        name: "BoolRec",
+        symbol: "?",
+        signature: "condition · false · true → result",
+        description: "Branch on a Bool value.",
+        keywords: "boolean branch conditional logic",
+        tone: "operation",
+        action: { kind: "element", elementKind: "bool_rec" },
       },
     ],
   },
@@ -252,7 +270,7 @@ export function NodePalette({
           <span className="panel-eyebrow">Build</span>
           <h2>Nodes</h2>
         </div>
-        <span className="palette-count">10 available</span>
+        <span className="palette-count">12 available</span>
       </div>
       <div className="palette-search">
         <label className="visually-hidden" htmlFor="node-palette-search">
@@ -687,6 +705,7 @@ export function NodePalette({
       <div className="palette-legend" aria-label="Port legend">
         <strong>Port types</strong>
         <span><i className="port-swatch type-nat" />Nat</span>
+        <span><i className="port-swatch type-bool" />Bool</span>
         <span><i className="port-swatch type-unit" />Unit</span>
         <span><i className="port-swatch type-arrow" />Function</span>
       </div>

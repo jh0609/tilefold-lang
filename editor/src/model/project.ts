@@ -12,6 +12,7 @@ export interface Bounds extends Point {
 
 export type CoreType =
   | "unit"
+  | "bool"
   | "nat"
   | { arrow: readonly [CoreType, CoreType] };
 
@@ -35,6 +36,10 @@ export type ProjectElement =
       properties: { value: string };
     })
   | (ElementBase & {
+      kind: "bool_literal";
+      properties: { value: boolean };
+    })
+  | (ElementBase & {
       kind: "succ";
       properties: Record<string, never>;
     })
@@ -51,6 +56,10 @@ export type ProjectElement =
     })
   | (ElementBase & {
       kind: "nat_rec";
+      properties: { type: CoreType };
+    })
+  | (ElementBase & {
+      kind: "bool_rec";
       properties: { type: CoreType };
     })
   | (ElementBase & {
@@ -188,7 +197,7 @@ export interface SurfaceFunctionMetadata {
 
 export interface ProjectDocument {
   format: "tilefold-project";
-  version: 1;
+  version: 2;
   geometry: {
     snapTolerance: number;
     elements: ProjectElement[];
@@ -242,6 +251,7 @@ export interface EditorState {
 
 export const ELEMENT_KINDS = [
   "unit_literal",
+  "bool_literal",
   "nat_literal",
   "succ",
   "drop",
@@ -249,6 +259,7 @@ export const ELEMENT_KINDS = [
   "function",
   "library_call",
   "apply",
+  "bool_rec",
   "nat_rec",
 ] as const;
 

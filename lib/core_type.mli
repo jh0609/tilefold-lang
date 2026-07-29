@@ -1,5 +1,6 @@
 type t =
   | Unit
+  | Bool
   | Nat
   | Arrow of t * t
 

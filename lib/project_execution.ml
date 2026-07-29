@@ -1,6 +1,8 @@
 module P = Project_document
 module CG = Core_graph
 
+let ( let* ) result f = match result with Ok value -> f value | Error _ as error -> error
+
 let strings values = `List (List.map (fun value -> `String value) values)
 
 let error stage messages =
@@ -14,6 +16,7 @@ let error stage messages =
 let result_value value =
   match Runtime_value.payload value with
   | Unit -> "Unit"
+  | Bool bool -> if bool then "Bool(True)" else "Bool(False)"
   | Nat nat -> "Nat(" ^ Nat.to_string nat ^ ")"
   | Closure closure ->
       "Closure("
@@ -39,11 +42,12 @@ let fast_trace_event index rule subject =
 module Fast = struct
   type value =
     | Unit
+    | Bool of bool
     | Nat of Nat.t
     | Std_closure of {
         function_id : Standard_library.function_id;
         subject : string;
-        args : Nat.t list;
+        args : Runtime_value.payload list;
       }
 
   type state = { mutable trace : Yojson.Safe.t list }
@@ -74,6 +78,54 @@ module Fast = struct
                endpoint_equal wire.target_hint `Boundary container_id boundary_id)
     |> fun wire -> Option.bind wire (fun (wire : P.wire) -> wire.source_hint)
 
+  let runtime_payload = function
+    | Unit -> Ok Runtime_value.Unit
+    | Bool value -> Ok (Runtime_value.Bool value)
+    | Nat value -> Ok (Runtime_value.Nat value)
+    | Std_closure _ -> fail "Fast execution cannot pass a partially-applied function as a Standard Library argument yet."
+
+  let value_of_payload = function
+    | Runtime_value.Unit -> Ok Unit
+    | Runtime_value.Bool value -> Ok (Bool value)
+    | Runtime_value.Nat value -> Ok (Nat value)
+    | Runtime_value.Closure _ -> fail "Fast Standard Library evaluator produced a function value."
+
+  let rec function_argument_types typ acc =
+    match typ with
+    | Core_type.Arrow (parameter_type, result_type) ->
+        function_argument_types result_type (parameter_type :: acc)
+    | result_type -> (List.rev acc, result_type)
+
+  let standard_library_types function_id =
+    let info =
+      Standard_library.functions
+      |> List.find (fun info -> info.Standard_library.id = function_id)
+    in
+    function_argument_types (Core_type.Arrow (info.parameter_type, info.result_type)) []
+
+  let type_matches typ value =
+    match (typ, value) with
+    | Core_type.Unit, Unit -> true
+    | Core_type.Bool, Bool _ -> true
+    | Core_type.Nat, Nat _ -> true
+    | Core_type.Arrow _, Std_closure _ -> true
+    | _ -> false
+
+  let completed_call state subject function_id args =
+    match Standard_library.evaluate function_id args with
+    | Error message -> fail message
+    | Ok payload ->
+        let* value = value_of_payload payload in
+        let rule =
+          "FastCallCompleted("
+          ^ (Standard_library.functions
+            |> List.find (fun info -> info.Standard_library.id = function_id)
+            |> fun info -> info.stable_id ^ "@" ^ info.version)
+          ^ ")"
+        in
+        state.trace <- state.trace @ [ fast_trace_event (List.length state.trace) rule subject ];
+        Ok value
+
   let rec eval_source state document = function
     | P.Element_port { element_id; port } -> eval_element_port state document element_id port
     | P.Boundary_port { container_id; boundary_id } -> (
@@ -101,6 +153,7 @@ module Fast = struct
     | Some element -> (
         match (element.kind, port) with
         | P.Unit_literal, "value" -> Ok Unit
+        | P.Bool_literal value, "value" -> Ok (Bool value)
         | P.Nat_literal value, "value" -> (
             match Nat.of_string value with
             | Ok nat -> Ok (Nat nat)
@@ -130,27 +183,21 @@ module Fast = struct
               ( eval_input state document element_id "function",
                 eval_input state document element_id "argument" )
             with
-            | Ok (Std_closure closure), Ok (Nat argument) ->
-                let args = closure.args @ [ argument ] in
-                if List.length args = Standard_library.arity closure.function_id
-                then
-                  match Standard_library.evaluate_nat closure.function_id args with
-                  | Ok result ->
-                      let rule =
-                        "FastCallCompleted("
-                        ^ (Standard_library.functions
-                          |> List.find
-                               (fun info -> info.Standard_library.id = closure.function_id)
-                          |> fun info -> info.stable_id ^ "@" ^ info.version)
-                        ^ ")"
-                      in
-                      state.trace <-
-                        state.trace
-                        @ [ fast_trace_event (List.length state.trace) rule closure.subject ];
-                      Ok (Nat result)
-                  | Error message -> fail message
-                else Ok (Std_closure { closure with args })
-            | Ok _, Ok _ -> fail "Fast Apply requires a Standard Library function and Nat argument."
+            | Ok (Std_closure closure), Ok argument -> (
+                let expected_args, _ = standard_library_types closure.function_id in
+                let index = List.length closure.args in
+                match List.nth_opt expected_args index with
+                | None -> fail "Fast Apply received too many arguments."
+                | Some expected_type ->
+                    if not (type_matches expected_type argument) then
+                      fail "Fast Apply argument type does not match the Standard Library signature."
+                    else
+                      let* payload = runtime_payload argument in
+                      let args = closure.args @ [ payload ] in
+                      if List.length args = Standard_library.arity closure.function_id
+                      then completed_call state closure.subject closure.function_id args
+                      else Ok (Std_closure { closure with args }))
+            | Ok _, Ok _ -> fail "Fast Apply requires a Standard Library function."
             | Error message, _ | _, Error message -> fail message)
         | P.Library_call { template_id; _ }, "result" -> (
             match CG.Function_template_id.of_string template_id with
@@ -160,32 +207,26 @@ module Fast = struct
                 | None -> fail ("Unknown Standard Library function " ^ CG.Function_template_id.to_string template_id)
                 | Some function_id ->
                     let arity = Standard_library.arity function_id in
+                    let expected_args, _ = standard_library_types function_id in
                     let rec collect index acc =
                       if index = arity then Ok (List.rev acc)
                       else
                         match eval_input state document element_id ("arg_" ^ string_of_int index) with
-                        | Ok (Nat value) -> collect (index + 1) (value :: acc)
-                        | Ok _ -> fail "Standard Library call inputs must be Nat"
+                        | Ok value -> (
+                            match List.nth_opt expected_args index with
+                            | None -> fail "Standard Library call received too many inputs"
+                            | Some expected_type ->
+                                if not (type_matches expected_type value) then
+                                  fail "Standard Library call input type does not match its signature"
+                                else
+                                  let* payload = runtime_payload value in
+                                  collect (index + 1) (payload :: acc))
                         | Error _ as error -> error
                     in
                     (match collect 0 [] with
                     | Error _ as error -> error
-                    | Ok args -> (
-                        match Standard_library.evaluate_nat function_id args with
-                        | Error message -> fail message
-                        | Ok result ->
-                            let rule =
-                              "FastCallCompleted("
-                              ^ (Standard_library.functions
-                                |> List.find
-                                     (fun info -> info.Standard_library.id = function_id)
-                                |> fun info -> info.stable_id ^ "@" ^ info.version)
-                              ^ ")"
-                            in
-                            state.trace <-
-                              state.trace
-                              @ [ fast_trace_event (List.length state.trace) rule element_id ];
-                            Ok (Nat result)))))
+                    | Ok args -> completed_call state element_id function_id args)))
+        | P.BoolRec _, _ -> fail "Fast execution does not support BoolRec nodes directly."
         | P.Drop _, _ -> fail "Drop has no output"
         | P.NatRec _, _ -> fail "Fast execution does not support NatRec nodes directly."
         | _ -> fail ("Port " ^ element_id ^ "." ^ port ^ " is not a supported fast output"))
@@ -222,6 +263,7 @@ module Fast = struct
                            ("trace", `List state.trace);
                          ])
                 | Ok Unit -> Ok (`Assoc [ ("status", `String "completed"); ("result", `String "Unit"); ("rewriteCount", `Int (List.length state.trace)); ("trace", `List state.trace) ])
+                | Ok (Bool value) -> Ok (`Assoc [ ("status", `String "completed"); ("result", `String (if value then "Bool(True)" else "Bool(False)")); ("rewriteCount", `Int (List.length state.trace)); ("trace", `List state.trace) ])
                 | Ok (Std_closure _) -> fail "Fast execution produced a function value."
                 | Error _ as error -> error)))
 end

@@ -1,5 +1,6 @@
 type t =
   | Unit
+  | Bool
   | Nat
   | Arrow of t * t
 
@@ -9,6 +10,7 @@ let compare = Stdlib.compare
 let rec to_string_prec parent_prec typ =
   match typ with
   | Unit -> "Unit"
+  | Bool -> "Bool"
   | Nat -> "Nat"
   | Arrow (input, output) ->
       let prec = 1 in

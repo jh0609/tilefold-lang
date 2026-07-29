@@ -29,6 +29,9 @@ module Port_key = struct
   let value = "value"
   let input = "input"
   let result = "result"
+  let condition = "condition"
+  let false_case = "false_case"
+  let true_case = "true_case"
   let left = "left"
   let right = "right"
   let function_input = "function"
@@ -73,6 +76,7 @@ end
 
 type node_kind =
   | Unit_literal
+  | Bool_literal of bool
   | Nat_literal of Nat.t
   | Parameter of Core_type.t
   | Capture of capture
@@ -83,6 +87,7 @@ type node_kind =
   | Function of function_signature
   | Apply of apply_signature
   | NatRec of Core_type.t
+  | BoolRec of Core_type.t
 
 and capture = {
   key : Port_key.t;
@@ -127,6 +132,7 @@ let port key direction typ = { key; direction; typ }
 
 let ports_of_node_kind = function
   | Unit_literal -> [ port Port_key.value Output Core_type.Unit ]
+  | Bool_literal _ -> [ port Port_key.value Output Core_type.Bool ]
   | Nat_literal _ -> [ port Port_key.value Output Core_type.Nat ]
   | Parameter typ -> [ port Port_key.value Output typ ]
   | Capture capture -> [ port Port_key.value Output capture.typ ]
@@ -168,10 +174,17 @@ let ports_of_node_kind = function
         port Port_key.count Input Core_type.Nat;
         port Port_key.result Output result_type;
       ]
+  | BoolRec result_type ->
+      [
+        port Port_key.condition Input Core_type.Bool;
+        port Port_key.false_case Input result_type;
+        port Port_key.true_case Input result_type;
+        port Port_key.result Output result_type;
+      ]
 
 let is_executable_node_kind = function
-  | Succ | Drop _ | Copy _ | Function _ | Apply _ | NatRec _ -> true
-  | Unit_literal | Nat_literal _ | Parameter _ | Capture _ | Result _ -> false
+  | Succ | Drop _ | Copy _ | Function _ | Apply _ | NatRec _ | BoolRec _ -> true
+  | Unit_literal | Bool_literal _ | Nat_literal _ | Parameter _ | Capture _ | Result _ -> false
 
 module Raw_graph = struct
   type t = {

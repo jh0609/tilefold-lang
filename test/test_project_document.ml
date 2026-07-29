@@ -340,18 +340,18 @@ let () =
   expect_decode
     (fun error ->
       match error.P.Decode_error.kind with Unknown_format _ -> true | _ -> false)
-    {|{"format":"other","version":1,"geometry":{}}|};
+    {|{"format":"other","version": 2,"geometry":{}}|};
   expect_decode
     (fun error ->
-      match error.P.Decode_error.kind with Unsupported_version 2 -> true | _ -> false)
-    {|{"format":"tilefold-project","version":2,"geometry":{}}|};
+      match error.P.Decode_error.kind with Unsupported_version 1 -> true | _ -> false)
+    {|{"format":"tilefold-project","version":1,"geometry":{}}|};
   expect_decode
     (fun error -> String.equal error.P.Decode_error.path "$.geometry")
-    {|{"format":"tilefold-project","version":1}|};
+    {|{"format":"tilefold-project","version": 2}|};
   expect_decode
     (fun error ->
       match error.P.Decode_error.kind with Wrong_type _ -> true | _ -> false)
-    {|{"format":"tilefold-project","version":1,"geometry":[]}|};
+    {|{"format":"tilefold-project","version": 2,"geometry":[]}|};
   let project = decode (read_file fixture) in
   let first = List.hd project.elements in
   expect_validation

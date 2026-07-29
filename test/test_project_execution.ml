@@ -12,7 +12,9 @@ let member name json = Yojson.Safe.Util.member name json
 
 let json_type = function
   | "nat" -> {json|"nat"|json}
+  | "bool" -> {json|"bool"|json}
   | "nat_to_nat" -> {json|{ "arrow": ["nat", "nat"] }|json}
+  | "bool_to_bool" -> {json|{ "arrow": ["bool", "bool"] }|json}
   | value -> invalid_arg ("unknown test type: " ^ value)
 
 let _standard_call_project ~function_id ~template_id ~function_result_type
@@ -163,7 +165,7 @@ let _standard_call_project ~function_id ~template_id ~function_result_type
   Printf.sprintf
     {json|{
   "format": "tilefold-project",
-  "version": 1,
+  "version": 2,
   "geometry": {
     "snapTolerance": 8,
     "elements": [%s],
@@ -215,6 +217,157 @@ let expect_mode_result project mode expected =
       ^ Yojson.Safe.to_string response);
   response
 
+type test_arg = Nat_arg of string | Bool_arg of bool
+
+let typed_arg_node index arg y =
+  match arg with
+  | Nat_arg value ->
+      Printf.sprintf
+        {json|{
+        "id": "argument-%d",
+        "kind": "nat_literal",
+        "bounds": { "x": 80, "y": %d, "width": 96, "height": 56 },
+        "properties": { "value": "%s" },
+        "portAnchors": [{ "port": "value", "x": 176, "y": %d }]
+      }|json}
+        index y value (y + 28)
+  | Bool_arg value ->
+      Printf.sprintf
+        {json|{
+        "id": "argument-%d",
+        "kind": "bool_literal",
+        "bounds": { "x": 88, "y": %d, "width": 88, "height": 56 },
+        "properties": { "value": %s },
+        "portAnchors": [{ "port": "value", "x": 176, "y": %d }]
+      }|json}
+        index y (if value then "true" else "false") (y + 28)
+
+let folded_standard_call_project_typed ~function_id ~template_id ~arguments
+    ~result_type =
+  let arity = List.length arguments in
+  let call_height = max 82 (58 + (arity * 24)) in
+  let spacing = call_height / (arity + 1) in
+  let arg_port index = 220 + (spacing * (index + 1)) in
+  let argument_nodes =
+    arguments
+    |> List.mapi (fun index arg -> typed_arg_node index arg (arg_port index - 28))
+    |> String.concat ",\n"
+  in
+  let library_ports =
+    (arguments
+    |> List.mapi (fun index _ ->
+           Printf.sprintf {json|{ "port": "arg_%d", "x": 220, "y": %d }|json}
+             index (arg_port index)))
+    @ [ Printf.sprintf {json|{ "port": "result", "x": 376, "y": %d }|json}
+          (220 + (call_height / 2)) ]
+    |> String.concat ", "
+  in
+  let argument_wires =
+    arguments
+    |> List.mapi (fun index _ ->
+           Printf.sprintf
+             {json|{
+        "id": "w-argument-%d",
+        "points": [{ "x": 176, "y": %d }, { "x": 220, "y": %d }],
+        "sourceHint": { "kind": "element_port", "elementId": "argument-%d", "port": "value" },
+        "targetHint": { "kind": "element_port", "elementId": "std-call", "port": "arg_%d" }
+      }|json}
+             index (arg_port index) (arg_port index) index index)
+    |> String.concat ",\n"
+  in
+  Printf.sprintf
+    {json|{
+  "format": "tilefold-project",
+  "version": 2,
+  "geometry": {
+    "snapTolerance": 8,
+    "elements": [
+      {
+        "id": "unit-drop",
+        "kind": "drop",
+        "bounds": { "x": 80, "y": 80, "width": 88, "height": 56 },
+        "properties": { "type": "unit" },
+        "portAnchors": [{ "port": "input", "x": 80, "y": 108 }]
+      },
+      {
+        "id": "std-call",
+        "kind": "library_call",
+        "bounds": { "x": 220, "y": 220, "width": 156, "height": %d },
+        "properties": {
+          "library": "tilefold.std",
+          "functionId": "%s",
+          "templateId": "%s",
+          "version": "v1"
+        },
+        "portAnchors": [%s]
+      },
+      %s
+    ],
+    "containers": [
+      {
+        "id": "entry",
+        "kind": {
+          "kind": "entry",
+          "templateId": "entry_template",
+          "resultType": %s,
+          "dependencies": ["%s"]
+        },
+        "bounds": { "x": 0, "y": 0, "width": 600, "height": 420 },
+        "boundaryPorts": [
+          { "id": "entry-parameter", "role": "parameter", "type": "unit", "anchor": { "x": 0, "y": 108 } },
+          { "id": "entry-result", "role": "result", "type": %s, "anchor": { "x": 600, "y": %d } }
+        ]
+      }
+    ],
+    "wires": [
+      {
+        "id": "w-unit-drop",
+        "points": [{ "x": 0, "y": 108 }, { "x": 80, "y": 108 }],
+        "sourceHint": { "kind": "boundary_port", "containerId": "entry", "boundaryId": "entry-parameter" },
+        "targetHint": { "kind": "element_port", "elementId": "unit-drop", "port": "input" }
+      },
+      %s,
+      {
+        "id": "w-result",
+        "points": [{ "x": 376, "y": %d }, { "x": 600, "y": %d }],
+        "sourceHint": { "kind": "element_port", "elementId": "std-call", "port": "result" },
+        "targetHint": { "kind": "boundary_port", "containerId": "entry", "boundaryId": "entry-result" }
+      }
+    ],
+    "junctions": []
+  },
+  "surfaceLibraryCalls": [
+    {
+      "id": "library-call",
+      "library": "tilefold.std",
+      "functionId": "%s",
+      "templateId": "%s",
+      "version": "v1",
+      "functionElementId": "std-call",
+      "applyElementIds": []
+    }
+  ]
+}
+|json}
+    call_height function_id template_id library_ports argument_nodes
+    (json_type result_type) template_id (json_type result_type)
+    (220 + (call_height / 2)) argument_wires (220 + (call_height / 2))
+    (220 + (call_height / 2)) function_id template_id
+
+let expect_mode_result_value project mode expected =
+  let response =
+    E.run_json_with_mode project ~mode |> Yojson.Safe.from_string
+  in
+  if member "status" response <> `String "completed" then
+    failwith
+      (mode ^ " execution did not complete: "
+      ^ Yojson.Safe.to_string response);
+  if member "result" response <> `String expected then
+    failwith
+      (mode ^ " execution returned unexpected result: "
+      ^ Yojson.Safe.to_string response);
+  response
+
 let folded_standard_call_project ~function_id ~template_id ~arguments =
   let arity = List.length arguments in
   let call_height = max 82 (58 + (arity * 24)) in
@@ -260,7 +413,7 @@ let folded_standard_call_project ~function_id ~template_id ~arguments =
   Printf.sprintf
     {json|{
   "format": "tilefold-project",
-  "version": 1,
+  "version": 2,
   "geometry": {
     "snapTolerance": 8,
     "elements": [
@@ -346,11 +499,110 @@ let () =
   let malformed = E.run_json "{" |> Yojson.Safe.from_string in
   assert (member "status" malformed = `String "error");
   assert (member "stage" malformed = `String "decode");
+  let boolrec_project =
+    {json|{
+  "format": "tilefold-project",
+  "version": 2,
+  "geometry": {
+    "snapTolerance": 8,
+    "elements": [
+      {
+        "id": "unit-drop",
+        "kind": "drop",
+        "bounds": { "x": 20, "y": 20, "width": 88, "height": 56 },
+        "properties": { "type": "unit" },
+        "portAnchors": [{ "port": "input", "x": 20, "y": 48 }]
+      },
+      {
+        "id": "condition",
+        "kind": "bool_literal",
+        "bounds": { "x": 80, "y": 120, "width": 88, "height": 56 },
+        "properties": { "value": false },
+        "portAnchors": [{ "port": "value", "x": 168, "y": 148 }]
+      },
+      {
+        "id": "false-value",
+        "kind": "nat_literal",
+        "bounds": { "x": 80, "y": 190, "width": 96, "height": 56 },
+        "properties": { "value": "2" },
+        "portAnchors": [{ "port": "value", "x": 176, "y": 218 }]
+      },
+      {
+        "id": "true-value",
+        "kind": "nat_literal",
+        "bounds": { "x": 80, "y": 260, "width": 96, "height": 56 },
+        "properties": { "value": "3" },
+        "portAnchors": [{ "port": "value", "x": 176, "y": 288 }]
+      },
+      {
+        "id": "branch",
+        "kind": "bool_rec",
+        "bounds": { "x": 260, "y": 160, "width": 136, "height": 112 },
+        "properties": { "type": "nat" },
+        "portAnchors": [
+          { "port": "condition", "x": 260, "y": 188 },
+          { "port": "false_case", "x": 260, "y": 216 },
+          { "port": "true_case", "x": 260, "y": 244 },
+          { "port": "result", "x": 396, "y": 216 }
+        ]
+      }
+    ],
+    "containers": [
+      {
+        "id": "entry",
+        "kind": { "kind": "entry", "templateId": "entry_template", "resultType": "nat", "dependencies": [] },
+        "bounds": { "x": 0, "y": 0, "width": 520, "height": 360 },
+        "boundaryPorts": [
+          { "id": "entry-param", "role": "parameter", "type": "unit", "anchor": { "x": 0, "y": 48 } },
+          { "id": "entry-result", "role": "result", "type": "nat", "anchor": { "x": 520, "y": 216 } }
+        ]
+      }
+    ],
+    "wires": [
+      {
+        "id": "w-unit-drop",
+        "points": [{ "x": 0, "y": 48 }, { "x": 20, "y": 48 }],
+        "sourceHint": { "kind": "boundary_port", "containerId": "entry", "boundaryId": "entry-param" },
+        "targetHint": { "kind": "element_port", "elementId": "unit-drop", "port": "input" }
+      },
+      {
+        "id": "w-condition",
+        "points": [{ "x": 168, "y": 148 }, { "x": 260, "y": 188 }],
+        "sourceHint": { "kind": "element_port", "elementId": "condition", "port": "value" },
+        "targetHint": { "kind": "element_port", "elementId": "branch", "port": "condition" }
+      },
+      {
+        "id": "w-false",
+        "points": [{ "x": 176, "y": 218 }, { "x": 260, "y": 216 }],
+        "sourceHint": { "kind": "element_port", "elementId": "false-value", "port": "value" },
+        "targetHint": { "kind": "element_port", "elementId": "branch", "port": "false_case" }
+      },
+      {
+        "id": "w-true",
+        "points": [{ "x": 176, "y": 288 }, { "x": 260, "y": 244 }],
+        "sourceHint": { "kind": "element_port", "elementId": "true-value", "port": "value" },
+        "targetHint": { "kind": "element_port", "elementId": "branch", "port": "true_case" }
+      },
+      {
+        "id": "w-result",
+        "points": [{ "x": 396, "y": 216 }, { "x": 520, "y": 216 }],
+        "sourceHint": { "kind": "element_port", "elementId": "branch", "port": "result" },
+        "targetHint": { "kind": "boundary_port", "containerId": "entry", "boundaryId": "entry-result" }
+      }
+    ],
+    "junctions": []
+  }
+}
+|json}
+  in
+  let boolrec_result = E.run_json boolrec_project |> Yojson.Safe.from_string in
+  assert (member "status" boolrec_result = `String "completed");
+  assert (member "result" boolrec_result = `String "Nat(2)");
   let capture_result_project =
     {json|
 {
   "format": "tilefold-project",
-  "version": 1,
+  "version": 2,
   "geometry": {
     "snapTolerance": 8,
     "elements": [
@@ -525,7 +777,7 @@ let () =
     {json|
 {
   "format": "tilefold-project",
-  "version": 1,
+  "version": 2,
   "geometry": {
     "snapTolerance": 8,
     "elements": [
@@ -716,6 +968,65 @@ let () =
       let fast = expect_mode_result project "fast" expected in
       assert (member "result" transparent = member "result" fast))
     std_cases;
+  let typed_std_cases =
+    [
+      ( "nat.pred",
+        "tilefold.std.nat.pred",
+        [ Nat_arg "0" ],
+        "nat",
+        "Nat(0)" );
+      ( "nat.pred",
+        "tilefold.std.nat.pred",
+        [ Nat_arg "2" ],
+        "nat",
+        "Nat(1)" );
+      ( "nat.subtract",
+        "tilefold.std.nat.subtract",
+        [ Nat_arg "5"; Nat_arg "2" ],
+        "nat",
+        "Nat(3)" );
+      ( "nat.subtract",
+        "tilefold.std.nat.subtract",
+        [ Nat_arg "3"; Nat_arg "5" ],
+        "nat",
+        "Nat(0)" );
+      ( "nat.isZero",
+        "tilefold.std.nat.isZero",
+        [ Nat_arg "0" ],
+        "bool",
+        "Bool(True)" );
+      ( "nat.isZero",
+        "tilefold.std.nat.isZero",
+        [ Nat_arg "1" ],
+        "bool",
+        "Bool(False)" );
+      ( "bool.not",
+        "tilefold.std.bool.not",
+        [ Bool_arg true ],
+        "bool",
+        "Bool(False)" );
+      ( "bool.and",
+        "tilefold.std.bool.and",
+        [ Bool_arg true; Bool_arg false ],
+        "bool",
+        "Bool(False)" );
+      ( "bool.or",
+        "tilefold.std.bool.or",
+        [ Bool_arg true; Bool_arg false ],
+        "bool",
+        "Bool(True)" );
+    ]
+  in
+  List.iter
+    (fun (function_id, template_id, arguments, result_type, expected) ->
+      let project =
+        folded_standard_call_project_typed ~function_id ~template_id ~arguments
+          ~result_type
+      in
+      let transparent = expect_mode_result_value project "transparent" expected in
+      let fast = expect_mode_result_value project "fast" expected in
+      assert (member "result" transparent = member "result" fast))
+    typed_std_cases;
   let nat value =
     match Nat.of_string value with Ok value -> value | Error _ -> assert false
   in

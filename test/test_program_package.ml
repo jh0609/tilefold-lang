@@ -164,12 +164,12 @@ let run_completed package =
 let payload_nat_string value =
   match Runtime_value.payload value with
   | Runtime_value.Nat nat -> Nat.to_string nat
-  | Runtime_value.Unit | Runtime_value.Closure _ -> assert false
+  | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Closure _ -> assert false
 
 let payload_closure value =
   match Runtime_value.payload value with
   | Runtime_value.Closure closure -> closure
-  | Runtime_value.Unit | Runtime_value.Nat _ -> assert false
+  | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Nat _ -> assert false
 
 let rule_count rule trace =
   trace

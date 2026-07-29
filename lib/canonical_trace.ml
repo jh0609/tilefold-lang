@@ -25,6 +25,7 @@ let render_origin = function
 
 let rec render_payload = function
   | Runtime_value.Unit -> "Unit"
+  | Bool value -> if value then "Bool(True)" else "Bool(False)"
   | Nat nat -> "Nat(" ^ Nat.to_string nat ^ ")"
   | Closure closure ->
       "Closure(template=" ^ render_template_id closure.template_id

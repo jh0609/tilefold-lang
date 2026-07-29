@@ -49,7 +49,7 @@ let run_completed machine =
 let payload_nat_string value =
   match Runtime_value.payload value with
   | Runtime_value.Nat nat -> Nat.to_string nat
-  | Runtime_value.Unit | Runtime_value.Closure _ -> assert false
+  | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Closure _ -> assert false
 
 let entry_unit_to_nat ?(order = [ "succ"; "drop" ]) ?(literal = "3") () =
   let nodes =
@@ -1127,7 +1127,7 @@ let () =
       assert (
         Function_template_id.equal closure.template_id
           (Function_template.id base_template))
-  | Runtime_value.Unit | Runtime_value.Nat _ -> assert false);
+  | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Nat _ -> assert false);
   assert (
     trace
     |> List.filter (fun event -> event.Rewrite_event.rule = Rewrite_event.NatRecUnfold)
@@ -1332,6 +1332,7 @@ let () =
       (fun value ->
         match Runtime_value.payload value with
         | Runtime_value.Unit -> "Unit"
+        | Runtime_value.Bool _ -> "Bool"
         | Runtime_value.Nat _ -> "Nat"
         | Runtime_value.Closure _ -> "Closure")
       copy_event.Rewrite_event.created
@@ -1557,7 +1558,7 @@ let () =
 let closure_of_value value =
   match Runtime_value.payload value with
   | Runtime_value.Closure closure -> closure
-  | Runtime_value.Unit | Runtime_value.Nat _ -> assert false
+  | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Nat _ -> assert false
 
 let () =
   let template, graph = function_no_capture_graph () in

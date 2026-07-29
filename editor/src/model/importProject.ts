@@ -92,7 +92,7 @@ function idAt(object: Record<string, unknown>, path: string): string {
 }
 
 function coreTypeAt(value: unknown, path: string): void {
-  if (value === "unit" || value === "nat") return;
+  if (value === "unit" || value === "bool" || value === "nat") return;
   const type = objectAt(value, path);
   const arrow = arrayAt(required(type, "arrow", path), `${path}.arrow`);
   if (arrow.length !== 2) {
@@ -115,6 +115,13 @@ function elementAt(value: unknown, path: string): ProjectElement {
     `${path}.properties`,
   );
   switch (kind) {
+    case "bool_literal": {
+      const value = required(properties, "value", `${path}.properties`);
+      if (typeof value !== "boolean") {
+        throw new StructureError(`${path}.properties.value`, "expected boolean");
+      }
+      break;
+    }
     case "nat_literal":
       stringAt(
         required(properties, "value", `${path}.properties`),
@@ -192,6 +199,7 @@ function elementAt(value: unknown, path: string): ProjectElement {
       }
       break;
     case "nat_rec":
+    case "bool_rec":
       coreTypeAt(
         required(properties, "type", `${path}.properties`),
         `${path}.properties.type`,
@@ -1093,8 +1101,8 @@ export function parseProjectJson(text: string): ProjectDocument {
     throw new StructureError("$.format", 'expected "tilefold-project"');
   }
   const version = required(document, "version", "$");
-  if (version !== 1) {
-    throw new StructureError("$.version", "only version 1 is supported");
+  if (version !== 2) {
+    throw new StructureError("$.version", "only version 2 is supported");
   }
   const geometry = objectAt(
     required(document, "geometry", "$"),

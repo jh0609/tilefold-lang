@@ -112,6 +112,10 @@
   stroke: var(--port-nat);
 }
 
+.boundary-port.type-bool {
+  stroke: var(--port-bool);
+}
+
 .boundary-port.type-unit {
   stroke: var(--port-unit);
 }
@@ -431,6 +435,10 @@
 
 .port.type-nat {
   --port-color: var(--port-nat);
+}
+
+.port.type-bool {
+  --port-color: var(--port-bool);
 }
 
 .port.type-unit {

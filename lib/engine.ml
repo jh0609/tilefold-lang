@@ -60,6 +60,11 @@ type runtime_error =
       expected : Core_type.t;
       actual : Core_type.t;
     }
+  | Invalid_boolrec_runtime_payload of {
+      node_id : CG.Node_id.t;
+      expected : Core_type.t;
+      actual : Core_type.t;
+    }
   | NatRec_lifecycle_error of {
       node_id : CG.Node_id.t;
       message : string;
@@ -362,6 +367,17 @@ let is_ready instance node_id =
                     (Core_type.Nat, Core_type.Arrow (result_type, result_type)))
             && Core_type.equal (Runtime_value.typ count) Core_type.Nat
         | _ -> false)
+    | Some { kind = CG.BoolRec result_type; _ } -> (
+        match
+          ( binding_for instance.bindings node_id CG.Port_key.condition,
+            binding_for instance.bindings node_id CG.Port_key.false_case,
+            binding_for instance.bindings node_id CG.Port_key.true_case )
+        with
+        | Some condition, Some false_case, Some true_case ->
+            Core_type.equal (Runtime_value.typ condition) Core_type.Bool
+            && Core_type.equal (Runtime_value.typ false_case) result_type
+            && Core_type.equal (Runtime_value.typ true_case) result_type
+        | _ -> false)
     | Some _ -> false
 
 let ready_candidate instance_id graph epoch node_id =
@@ -473,6 +489,11 @@ let materialize_literal ?literal_origin_for_node instance = function
         (Runtime_value.create ~id:(literal_id instance id)
            ~payload:Runtime_value.Unit
            ~origin:(literal_origin ?literal_origin_for_node instance id))
+  | { CG.kind = CG.Bool_literal value; id } ->
+      Some
+        (Runtime_value.create ~id:(literal_id instance id)
+           ~payload:(Runtime_value.Bool value)
+           ~origin:(literal_origin ?literal_origin_for_node instance id))
   | { CG.kind = CG.Nat_literal nat; id } ->
       Some
         (Runtime_value.create ~id:(literal_id instance id)
@@ -535,7 +556,7 @@ let materialize_input graph input =
   let expected = CG.Validated_graph.parameter_type graph in
   match expected with
   | Core_type.Arrow _ -> Error (Unsupported_runtime_input_type expected)
-  | Core_type.Unit | Core_type.Nat ->
+  | Core_type.Unit | Core_type.Bool | Core_type.Nat ->
       if payload_matches_type input expected then
         Ok
           (Runtime_value.create ~id:Runtime_value.execution_input_id ~payload:input
@@ -687,12 +708,13 @@ let rewrite_succ machine instance candidate =
           | Ok instance ->
               let instance = refresh_after_event instance machine.Machine.next_event_index in
               Rewritten { machine = update_instance machine instance; event })
-      | Runtime_value.Unit | Runtime_value.Closure _ -> Stuck (stuck_reason instance))
+      | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Closure _ -> Stuck (stuck_reason instance))
   | None -> Stuck (stuck_reason instance)
 
 let copy_payload candidate expected input_value =
   match (expected, Runtime_value.payload input_value) with
   | Core_type.Unit, Runtime_value.Unit -> Ok Runtime_value.Unit
+  | Core_type.Bool, Runtime_value.Bool value -> Ok (Runtime_value.Bool value)
   | Core_type.Nat, Runtime_value.Nat nat -> Ok (Runtime_value.Nat nat)
   | Core_type.Arrow _, Runtime_value.Closure closure
     when Core_type.equal (Core_type.Arrow (closure.parameter_type, closure.result_type)) expected ->
@@ -834,6 +856,7 @@ let rewrite_drop machine instance candidate =
       else
         match (expected, Runtime_value.payload input_value) with
         | Core_type.Arrow _, Runtime_value.Closure _
+        | Core_type.Bool, Runtime_value.Bool _
         | Core_type.Unit, Runtime_value.Unit
         | Core_type.Nat, Runtime_value.Nat _ ->
             let event =
@@ -955,7 +978,7 @@ let rewrite_apply_enter machine caller candidate signature =
                   }
                 in
                 Rewritten { machine = append_event machine event; event })
-      | Runtime_value.Unit | Runtime_value.Nat _ ->
+      | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Nat _ ->
           Runtime_error
             (Invalid_apply_runtime_payload
                {
@@ -1136,10 +1159,73 @@ let rewrite_natrec_initial machine instance candidate result_type =
             if Nat.equal total_count Nat.zero then
               rewrite_natrec_zero machine instance candidate base step count
             else rewrite_natrec_start machine instance candidate result_type base step count total_count
-        | Runtime_value.Unit | Runtime_value.Closure _ ->
+        | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Closure _ ->
             Runtime_error
               (Invalid_natrec_runtime_payload
                  { node_id = candidate.node_id; expected = Core_type.Nat; actual = Runtime_value.typ count }))
+  | _ -> Stuck (stuck_reason instance)
+
+let boolrec_created_value instance machine node_id payload =
+  Runtime_value.create
+    ~id:(rewrite_output_id instance machine.Machine.next_event_index node_id CG.Port_key.result)
+    ~payload
+    ~origin:(rewrite_output_origin instance machine.Machine.next_event_index node_id CG.Port_key.result)
+
+let rewrite_boolrec machine instance candidate result_type =
+  match
+    ( binding_for instance.bindings candidate.node_id CG.Port_key.condition,
+      binding_for instance.bindings candidate.node_id CG.Port_key.false_case,
+      binding_for instance.bindings candidate.node_id CG.Port_key.true_case )
+  with
+  | Some condition, Some false_case, Some true_case -> (
+      if not (Core_type.equal (Runtime_value.typ condition) Core_type.Bool) then
+        Runtime_error
+          (Invalid_boolrec_runtime_payload
+             { node_id = candidate.node_id; expected = Core_type.Bool; actual = Runtime_value.typ condition })
+      else if not (Core_type.equal (Runtime_value.typ false_case) result_type) then
+        Runtime_error
+          (Invalid_boolrec_runtime_payload
+             { node_id = candidate.node_id; expected = result_type; actual = Runtime_value.typ false_case })
+      else if not (Core_type.equal (Runtime_value.typ true_case) result_type) then
+        Runtime_error
+          (Invalid_boolrec_runtime_payload
+             { node_id = candidate.node_id; expected = result_type; actual = Runtime_value.typ true_case })
+      else
+        match Runtime_value.payload condition with
+        | Runtime_value.Bool choose_true ->
+            let selected = if choose_true then true_case else false_case in
+            let created =
+              boolrec_created_value instance machine candidate.node_id
+                (Runtime_value.payload selected)
+            in
+            let rule =
+              if choose_true then Rewrite_event.BoolRecTrue
+              else Rewrite_event.BoolRecFalse
+            in
+            let event =
+              make_event machine instance candidate rule
+                [
+                  Runtime_value.id condition;
+                  Runtime_value.id false_case;
+                  Runtime_value.id true_case;
+                ]
+                [ created ] ()
+            in
+            let instance =
+              remove_ready instance candidate.node_id
+              |> fun i -> mark_completed i candidate.node_id
+            in
+            let machine = append_event (update_instance machine instance) event in
+            let instance = Machine.instance_by_id machine instance.id |> Option.get in
+            (match deliver_output instance.graph instance candidate.node_id CG.Port_key.result created with
+            | Error message -> Runtime_error (Runtime_invariant_violation message)
+            | Ok instance ->
+                let instance = refresh_after_event instance machine.Machine.next_event_index in
+                Rewritten { machine = update_instance machine instance; event })
+        | Runtime_value.Unit | Runtime_value.Nat _ | Runtime_value.Closure _ ->
+            Runtime_error
+              (Invalid_boolrec_runtime_payload
+                 { node_id = candidate.node_id; expected = Core_type.Bool; actual = Runtime_value.typ condition }))
   | _ -> Stuck (stuck_reason instance)
 
 let rewrite_natrec_unfold machine instance node_id state =
@@ -1175,7 +1261,7 @@ let closure_payload node_id expected value =
       Error
         (Invalid_natrec_runtime_payload
            { node_id; expected; actual = Runtime_value.typ value })
-  | Runtime_value.Unit | Runtime_value.Nat _ ->
+  | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Nat _ ->
       Error
         (Invalid_natrec_runtime_payload
            { node_id; expected; actual = Runtime_value.typ value })
@@ -1504,6 +1590,8 @@ let step machine =
               rewrite_apply_enter machine active candidate signature
           | Some { kind = CG.NatRec result_type; _ } ->
               rewrite_natrec_initial machine active candidate result_type
+          | Some { kind = CG.BoolRec result_type; _ } ->
+              rewrite_boolrec machine active candidate result_type
           | _ -> Stuck (stuck_reason active))))
 
 let run machine =
@@ -1552,6 +1640,10 @@ let runtime_error_to_string = function
       ^ Core_type.to_string actual
   | Invalid_natrec_runtime_payload { node_id; expected; actual } ->
       "invalid NatRec runtime payload at " ^ CG.Node_id.to_string node_id
+      ^ ": expected " ^ Core_type.to_string expected ^ ", actual "
+      ^ Core_type.to_string actual
+  | Invalid_boolrec_runtime_payload { node_id; expected; actual } ->
+      "invalid BoolRec runtime payload at " ^ CG.Node_id.to_string node_id
       ^ ": expected " ^ Core_type.to_string expected ^ ", actual "
       ^ Core_type.to_string actual
   | NatRec_lifecycle_error { node_id; message } ->

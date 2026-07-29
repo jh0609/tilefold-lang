@@ -813,6 +813,18 @@ export function App() {
               after: value,
             });
           }}
+          onBoolValueChange={(id, value) => {
+            const element = document.geometry.elements.find(
+              (candidate) => candidate.id === id,
+            );
+            if (!element || element.kind !== "bool_literal") return;
+            runCommand({
+              type: "set_bool_value",
+              id,
+              before: element.properties.value,
+              after: value,
+            });
+          }}
           onElementTypeChange={(id, type: CoreType) => {
             const element = document.geometry.elements.find(
               (candidate) => candidate.id === id,
@@ -821,6 +833,7 @@ export function App() {
               !element ||
               (element.kind !== "drop" &&
                 element.kind !== "copy" &&
+                element.kind !== "bool_rec" &&
                 element.kind !== "nat_rec")
             ) {
               return;

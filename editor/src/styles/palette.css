@@ -434,6 +434,10 @@
   --port-color: var(--port-nat);
 }
 
+.port-swatch.type-bool {
+  --port-color: var(--port-bool);
+}
+
 .port-swatch.type-unit {
   --port-color: var(--port-unit);
 }

@@ -847,6 +847,7 @@ let function_graph ?(function_captures : capture list option) ?(template = fn_te
         (fun index (capture : capture) ->
           match capture.typ with
           | Core_type.Unit -> node ("capture-lit-" ^ string_of_int index) Unit_literal
+          | Core_type.Bool -> node ("capture-lit-" ^ string_of_int index) (Bool_literal true)
           | Core_type.Nat ->
               node ("capture-lit-" ^ string_of_int index) (Nat_literal (nat "1"))
           | Core_type.Arrow _ ->

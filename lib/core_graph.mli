@@ -23,6 +23,9 @@ module Port_key : sig
   val value : t
   val input : t
   val result : t
+  val condition : t
+  val false_case : t
+  val true_case : t
   val left : t
   val right : t
   val function_input : t
@@ -59,6 +62,7 @@ end
 
 type node_kind =
   | Unit_literal
+  | Bool_literal of bool
   | Nat_literal of Nat.t
   | Parameter of Core_type.t
   | Capture of capture
@@ -69,6 +73,7 @@ type node_kind =
   | Function of function_signature
   | Apply of apply_signature
   | NatRec of Core_type.t
+  | BoolRec of Core_type.t
 
 and capture = {
   key : Port_key.t;
