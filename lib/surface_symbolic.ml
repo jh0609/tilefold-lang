@@ -57,6 +57,8 @@ type contain = {
 type bind_kind =
   | Bind_parameter of endpoint
   | Bind_result of endpoint
+  | Bind_parameter_result
+  | Bind_capture_result of CG.Port_key.t
   | Bind_capture of {
       capture_key : CG.Port_key.t;
       target : endpoint;
@@ -312,6 +314,7 @@ let dangling_errors (raw : Raw.t) =
     |> List.map (fun bind ->
            match bind.kind with
            | Bind_parameter endpoint | Bind_result endpoint -> [ endpoint ]
+           | Bind_parameter_result | Bind_capture_result _ -> []
            | Bind_capture { target; _ } -> [ target ])
     |> List.concat
   in
@@ -391,7 +394,8 @@ let direction_errors (raw : Raw.t) =
            match bind.kind with
            | Bind_parameter target | Bind_capture { target; _ } ->
                check bind.relation_id target CG.Direction.Input errors
-           | Bind_result source -> check bind.relation_id source CG.Direction.Output errors)
+           | Bind_result source -> check bind.relation_id source CG.Direction.Output errors
+           | Bind_parameter_result | Bind_capture_result _ -> errors)
          errors
   in
   List.rev errors
@@ -513,13 +517,18 @@ let binding_errors (raw : Raw.t) =
          in
          let parameter_count =
            List.filter
-             (function { kind = Bind_parameter _; _ } -> true | _ -> false)
+             (function
+               | { kind = Bind_parameter _ | Bind_parameter_result; _ } -> true
+               | _ -> false)
              binds
            |> List.length
          in
          let result_count =
            List.filter
-             (function { kind = Bind_result _; _ } -> true | _ -> false)
+             (function
+               | { kind = Bind_result _ | Bind_parameter_result | Bind_capture_result _; _ } ->
+                   true
+               | _ -> false)
              binds
            |> List.length
          in
@@ -538,6 +547,7 @@ let binding_errors (raw : Raw.t) =
            binds
            |> List.filter_map (function
                 | { kind = Bind_capture { capture_key; _ }; _ } -> Some capture_key
+                | { kind = Bind_capture_result capture_key; _ } -> Some capture_key
                 | _ -> None)
          in
          let errors =
@@ -688,6 +698,18 @@ let binding_edges (raw : Raw.t) (container : container) =
                   ("bind_" ^ relation_suffix bind.relation_id ^ "_result"))
                (endpoint_port_ref source)
                { CG.node_id = result_node_id container.id; port_key = CG.Port_key.value }
+         | Bind_parameter_result ->
+             edge
+               (generated_edge_id
+                  ("bind_" ^ relation_suffix bind.relation_id ^ "_parameter_result"))
+               { CG.node_id = parameter_node_id container.id; port_key = CG.Port_key.value }
+               { CG.node_id = result_node_id container.id; port_key = CG.Port_key.value }
+         | Bind_capture_result capture_key ->
+             edge
+               (generated_edge_id
+                  ("bind_" ^ relation_suffix bind.relation_id ^ "_capture_result"))
+               { CG.node_id = capture_node_id container.id capture_key; port_key = CG.Port_key.value }
+               { CG.node_id = result_node_id container.id; port_key = CG.Port_key.value }
          | Bind_capture { capture_key; target } ->
              edge
                (generated_edge_id
@@ -820,7 +842,7 @@ let lower raw =
   in
   match entry_containers with
   | [ entry_container ] -> (
-      match build [] template_containers with
+      match build Standard_library.all_templates template_containers with
       | Error errors -> Error errors
       | Ok templates -> (
           let raw_graph = raw_graph_for_container raw entry_container in

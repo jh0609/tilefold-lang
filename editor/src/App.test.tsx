@@ -185,7 +185,7 @@ describe("Tilefold editor UI", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    expect(screen.getByRole("button", { name: "Add Call" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Add Call" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Add Function" }));
     await user.selectOptions(screen.getByLabelText("Argument 1 type"), "nat");
     await user.selectOptions(screen.getByLabelText("Result type"), "nat");

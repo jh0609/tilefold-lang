@@ -2,6 +2,7 @@ import type {
   EXAMPLE_PROJECTS,
   ExampleProjectId,
 } from "../model/exampleProjects";
+import type { ExecutionMode } from "../model/executionApi";
 
 interface ToolbarProps {
   projectName: string;
@@ -21,6 +22,8 @@ interface ToolbarProps {
   onRedo: () => void;
   onRun: () => void;
   onCancel: () => void;
+  executionMode: ExecutionMode;
+  onExecutionModeChange: (mode: ExecutionMode) => void;
   running: boolean;
 }
 
@@ -42,6 +45,8 @@ export function Toolbar({
   onRedo,
   onRun,
   onCancel,
+  executionMode,
+  onExecutionModeChange,
   running,
 }: ToolbarProps) {
   return (
@@ -117,6 +122,20 @@ export function Toolbar({
         </button>
       </div>
       <div className="view-controls" aria-label="Canvas view">
+        <label className="example-picker">
+          <span>Execution</span>
+          <select
+            aria-label="Execution mode"
+            value={executionMode}
+            disabled={running}
+            onChange={(event) =>
+              onExecutionModeChange(event.target.value as ExecutionMode)
+            }
+          >
+            <option value="transparent">Transparent</option>
+            <option value="fast">Fast</option>
+          </select>
+        </label>
         <button
           type="button"
           className={running ? "run-button is-running" : "run-button"}

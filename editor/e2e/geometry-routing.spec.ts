@@ -307,7 +307,9 @@ test("resizes selected graph containers from corner handles and persists geometr
   const beforeReload = await containerRect(entry);
   await page.reload();
   await page.getByLabel("Open JSON file").setInputFiles(savedPath);
-  expect(await containerRect(entry)).toEqual(beforeReload);
+  await expect
+    .poll(() => containerRect(entry))
+    .toEqual(beforeReload);
   await expectNoBrowserIssues(issues);
 });
 

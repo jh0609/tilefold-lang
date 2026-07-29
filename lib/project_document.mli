@@ -18,6 +18,12 @@ type element_kind =
       result_type : Core_type.t;
       captures : (string * Core_type.t) list;
     }
+  | Library_call of {
+      library : string;
+      function_id : string;
+      template_id : string;
+      version : string;
+    }
   | Apply of {
       parameter_type : Core_type.t;
       result_type : Core_type.t;

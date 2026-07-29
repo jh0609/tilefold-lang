@@ -77,6 +77,15 @@ export type ProjectElement =
         resultType: CoreType;
         captures: Array<{ key: string; type: CoreType }>;
       };
+    })
+  | (ElementBase & {
+      kind: "library_call";
+      properties: {
+        library: "tilefold.std";
+        functionId: StableId;
+        templateId: StableId;
+        version: StableId;
+      };
     });
 
 export type ContainerKind =
@@ -189,6 +198,7 @@ export interface ProjectDocument {
   };
   surfaceConnections?: SurfaceConnection[];
   surfaceResourceFlows?: SurfaceResourceFlow[];
+  surfaceLibraryCalls?: SurfaceLibraryCall[];
   surfaceFunctions?: SurfaceFunctionMetadata[];
   currentContainerId?: StableId;
   view?: SavedView;
@@ -203,6 +213,16 @@ export interface SurfaceConnection {
 
 export interface SurfaceResourceFlow {
   sourcePortId: StableId;
+}
+
+export interface SurfaceLibraryCall {
+  id: StableId;
+  library: "tilefold.std";
+  functionId: StableId;
+  templateId: StableId;
+  version: StableId;
+  functionElementId: StableId;
+  applyElementIds: StableId[];
 }
 
 export type Selection =
@@ -227,6 +247,7 @@ export const ELEMENT_KINDS = [
   "drop",
   "copy",
   "function",
+  "library_call",
   "apply",
   "nat_rec",
 ] as const;

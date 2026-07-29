@@ -35,8 +35,14 @@ import {
   formatCoreType,
   type PrimitiveCoreType,
 } from "./coreTypes";
+import {
+  STANDARD_LIBRARY_FUNCTIONS,
+  isStandardLibraryTemplate,
+  standardLibraryFunction,
+  type StandardLibraryFunction,
+} from "./standardLibrary";
 
-export type AddableElementKind = Exclude<ElementKind, "function">;
+export type AddableElementKind = Exclude<ElementKind, "function" | "library_call">;
 
 export interface FunctionCaptureDraft {
   key: string;
@@ -91,6 +97,9 @@ export interface AddFunctionTemplateResult {
 export interface CallableFunctionTemplate {
   templateId: string;
   displayName: string;
+  source: "project" | "standard-library";
+  libraryFunctionId?: string;
+  libraryVersion?: string;
   parameters: FunctionParameterDraft[];
   resultName: string;
   parameterType: CoreType;
@@ -100,8 +109,11 @@ export interface CallableFunctionTemplate {
 
 export interface AddFunctionCallResult {
   document: ProjectDocument;
-  functionElement: Extract<ProjectElement, { kind: "function" }>;
-  applyElement: Extract<ProjectElement, { kind: "apply" }>;
+  functionElement: Extract<
+    ProjectElement,
+    { kind: "function" } | { kind: "library_call" }
+  >;
+  applyElement: Extract<ProjectElement, { kind: "apply" }> | null;
 }
 
 const NEW_ELEMENT_SIZE: Record<
@@ -417,7 +429,7 @@ export function callableFunctionTemplates(
     (container) => container.id === hostContainerId,
   );
   if (!host) return [];
-  return document.geometry.containers
+  const projectTemplates = document.geometry.containers
     .filter(
       (
         container,
@@ -443,6 +455,7 @@ export function callableFunctionTemplates(
             {
               templateId: container.kind.templateId,
               displayName: metadata.name,
+              source: "project" as const,
               parameters: metadata.parameters.map((parameter) => ({
                 name: parameter.name,
                 type: parameter.type,
@@ -456,6 +469,13 @@ export function callableFunctionTemplates(
         : [];
     })
     .sort((left, right) => left.templateId.localeCompare(right.templateId));
+  const projectTemplateIds = new Set(
+    projectTemplates.map((template) => template.templateId),
+  );
+  const standardTemplates = STANDARD_LIBRARY_FUNCTIONS.filter(
+    (definition) => !projectTemplateIds.has(definition.templateId),
+  ).map(callableFromStandardLibrary);
+  return [...standardTemplates, ...projectTemplates];
 }
 
 export function addFunctionTemplate(
@@ -485,6 +505,9 @@ export function addFunctionTemplate(
     )
   ) {
     return { error: `Function ${templateId} already exists.` };
+  }
+  if (isStandardLibraryTemplate(templateId)) {
+    return { error: `Function ${templateId} is reserved by the Standard Library.` };
   }
   if (parameters.length === 0) {
     return { error: "A Surface function needs at least one argument." };
@@ -1493,20 +1516,34 @@ export function addFunctionCall(
       container.kind.kind === "template" &&
       container.kind.templateId === templateId,
   );
-  if (!template || template.kind.kind !== "template") {
+  const standardTemplate = standardLibraryFunction(templateId);
+  if ((!template || template.kind.kind !== "template") && !standardTemplate) {
     return { error: `Callable template ${templateId} does not exist.` };
   }
-  const captures = templateCaptures(template);
-  if (!captures) {
+  if (standardTemplate) {
+    return addStandardLibraryFunctionCall(document, host, standardTemplate);
+  }
+  const descriptor =
+    template && template.kind.kind === "template"
+      ? {
+          source: "project" as const,
+          parameterType: template.kind.parameterType,
+          resultType: template.kind.resultType,
+          captures: templateCaptures(template),
+        }
+      : null;
+  if (!descriptor?.captures) {
     return {
       error:
         "Call authoring currently supports only Unit or Nat captures.",
     };
   }
+  const captures = descriptor.captures;
   if (
+    descriptor.source === "project" &&
     dependencyReaches(
       document,
-      template.kind.templateId,
+      templateId,
       host.kind.templateId,
     )
   ) {
@@ -1538,8 +1575,8 @@ export function addFunctionCall(
     bounds: functionBounds,
     properties: {
       templateId,
-      parameterType: template.kind.parameterType,
-      resultType: template.kind.resultType,
+      parameterType: descriptor.parameterType,
+      resultType: descriptor.resultType,
       captures,
     },
     portAnchors: [
@@ -1630,8 +1667,8 @@ export function addFunctionCall(
     kind: "apply",
     bounds: applyBounds,
     properties: {
-      parameterType: template.kind.parameterType,
-      resultType: template.kind.resultType,
+      parameterType: descriptor.parameterType,
+      resultType: descriptor.resultType,
     },
     portAnchors: [
       {
@@ -1655,12 +1692,12 @@ export function addFunctionCall(
   const argumentBounds: Bounds = {
     x: host.bounds.x + 4,
     y: applyBounds.y + 32,
-    width: primitiveCoreType(template.kind.parameterType) && template.kind.parameterType === "nat" ? 96 : 88,
+    width: primitiveCoreType(descriptor.parameterType) && descriptor.parameterType === "nat" ? 96 : 88,
     height: 56,
   };
   const argument: ProjectElement | null =
-    primitiveCoreType(template.kind.parameterType)
-      ? template.kind.parameterType === "nat"
+    primitiveCoreType(descriptor.parameterType)
+      ? descriptor.parameterType === "nat"
       ? {
           id: allocate("node_nat_"),
           kind: "nat_literal",
@@ -1699,7 +1736,7 @@ export function addFunctionCall(
     id: allocate("node_drop_"),
     kind: "drop",
     bounds: resultDropBounds,
-    properties: { type: template.kind.resultType },
+    properties: { type: descriptor.resultType },
     portAnchors: [
       {
         port: "input",
@@ -1843,6 +1880,236 @@ export function addFunctionCall(
           ...callWires,
         ],
       },
+    },
+  };
+}
+
+function standardLibraryResultAfter(
+  definition: StandardLibraryFunction,
+  appliedParameterIndex: number,
+): CoreType {
+  let result = definition.resultType;
+  for (
+    let index = definition.parameters.length - 1;
+    index > appliedParameterIndex;
+    index -= 1
+  ) {
+    result = { arrow: [definition.parameters[index]!.type, result] };
+  }
+  return result;
+}
+
+function addStandardLibraryFunctionCall(
+  document: ProjectDocument,
+  host: ProjectContainer,
+  definition: StandardLibraryFunction,
+): AddFunctionCallResult | { error: string } {
+  const usedIds = collectStableIds(document);
+  const allocate = (prefix: string) => {
+    let index = 1;
+    while (usedIds.has(`${prefix}${index}`)) index += 1;
+    const id = `${prefix}${index}`;
+    usedIds.add(id);
+    return id;
+  };
+  const extensionTop = host.bounds.y + host.bounds.height;
+  const callBounds: Bounds = {
+    x: host.bounds.x + 40,
+    y: extensionTop + 24,
+    width: Math.max(156, 132 + definition.parameters.length * 16),
+    height: Math.max(82, 58 + definition.parameters.length * 24),
+  };
+  const inputSpacing = callBounds.height / (definition.parameters.length + 1);
+  const callElement: Extract<ProjectElement, { kind: "library_call" }> = {
+    id: allocate("node_library_call_"),
+    kind: "library_call",
+    bounds: callBounds,
+    properties: {
+      library: definition.library,
+      functionId: definition.functionId,
+      templateId: definition.templateId,
+      version: definition.version,
+    },
+    portAnchors: [
+      ...definition.parameters.map((_, index) => ({
+        port: `arg_${index}`,
+        x: callBounds.x,
+        y: Math.round(callBounds.y + inputSpacing * (index + 1)),
+      })),
+      {
+        port: "result",
+        x: callBounds.x + callBounds.width,
+        y: callBounds.y + callBounds.height / 2,
+      },
+    ],
+  };
+
+  const arguments_: ProjectElement[] = [];
+  const wires: ProjectWire[] = [];
+  definition.parameters.forEach((parameter, index) => {
+    if (primitiveCoreType(parameter.type)) {
+      const inputAnchor = callElement.portAnchors.find(
+        (anchor) => anchor.port === `arg_${index}`,
+      )!;
+      const argumentBounds: Bounds = {
+        x: callBounds.x - 144,
+        y: inputAnchor.y - 28,
+        width: parameter.type === "nat" ? 96 : 88,
+        height: 56,
+      };
+      const argument: ProjectElement =
+        parameter.type === "nat"
+          ? {
+              id: allocate("node_nat_"),
+              kind: "nat_literal",
+              bounds: argumentBounds,
+              properties: { value: "0" },
+              portAnchors: [
+                {
+                  port: "value",
+                  x: argumentBounds.x + argumentBounds.width,
+                  y: argumentBounds.y + argumentBounds.height / 2,
+                },
+              ],
+            }
+          : {
+              id: allocate("node_unit_"),
+              kind: "unit_literal",
+              bounds: argumentBounds,
+              properties: {},
+              portAnchors: [
+                {
+                  port: "value",
+                  x: argumentBounds.x + argumentBounds.width,
+                  y: argumentBounds.y + argumentBounds.height / 2,
+                },
+              ],
+            };
+      arguments_.push(argument);
+      const argumentOutput = argument.portAnchors[0]!;
+      wires.push({
+        id: allocate("wire_"),
+        points: [
+          { x: argumentOutput.x, y: argumentOutput.y },
+          { x: inputAnchor.x, y: inputAnchor.y },
+        ],
+        sourceHint: {
+          kind: "element_port",
+          elementId: argument.id,
+          port: "value",
+        },
+        targetHint: {
+          kind: "element_port",
+          elementId: callElement.id,
+          port: `arg_${index}`,
+        },
+      });
+    }
+  });
+
+  const resultAnchor = callElement.portAnchors.find(
+    (anchor) => anchor.port === "result",
+  )!;
+  const resultDropBounds: Bounds = {
+    x: resultAnchor.x + 96,
+    y: resultAnchor.y - 28,
+    width: 88,
+    height: 56,
+  };
+  const resultDrop: ProjectElement = {
+    id: allocate("node_drop_"),
+    kind: "drop",
+    bounds: resultDropBounds,
+    properties: { type: definition.resultType },
+    portAnchors: [
+      {
+        port: "input",
+        x: resultDropBounds.x,
+        y: resultDropBounds.y + resultDropBounds.height / 2,
+      },
+    ],
+  };
+  wires.push({
+    id: allocate("wire_"),
+    points: [
+      { x: resultAnchor.x, y: resultAnchor.y },
+      { x: resultDropBounds.x, y: resultDropBounds.y + resultDropBounds.height / 2 },
+    ],
+    sourceHint: {
+      kind: "element_port",
+      elementId: callElement.id,
+      port: "result",
+    },
+    targetHint: {
+      kind: "element_port",
+      elementId: resultDrop.id,
+      port: "input",
+    },
+  });
+
+  const expandedHostBounds: Bounds = {
+    ...host.bounds,
+    height:
+      Math.max(
+        host.bounds.y + host.bounds.height,
+        resultDropBounds.y + resultDropBounds.height + 24,
+      ) - host.bounds.y,
+    width:
+      Math.max(
+        host.bounds.x + host.bounds.width,
+        resultDropBounds.x + resultDropBounds.width + 24,
+      ) - host.bounds.x,
+  };
+  const overlappingContainer = document.geometry.containers.find(
+    (container) =>
+      container.id !== host.id &&
+      containerBoundsOverlap(expandedHostBounds, container.bounds),
+  );
+  if (overlappingContainer) {
+    return {
+      error: `Cannot extend ${host.id} without overlapping ${overlappingContainer.id}. Move the containers apart first.`,
+    };
+  }
+  const updatedHost: ProjectContainer = {
+    ...host,
+    bounds: expandedHostBounds,
+    kind: {
+      ...host.kind,
+      dependencies: host.kind.dependencies.includes(definition.templateId)
+        ? host.kind.dependencies
+        : [...host.kind.dependencies, definition.templateId],
+    },
+  };
+  return {
+    functionElement: callElement,
+    applyElement: null,
+    document: {
+      ...document,
+      geometry: {
+        ...document.geometry,
+        elements: [
+          ...document.geometry.elements,
+          callElement,
+          ...arguments_,
+          resultDrop,
+        ],
+        containers: document.geometry.containers.map((container) =>
+          container.id === host.id ? updatedHost : container,
+        ),
+        wires: [...document.geometry.wires, ...wires],
+      },
+      surfaceLibraryCalls: [
+        ...(document.surfaceLibraryCalls ?? []),
+        {
+          id: allocate("library_call_"),
+          library: definition.library,
+          functionId: definition.functionId,
+          templateId: definition.templateId,
+          version: definition.version,
+          functionElementId: callElement.id,
+          applyElementIds: [],
+        },
+      ],
     },
   };
 }
@@ -2771,6 +3038,23 @@ export function editTemplateCaptures(
   };
 }
 
+function callableFromStandardLibrary(
+  definition: StandardLibraryFunction,
+): CallableFunctionTemplate {
+  return {
+    templateId: definition.templateId,
+    displayName: definition.displayName,
+    source: "standard-library",
+    libraryFunctionId: definition.functionId,
+    libraryVersion: definition.version,
+    parameters: definition.parameters.map((parameter) => ({ ...parameter })),
+    resultName: definition.resultName,
+    parameterType: definition.parameterType,
+    resultType: definition.templateResultType,
+    captures: [],
+  };
+}
+
 export function addElement(
   document: ProjectDocument,
   kind: AddableElementKind,
@@ -3672,6 +3956,21 @@ function hintReferencesElement(
   return hint?.kind === "element_port" && hint.elementId === id;
 }
 
+function removeSurfaceLibraryCallsForDeletedElements(
+  document: ProjectDocument,
+  deletedElementIds: ReadonlySet<string>,
+): ProjectDocument {
+  if (!document.surfaceLibraryCalls) return document;
+  return {
+    ...document,
+    surfaceLibraryCalls: document.surfaceLibraryCalls.filter(
+      (call) =>
+        !deletedElementIds.has(call.functionElementId) &&
+        call.applyElementIds.every((id) => !deletedElementIds.has(id)),
+    ),
+  };
+}
+
 export function elementReferences(
   document: ProjectDocument,
   id: string,
@@ -3811,15 +4110,19 @@ export function deleteSelection(
           (last && pointInsideBounds(last, container.bounds, true)),
       );
     };
+    const withoutLibraryCalls = removeSurfaceLibraryCallsForDeletedElements(
+      document,
+      elementIds,
+    );
     return {
       document: {
-        ...document,
+        ...withoutLibraryCalls,
         geometry: {
-          ...document.geometry,
-          elements: document.geometry.elements.filter(
+          ...withoutLibraryCalls.geometry,
+          elements: withoutLibraryCalls.geometry.elements.filter(
             (element) => !elementIds.has(element.id),
           ),
-          containers: document.geometry.containers
+          containers: withoutLibraryCalls.geometry.containers
             .filter((candidate) => candidate.id !== container.id)
             .map((candidate) => ({
               ...candidate,
@@ -3831,14 +4134,14 @@ export function deleteSelection(
                 ),
               },
             })),
-          wires: document.geometry.wires.filter(
+          wires: withoutLibraryCalls.geometry.wires.filter(
             (wire) => !wireBelongsToContainer(wire),
           ),
-          junctions: document.geometry.junctions.filter(
+          junctions: withoutLibraryCalls.geometry.junctions.filter(
             (junction) => !junctionIds.has(junction.id),
           ),
         },
-        surfaceFunctions: document.surfaceFunctions?.filter(
+        surfaceFunctions: withoutLibraryCalls.surfaceFunctions?.filter(
           (functionInfo) =>
             functionInfo.templateId !== container.kind.templateId &&
             functionInfo.bodyContainerId !== container.id,
@@ -3962,15 +4265,19 @@ export function deleteSelection(
     document,
     selection.id,
   );
+  const withoutLibraryCalls = removeSurfaceLibraryCallsForDeletedElements(
+    withoutLogicalConsumers,
+    new Set([selection.id]),
+  );
   return {
     document: {
-      ...withoutLogicalConsumers,
+      ...withoutLibraryCalls,
       geometry: {
-        ...withoutLogicalConsumers.geometry,
-        elements: withoutLogicalConsumers.geometry.elements.filter(
+        ...withoutLibraryCalls.geometry,
+        elements: withoutLibraryCalls.geometry.elements.filter(
           (element) => element.id !== selection.id,
         ),
-        wires: withoutLogicalConsumers.geometry.wires.filter(
+        wires: withoutLibraryCalls.geometry.wires.filter(
           (wire) =>
             !hintReferencesElement(wire.sourceHint, selection.id) &&
             !hintReferencesElement(wire.targetHint, selection.id),

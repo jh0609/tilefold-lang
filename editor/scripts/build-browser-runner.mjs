@@ -48,6 +48,17 @@ async function sourceHash() {
   return hash.digest("hex");
 }
 
+function shellQuote(value) {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function toWslPath(value) {
+  const normalized = value.replaceAll("\\", "/");
+  const match = /^([A-Za-z]):\/(.*)$/.exec(normalized);
+  if (!match) return normalized;
+  return `/mnt/${match[1].toLowerCase()}/${match[2]}`;
+}
+
 const expectedSourceHash = await sourceHash();
 if (process.argv.includes("--check")) {
   const saved = JSON.parse(await readFile(metadata, "utf8"));
@@ -66,7 +77,7 @@ if (process.argv.includes("--check")) {
   process.exit(0);
 }
 
-const command = spawnSync(
+let command = spawnSync(
   "opam",
   [
     "exec",
@@ -81,6 +92,23 @@ const command = spawnSync(
   ],
   { cwd: repositoryRoot, encoding: "utf8", stdio: "inherit" },
 );
+if (
+  command.status !== 0 &&
+  process.platform === "win32"
+) {
+  const wslRepositoryRoot = toWslPath(repositoryRoot);
+  const wslSwitch = process.env.TILEFOLD_WSL_OPAM_SWITCH ?? ".";
+  const wslCommand = [
+    `cd ${shellQuote(wslRepositoryRoot)}`,
+    `eval "$(opam env --shell=sh --switch=${shellQuote(wslSwitch)})"`,
+    `dune build --root ${shellQuote(wslRepositoryRoot)} --profile release bin/browser_runner.bc.js`,
+  ].join(" && ");
+  command = spawnSync("wsl", ["bash", "-lc", wslCommand], {
+    cwd: repositoryRoot,
+    encoding: "utf8",
+    stdio: "inherit",
+  });
+}
 if (command.status !== 0) {
   throw new Error(`js_of_ocaml build failed (${command.status ?? "unknown"}).`);
 }

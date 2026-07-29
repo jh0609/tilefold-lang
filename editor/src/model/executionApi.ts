@@ -17,9 +17,12 @@ export type ExecutionResponse =
       messages: string[];
     };
 
+export type ExecutionMode = "transparent" | "fast";
+
 interface WorkerRequest {
   requestId: number;
   projectJson: string;
+  mode: ExecutionMode;
 }
 
 interface WorkerResponse {
@@ -52,7 +55,7 @@ export function isExecutionCanceledError(
 export interface ExecutionBackend {
   run(
     projectJson: string,
-    options?: { signal?: AbortSignal },
+    options?: { mode?: ExecutionMode; signal?: AbortSignal },
   ): Promise<ExecutionResponse>;
   dispose(): void;
 }
@@ -260,7 +263,11 @@ export function createBrowserExecutionBackend(
           once: true,
         });
         try {
-          ownedWorker.postMessage({ requestId, projectJson });
+          ownedWorker.postMessage({
+            requestId,
+            projectJson,
+            mode: options?.mode ?? "transparent",
+          });
         } catch (error) {
           discardWorker(ownedWorker);
           finish(request, {

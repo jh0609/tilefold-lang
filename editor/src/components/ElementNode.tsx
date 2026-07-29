@@ -3,6 +3,7 @@ import type { CoreType, ProjectElement } from "../model/project";
 import type { ConnectablePort } from "../model/portConnections";
 import { formatCoreType } from "../model/coreTypes";
 import { INTERACTION_CHROME, screenUnits } from "../model/interactionChrome";
+import { standardLibraryFunction } from "../model/standardLibrary";
 
 interface ElementNodeProps {
   element: ProjectElement;
@@ -39,6 +40,7 @@ const KIND_LABELS: Record<ProjectElement["kind"], string> = {
   drop: "Drop",
   copy: "Copy",
   function: "Function",
+  library_call: "Library Call",
   apply: "Apply",
   nat_rec: "NatRec",
 };
@@ -87,7 +89,30 @@ function nodeSignature(element: ProjectElement, ports: ConnectablePort[]) {
       const value = output("value");
       return value ? formatCoreType(value) : "";
     }
+    case "library_call": {
+      const definition = standardLibraryFunction(element.properties.templateId);
+      if (!definition) return "Unknown library call";
+      return `${definition.parameters
+        .map((parameter) => formatCoreType(parameter.type))
+        .join(" · ")} → ${formatCoreType(definition.resultType)}`;
+    }
   }
+}
+
+function nodeDisplayLabel(element: ProjectElement): string {
+  if (element.kind === "function") {
+    return (
+      standardLibraryFunction(element.properties.templateId)?.displayName ??
+      KIND_LABELS[element.kind]
+    );
+  }
+  if (element.kind === "library_call") {
+    return (
+      standardLibraryFunction(element.properties.templateId)?.displayName ??
+      "Unknown library call"
+    );
+  }
+  return KIND_LABELS[element.kind];
 }
 
 function portHitCenter(
@@ -128,6 +153,11 @@ export function ElementNode({
   const value =
     element.kind === "nat_literal" ? element.properties.value : undefined;
   const signature = nodeSignature(element, ports);
+  const displayLabel = nodeDisplayLabel(element);
+  const standardDefinition =
+    element.kind === "function" || element.kind === "library_call"
+      ? standardLibraryFunction(element.properties.templateId)
+      : undefined;
   const portVisibleRadius = screenUnits(
     INTERACTION_CHROME.portVisibleRadiusPx,
     pixelsPerCanvasUnit,
@@ -150,17 +180,25 @@ export function ElementNode({
   const eastResizeY = y + Math.max(12, Math.min(height - 12, height * 0.75));
   return (
     <g
-      className={`element-node kind-${element.kind}${compact ? " compact" : ""}${selected ? " selected" : ""}${traceHighlighted ? " trace-highlighted" : ""}`}
+      className={`element-node kind-${element.kind}${standardDefinition ? " standard-library-call" : ""}${compact ? " compact" : ""}${selected ? " selected" : ""}${traceHighlighted ? " trace-highlighted" : ""}`}
       data-testid={`element-${element.id}`}
       data-node-id={element.id}
       data-node-kind={element.kind}
       data-owner-container-id={ownerContainerId}
       data-template-id={
-        element.kind === "function" ? element.properties.templateId : undefined
+        element.kind === "function" || element.kind === "library_call"
+          ? element.properties.templateId
+          : undefined
+      }
+      data-library={
+        standardDefinition ? standardDefinition.library : undefined
+      }
+      data-library-function-id={
+        standardDefinition ? standardDefinition.functionId : undefined
       }
       data-trace-highlighted={traceHighlighted ? "true" : undefined}
       role="button"
-      aria-label={`${KIND_LABELS[element.kind]} element ${element.id}`}
+      aria-label={`${standardDefinition ? "Standard Library call " : ""}${displayLabel} element ${element.id}`}
       tabIndex={0}
       onClick={(event) => {
         event.stopPropagation();
@@ -201,8 +239,18 @@ export function ElementNode({
         y={y + (compact ? 7 : 22)}
         fontSize={compact ? 5 : undefined}
       >
-        {KIND_LABELS[element.kind]}
+        {displayLabel}
       </text>
+      {standardDefinition && !compact && (
+        <text
+          className="element-library-source"
+          data-testid={`element-${element.id}-library-source`}
+          x={contentLeft}
+          y={y + 38}
+        >
+          Standard Library
+        </text>
+      )}
       {value !== undefined && (
         <text
           className="element-primary-value"

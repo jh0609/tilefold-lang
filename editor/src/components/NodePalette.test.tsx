@@ -144,6 +144,7 @@ describe("NodePalette", () => {
         {
           templateId: "add_offset",
           displayName: "add_offset",
+          source: "project",
           parameters: [
             { name: "offset", type: "nat" },
             { name: "value", type: "nat" },
@@ -169,5 +170,37 @@ describe("NodePalette", () => {
     expect(
       screen.queryByRole("form", { name: "Create function call" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("searches and selects Standard Library callables", async () => {
+    const user = userEvent.setup();
+    const onAddCall = vi.fn(() => true);
+    renderPalette({
+      callableTemplates: [
+        {
+          templateId: "tilefold.std.nat.add",
+          displayName: "add",
+          source: "standard-library",
+          libraryFunctionId: "nat.add",
+          libraryVersion: "v1",
+          parameters: [
+            { name: "left", type: "nat" },
+            { name: "right", type: "nat" },
+          ],
+          resultName: "sum",
+          parameterType: "nat",
+          resultType: { arrow: ["nat", "nat"] },
+          captures: [],
+        },
+      ],
+      onAddCall,
+    });
+
+    await user.type(screen.getByRole("searchbox", { name: "Search nodes" }), "add");
+    await user.click(
+      screen.getByRole("button", { name: "Add Standard Library add" }),
+    );
+
+    expect(onAddCall).toHaveBeenCalledWith("tilefold.std.nat.add");
   });
 });

@@ -6,6 +6,7 @@ import {
   type ProjectElement,
   type ProjectWire,
   type SurfaceFunctionMetadata,
+  type SurfaceLibraryCall,
 } from "./project";
 import { collectConnectablePorts } from "./portConnections";
 import {
@@ -14,6 +15,12 @@ import {
   materializeResourceFlows,
   portIdForHint,
 } from "./surfaceResourceFlow";
+import { coreTypeEqual } from "./coreTypes";
+import {
+  STANDARD_LIBRARY_NAMESPACE,
+  STANDARD_LIBRARY_VERSION,
+  standardLibraryFunction,
+} from "./standardLibrary";
 
 export class StructureError extends Error {
   constructor(
@@ -230,6 +237,38 @@ function elementAt(value: unknown, path: string): ProjectElement {
       });
       break;
     }
+    case "library_call": {
+      const library = stringAt(
+        required(properties, "library", `${path}.properties`),
+        `${path}.properties.library`,
+      );
+      if (library !== STANDARD_LIBRARY_NAMESPACE) {
+        throw new StructureError(`${path}.properties.library`, `unknown library ${library}`);
+      }
+      const functionId = stringAt(
+        required(properties, "functionId", `${path}.properties`),
+        `${path}.properties.functionId`,
+      );
+      const templateId = stringAt(
+        required(properties, "templateId", `${path}.properties`),
+        `${path}.properties.templateId`,
+      );
+      const version = stringAt(
+        required(properties, "version", `${path}.properties`),
+        `${path}.properties.version`,
+      );
+      const definition = standardLibraryFunction(templateId);
+      if (!definition) {
+        throw new StructureError(`${path}.properties.templateId`, `unknown Standard Library template ${templateId}`);
+      }
+      if (definition.functionId !== functionId) {
+        throw new StructureError(`${path}.properties.functionId`, `function ID does not match ${templateId}`);
+      }
+      if (version !== STANDARD_LIBRARY_VERSION) {
+        throw new StructureError(`${path}.properties.version`, `unsupported Standard Library version ${version}`);
+      }
+      break;
+    }
   }
   const anchors = arrayAt(
     required(element, "portAnchors", path),
@@ -241,6 +280,28 @@ function elementAt(value: unknown, path: string): ProjectElement {
     stringAt(required(record, "port", anchorPath), `${anchorPath}.port`);
     pointAt(record, anchorPath);
   });
+  if (kind === "library_call") {
+    const definition = standardLibraryFunction(
+      stringAt(
+        required(properties, "templateId", `${path}.properties`),
+        `${path}.properties.templateId`,
+      ),
+    )!;
+    const expected = [
+      ...definition.parameters.map((_parameter, index) => `arg_${index}`),
+      "result",
+    ].sort();
+    const actual = anchors
+      .map((anchor, index) => {
+        const anchorPath = `${path}.portAnchors[${index}]`;
+        const record = objectAt(anchor, anchorPath);
+        return stringAt(required(record, "port", anchorPath), `${anchorPath}.port`);
+      })
+      .sort();
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      throw new StructureError(`${path}.portAnchors`, `expected ports ${expected.join(", ")}`);
+    }
+  }
   return element as unknown as ProjectElement;
 }
 
@@ -425,6 +486,43 @@ function wireAt(value: unknown, path: string): void {
   }
 }
 
+function surfaceLibraryCallAt(value: unknown, path: string): SurfaceLibraryCall {
+  const record = objectAt(value, path);
+  idAt(record, path);
+  const library = stringAt(required(record, "library", path), `${path}.library`);
+  if (library !== STANDARD_LIBRARY_NAMESPACE) {
+    throw new StructureError(`${path}.library`, `unknown library ${library}`);
+  }
+  const functionId = stringAt(
+    required(record, "functionId", path),
+    `${path}.functionId`,
+  );
+  const templateId = stringAt(
+    required(record, "templateId", path),
+    `${path}.templateId`,
+  );
+  const version = stringAt(required(record, "version", path), `${path}.version`);
+  const definition = standardLibraryFunction(templateId);
+  if (!definition) {
+    throw new StructureError(`${path}.templateId`, `unknown Standard Library template ${templateId}`);
+  }
+  if (definition.functionId !== functionId) {
+    throw new StructureError(`${path}.functionId`, `function ID does not match ${templateId}`);
+  }
+  if (version !== STANDARD_LIBRARY_VERSION) {
+    throw new StructureError(`${path}.version`, `unsupported Standard Library version ${version}`);
+  }
+  stringAt(
+    required(record, "functionElementId", path),
+    `${path}.functionElementId`,
+  );
+  arrayAt(
+    required(record, "applyElementIds", path),
+    `${path}.applyElementIds`,
+  ).forEach((id, index) => stringAt(id, `${path}.applyElementIds[${index}]`));
+  return value as SurfaceLibraryCall;
+}
+
 function checkRenderingReferences(
   elements: unknown[],
   containers: unknown[],
@@ -581,6 +679,20 @@ function checkFunctionCaptureReferences(
       `${path}.properties.templateId`,
     );
     const declaredCaptures = templateCaptures.get(templateId);
+    if (!declaredCaptures && standardLibraryFunction(templateId)) {
+      const captures = arrayAt(
+        required(properties, "captures", `${path}.properties`),
+        `${path}.properties.captures`,
+      );
+      if (captures.length !== 0) {
+        throw new StructureError(
+          `${path}.properties.captures`,
+          `Standard Library template ${templateId} does not accept captures`,
+        );
+      }
+      functionCapturePorts.set(id, new Set());
+      return;
+    }
     if (!declaredCaptures) {
       throw new StructureError(
         `${path}.properties.templateId`,
@@ -658,6 +770,93 @@ function checkFunctionCaptureReferences(
       );
     }
   });
+}
+
+function checkSurfaceLibraryCallReferences(document: ProjectDocument): void {
+  const calls = document.surfaceLibraryCalls ?? [];
+  if (calls.length === 0) return;
+  const ids = new Set<string>();
+  const elements = new Map(
+    document.geometry.elements.map((element) => [element.id, element]),
+  );
+  for (const [index, call] of calls.entries()) {
+    const path = `$.surfaceLibraryCalls[${index}]`;
+    if (ids.has(call.id)) {
+      throw new StructureError(`${path}.id`, `duplicate library call ${call.id}`);
+    }
+    ids.add(call.id);
+    const definition = standardLibraryFunction(call.templateId);
+    if (!definition) {
+      throw new StructureError(`${path}.templateId`, `unknown Standard Library template ${call.templateId}`);
+    }
+    const functionElement = elements.get(call.functionElementId);
+    if (
+      !functionElement ||
+      (functionElement.kind !== "function" &&
+        functionElement.kind !== "library_call")
+    ) {
+      throw new StructureError(`${path}.functionElementId`, `missing callable element ${call.functionElementId}`);
+    }
+    if (functionElement.properties.templateId !== call.templateId) {
+      throw new StructureError(`${path}.functionElementId`, `Function element does not reference ${call.templateId}`);
+    }
+    if (functionElement.kind === "function") {
+      if (!coreTypeEqual(functionElement.properties.parameterType, definition.parameterType)) {
+        throw new StructureError(`${path}.functionElementId`, `Function parameter type does not match ${call.templateId}`);
+      }
+      if (!coreTypeEqual(functionElement.properties.resultType, definition.templateResultType)) {
+        throw new StructureError(`${path}.functionElementId`, `Function result type does not match ${call.templateId}`);
+      }
+      if (functionElement.properties.captures.length !== 0) {
+        throw new StructureError(`${path}.functionElementId`, "Standard Library calls must be capture-free");
+      }
+    } else {
+      if (
+        functionElement.properties.library !== call.library ||
+        functionElement.properties.functionId !== call.functionId ||
+        functionElement.properties.version !== call.version
+      ) {
+        throw new StructureError(`${path}.functionElementId`, "Library call element metadata does not match surface call");
+      }
+    }
+    if (
+      functionElement.kind === "function" &&
+      call.applyElementIds.length !== definition.parameters.length
+    ) {
+      throw new StructureError(`${path}.applyElementIds`, `expected ${definition.parameters.length} Apply element(s)`);
+    }
+    if (functionElement.kind === "library_call" && call.applyElementIds.length !== 0) {
+      throw new StructureError(`${path}.applyElementIds`, "folded library calls must not store physical Apply element IDs");
+    }
+    const seenApplyIds = new Set<string>();
+    for (const [applyIndex, applyId] of call.applyElementIds.entries()) {
+      if (seenApplyIds.has(applyId)) {
+        throw new StructureError(`${path}.applyElementIds[${applyIndex}]`, `duplicate Apply element ${applyId}`);
+      }
+      seenApplyIds.add(applyId);
+      const apply = elements.get(applyId);
+      if (!apply || apply.kind !== "apply") {
+        throw new StructureError(`${path}.applyElementIds[${applyIndex}]`, `missing Apply element ${applyId}`);
+      }
+      const parameter = definition.parameters[applyIndex];
+      if (!parameter || !coreTypeEqual(apply.properties.parameterType, parameter.type)) {
+        throw new StructureError(`${path}.applyElementIds[${applyIndex}]`, `Apply parameter type does not match ${call.templateId}`);
+      }
+      let expectedResult = definition.resultType;
+      for (
+        let index = definition.parameters.length - 1;
+        index > applyIndex;
+        index -= 1
+      ) {
+        expectedResult = {
+          arrow: [definition.parameters[index]!.type, expectedResult],
+        };
+      }
+      if (!coreTypeEqual(apply.properties.resultType, expectedResult)) {
+        throw new StructureError(`${path}.applyElementIds[${applyIndex}]`, `Apply result type does not match ${call.templateId}`);
+      }
+    }
+  }
 }
 
 function surfaceConnectionAt(value: unknown, path: string): void {
@@ -940,6 +1139,12 @@ export function parseProjectJson(text: string): ProjectDocument {
           (value, index) =>
             surfaceFunctionAt(value, `$.surfaceFunctions[${index}]`),
         );
+  if (document.surfaceLibraryCalls !== undefined) {
+    arrayAt(document.surfaceLibraryCalls, "$.surfaceLibraryCalls").forEach(
+      (value, index) =>
+        surfaceLibraryCallAt(value, `$.surfaceLibraryCalls[${index}]`),
+    );
+  }
   if (document.surfaceConnections !== undefined) {
     arrayAt(document.surfaceConnections, "$.surfaceConnections").forEach(
       (value, index) =>
@@ -959,6 +1164,7 @@ export function parseProjectJson(text: string): ProjectDocument {
   checkFunctionCaptureReferences(elements, containers, wires);
   checkSurfaceFunctionReferences(surfaceFunctions, containers);
   checkSurfaceResourceFlowReferences(parsed as ProjectDocument);
+  checkSurfaceLibraryCallReferences(parsed as ProjectDocument);
   if (document.view !== undefined) {
     const view = objectAt(document.view, "$.view");
     integerAt(required(view, "cameraX", "$.view"), "$.view.cameraX");

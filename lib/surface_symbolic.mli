@@ -65,6 +65,8 @@ type contain = {
 type bind_kind =
   | Bind_parameter of endpoint
   | Bind_result of endpoint
+  | Bind_parameter_result
+  | Bind_capture_result of Core_graph.Port_key.t
   | Bind_capture of {
       capture_key : Core_graph.Port_key.t;
       target : endpoint;

@@ -1,6 +1,6 @@
 import exampleJson from "../../../examples/nat-succ.tilefold.json?raw";
 import { describe, expect, it } from "vitest";
-import { addFunctionTemplate, editTemplateCaptures } from "./editorOps";
+import { addFunctionCall, addFunctionTemplate, editTemplateCaptures } from "./editorOps";
 import { exportProjectJson, parseProjectJson, StructureError } from "./importProject";
 
 describe("Project JSON v1 import and export", () => {
@@ -174,6 +174,61 @@ describe("Project JSON v1 import and export", () => {
     expect(exported).not.toContain("selection");
     expect(exported).not.toContain('"drag"');
     expect(parseProjectJson(exported)).toEqual(project);
+  });
+
+  it("round-trips and validates Standard Library call metadata", () => {
+    const called = addFunctionCall(
+      parseProjectJson(exampleJson),
+      "entry",
+      "tilefold.std.nat.add",
+    );
+    if ("error" in called) throw new Error(called.error);
+    const roundTripped = parseProjectJson(exportProjectJson(called.document));
+    expect(roundTripped.surfaceLibraryCalls).toEqual(
+      called.document.surfaceLibraryCalls,
+    );
+
+    const wrongVersion = JSON.parse(exportProjectJson(called.document));
+    wrongVersion.surfaceLibraryCalls[0].version = "v999";
+    expect(() => parseProjectJson(JSON.stringify(wrongVersion))).toThrow(
+      "$.surfaceLibraryCalls[0].version",
+    );
+
+    const wrongFunction = JSON.parse(exportProjectJson(called.document));
+    wrongFunction.surfaceLibraryCalls[0].functionId = "nat.multiply";
+    expect(() => parseProjectJson(JSON.stringify(wrongFunction))).toThrow(
+      "$.surfaceLibraryCalls[0].functionId",
+    );
+
+    const missingApply = JSON.parse(exportProjectJson(called.document));
+    missingApply.surfaceLibraryCalls[0].applyElementIds = ["missing_apply"];
+    expect(() => parseProjectJson(JSON.stringify(missingApply))).toThrow(
+      "$.surfaceLibraryCalls[0].applyElementIds",
+    );
+
+    const missingSyntheticPort = JSON.parse(exportProjectJson(called.document));
+    const libraryElement = missingSyntheticPort.geometry.elements.find(
+      (element: { kind: string }) => element.kind === "library_call",
+    );
+    libraryElement.portAnchors = libraryElement.portAnchors.filter(
+      (anchor: { port: string }) => anchor.port !== "arg_1",
+    );
+    expect(() =>
+      parseProjectJson(JSON.stringify(missingSyntheticPort)),
+    ).toThrow("$.geometry.elements");
+
+    const extraSyntheticPort = JSON.parse(exportProjectJson(called.document));
+    const extraLibraryElement = extraSyntheticPort.geometry.elements.find(
+      (element: { kind: string }) => element.kind === "library_call",
+    );
+    extraLibraryElement.portAnchors.push({
+      port: "capture",
+      x: extraLibraryElement.bounds.x,
+      y: extraLibraryElement.bounds.y,
+    });
+    expect(() => parseProjectJson(JSON.stringify(extraSyntheticPort))).toThrow(
+      "$.geometry.elements",
+    );
   });
 
   it("rejects duplicate template capture keys", () => {

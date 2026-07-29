@@ -51,6 +51,7 @@ import type {
 } from "./model/portConnections";
 import {
   createBrowserExecutionBackend,
+  type ExecutionMode,
   isExecutionCanceledError,
   type ExecutionBackend,
 } from "./model/executionApi";
@@ -70,6 +71,7 @@ import {
   exampleProjectById,
   type ExampleProjectId,
 } from "./model/exampleProjects";
+import type { StandardLibraryFunction } from "./model/standardLibrary";
 
 const initialExample = EXAMPLE_PROJECTS[0];
 const initialDocument = parseProjectJson(initialExample.projectJson);
@@ -120,6 +122,14 @@ export function App() {
   const [executionState, setExecutionState] = useState<ExecutionState>({
     status: "idle",
   });
+  const [executionMode, setExecutionMode] =
+    useState<ExecutionMode>("transparent");
+  const [standardLibraryDefinition, setStandardLibraryDefinition] =
+    useState<{
+      definition: StandardLibraryFunction;
+      previousSelection: Selection | null;
+      previousViewBox: string;
+    } | null>(null);
   const executionRequest = useRef(0);
   const executionBackend = useRef<ExecutionBackend | null>(null);
   const executionAbort = useRef<AbortController | null>(null);
@@ -185,6 +195,7 @@ export function App() {
     invalidateExecution();
     setHistory(createEditorHistory(next));
     setSelection(null);
+    setStandardLibraryDefinition(null);
     setInspectorError(null);
     setViewBox(savedViewBox(next.view));
   }
@@ -225,6 +236,7 @@ export function App() {
       executionBackend.current ??= createBrowserExecutionBackend();
       const projectJson = exportProjectJson(document);
       const response = await executionBackend.current.run(projectJson, {
+        mode: executionMode,
         signal: controller.signal,
       });
       if (executionRequest.current !== request) return;
@@ -275,6 +287,7 @@ export function App() {
     }
     if (result.history === history) return null;
     setHistory(result.history);
+    setStandardLibraryDefinition(null);
     setInspectorError(null);
     invalidateExecution();
     return result.history.present;
@@ -458,6 +471,7 @@ export function App() {
       setInspectorError(`Template ${templateId} is not available.`);
       return;
     }
+    setStandardLibraryDefinition(null);
     setSelection({ type: "container", id: container.id });
     setHistory((current) => ({
       ...current,
@@ -478,6 +492,7 @@ export function App() {
       setInspectorError("Entry graph is not available.");
       return;
     }
+    setStandardLibraryDefinition(null);
     setSelection({ type: "container", id: container.id });
     setHistory((current) => ({
       ...current,
@@ -669,6 +684,11 @@ export function App() {
         onRedo={redo}
         onRun={runProject}
         onCancel={cancelExecution}
+        executionMode={executionMode}
+        onExecutionModeChange={(mode) => {
+          setExecutionMode(mode);
+          invalidateExecution();
+        }}
         running={executionState.status === "running"}
       />
       <div className="workspace">
@@ -834,7 +854,25 @@ export function App() {
           canDelete={selectionCanBeDeleted(selection)}
           onDelete={removeSelected}
           onFocusTemplate={focusTemplate}
+          onOpenStandardLibraryDefinition={(definition) => {
+            setStandardLibraryDefinition({
+              definition,
+              previousSelection: selection,
+              previousViewBox: viewBox,
+            });
+            setInspectorError(null);
+          }}
           onFocusEntry={focusEntry}
+          standardLibraryDefinition={
+            standardLibraryDefinition?.definition ?? null
+          }
+          onBackFromStandardLibraryDefinition={() => {
+            const previous = standardLibraryDefinition;
+            setStandardLibraryDefinition(null);
+            if (!previous) return;
+            setSelection(previous.previousSelection);
+            setViewBox(previous.previousViewBox);
+          }}
           onEditSignature={editSurfaceFunctionSignature}
           onEditCaptures={(edit) =>
             Boolean(runCommand({ type: "edit_template_captures", edit }))

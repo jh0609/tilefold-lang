@@ -29,6 +29,7 @@ import { exportProjectJson, parseProjectJson } from "./importProject";
 import { collectConnectablePorts } from "./portConnections";
 import { preflightProjectDiagnostics } from "./sourceDiagnostics";
 import type { ProjectElement } from "./project";
+import { STANDARD_LIBRARY_FUNCTIONS } from "./standardLibrary";
 
 function disconnectedPair() {
   let project = parseProjectJson(exampleJson);
@@ -878,10 +879,15 @@ describe("editor operations", () => {
     });
     if ("error" in authored) throw new Error(authored.error);
 
-    expect(callableFunctionTemplates(authored.document, "entry")).toEqual([
+    expect(
+      callableFunctionTemplates(authored.document, "entry").filter(
+        (template) => template.source === "project",
+      ),
+    ).toEqual([
       {
         templateId: "add_offset",
         displayName: "add_offset",
+        source: "project",
         parameters: [{ name: "value", type: "nat" }],
         resultName: "result",
         parameterType: "nat",
@@ -902,7 +908,7 @@ describe("editor operations", () => {
       resultType: "nat",
       captures: [{ key: "offset", type: "nat" }],
     });
-    expect(result.applyElement.properties).toEqual({
+    expect(result.applyElement!.properties).toEqual({
       parameterType: "nat",
       resultType: "nat",
     });
@@ -915,14 +921,14 @@ describe("editor operations", () => {
       result.document.geometry.wires.filter(
         (wire) =>
           wire.targetHint?.kind === "element_port" &&
-          wire.targetHint.elementId === result.applyElement.id,
+          wire.targetHint.elementId === result.applyElement!.id,
       ),
     ).toHaveLength(2);
     expect(
       result.document.geometry.wires.some(
         (wire) =>
           wire.sourceHint?.kind === "element_port" &&
-          wire.sourceHint.elementId === result.applyElement.id &&
+          wire.sourceHint.elementId === result.applyElement!.id &&
           wire.targetHint?.kind === "element_port",
       ),
     ).toBe(true);
@@ -942,7 +948,11 @@ describe("editor operations", () => {
       resultType: "nat",
     });
     if ("error" in authored) throw new Error(authored.error);
-    expect(callableFunctionTemplates(authored.document, "entry")).toEqual([
+    expect(
+      callableFunctionTemplates(authored.document, "entry").filter(
+        (template) => template.source === "project",
+      ),
+    ).toEqual([
       expect.objectContaining({
         templateId: "choose_right",
         displayName: "choose_right",
@@ -964,12 +974,105 @@ describe("editor operations", () => {
     expect(called.functionElement.portAnchors.map((anchor) => anchor.port)).toEqual([
       "value",
     ]);
-    expect(called.applyElement.portAnchors.map((anchor) => anchor.port)).toEqual([
+    expect(called.applyElement!.portAnchors.map((anchor) => anchor.port)).toEqual([
       "function",
       "argument",
       "result",
     ]);
   });
+
+  it("creates a folded Standard Library call element", () => {
+    const project = parseProjectJson(exampleJson);
+    const called = addFunctionCall(
+      project,
+      "entry",
+      "tilefold.std.nat.add",
+    );
+    if ("error" in called) throw new Error(called.error);
+    const applies = called.document.geometry.elements.filter(
+      (element) => element.kind === "apply",
+    );
+    expect(applies).toHaveLength(0);
+    expect(called.applyElement).toBeNull();
+    expect(called.functionElement).toMatchObject({
+      kind: "library_call",
+      properties: {
+        library: "tilefold.std",
+        functionId: "nat.add",
+        templateId: "tilefold.std.nat.add",
+        version: "v1",
+      },
+    });
+    expect(called.functionElement.portAnchors.map((anchor) => anchor.port)).toEqual([
+      "arg_0",
+      "arg_1",
+      "result",
+    ]);
+    expect(
+      called.document.geometry.elements.filter(
+        (element) => element.kind === "nat_literal",
+      ),
+    ).toHaveLength(3);
+    expect(called.document.surfaceLibraryCalls).toEqual([
+      {
+        id: "library_call_1",
+        library: "tilefold.std",
+        functionId: "nat.add",
+        templateId: "tilefold.std.nat.add",
+        version: "v1",
+        functionElementId: called.functionElement.id,
+        applyElementIds: [],
+      },
+    ]);
+    expect(() =>
+      parseProjectJson(exportProjectJson(called.document)),
+    ).not.toThrow();
+  });
+
+  it.each(STANDARD_LIBRARY_FUNCTIONS)(
+    "creates a signature-derived Standard Library call for $displayName",
+    (definition) => {
+      const project = parseProjectJson(exampleJson);
+      const called = addFunctionCall(project, "entry", definition.templateId);
+      if ("error" in called) throw new Error(called.error);
+      const metadata = called.document.surfaceLibraryCalls?.[0];
+      expect(metadata).toMatchObject({
+        library: "tilefold.std",
+        functionId: definition.functionId,
+        templateId: definition.templateId,
+        version: definition.version,
+      });
+      expect(metadata?.applyElementIds).toHaveLength(0);
+      const applies = called.document.geometry.elements.filter(
+        (element) =>
+          element.kind === "apply" &&
+          metadata?.applyElementIds.includes(element.id),
+      ) as Extract<ProjectElement, { kind: "apply" }>[];
+      expect(applies).toHaveLength(0);
+      expect(
+        called.document.geometry.elements.find(
+          (element) =>
+            element.kind === "library_call" &&
+            element.id === metadata?.functionElementId,
+        ),
+      ).toMatchObject({
+        kind: "library_call",
+        properties: {
+          library: definition.library,
+          functionId: definition.functionId,
+          templateId: definition.templateId,
+          version: definition.version,
+        },
+      });
+      expect(called.functionElement.portAnchors.map((anchor) => anchor.port)).toEqual([
+        ...definition.parameters.map((_parameter, index) => `arg_${index}`),
+        "result",
+      ]);
+      expect(parseProjectJson(exportProjectJson(called.document))).toEqual(
+        called.document,
+      );
+    },
+  );
 
   it("authors Arrow-typed function signatures and leaves Arrow call inputs explicit", () => {
     const project = parseProjectJson(exampleJson);
@@ -984,7 +1087,11 @@ describe("editor operations", () => {
     });
     if ("error" in authored) throw new Error(authored.error);
 
-    expect(callableFunctionTemplates(authored.document, "entry")).toEqual([
+    expect(
+      callableFunctionTemplates(authored.document, "entry").filter(
+        (template) => template.source === "project",
+      ),
+    ).toEqual([
       expect.objectContaining({
         templateId: "apply_once",
         parameters: [
@@ -999,6 +1106,10 @@ describe("editor operations", () => {
 
     const called = addFunctionCall(authored.document, "entry", "apply_once");
     if ("error" in called) throw new Error(called.error);
+    expect(called.functionElement.kind).toBe("function");
+    if (called.functionElement.kind !== "function") {
+      throw new Error("expected a project Function element");
+    }
     expect(called.functionElement.properties.captures).toEqual([]);
     expect(
       called.document.geometry.wires.some(
@@ -1012,7 +1123,7 @@ describe("editor operations", () => {
       called.document.geometry.wires.some(
         (wire) =>
           wire.targetHint?.kind === "element_port" &&
-          wire.targetHint.elementId === called.applyElement.id &&
+          wire.targetHint.elementId === called.applyElement!.id &&
           wire.targetHint.port === "argument",
       ),
     ).toBe(false);
@@ -1034,7 +1145,7 @@ describe("editor operations", () => {
       called.document.geometry.wires.some(
         (wire) =>
           wire.targetHint?.kind === "element_port" &&
-          wire.targetHint.elementId === called.applyElement.id &&
+          wire.targetHint.elementId === called.applyElement!.id &&
           wire.targetHint.port === "argument",
       ),
     ).toBe(false);
@@ -1064,7 +1175,7 @@ describe("editor operations", () => {
     const called = addFunctionCall(withoutStarter, "entry", "choose_right");
     if ("error" in called) throw new Error(called.error);
     const callFunction = called.functionElement;
-    const apply = called.applyElement;
+    const apply = called.applyElement!;
     const oldRightWire = called.document.geometry.wires.find(
       (wire) =>
         wire.targetHint?.kind === "element_port" &&

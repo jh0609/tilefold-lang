@@ -8,6 +8,7 @@ import type {
 } from "./project";
 export { coreTypeEqual } from "./coreTypes";
 import { coreTypeEqual } from "./coreTypes";
+import { standardLibraryFunction } from "./standardLibrary";
 
 export type PortDirection = "input" | "output";
 
@@ -100,6 +101,19 @@ function elementPortType(
       );
       return capture
         ? { direction: "input", type: capture.type }
+        : null;
+    }
+    case "library_call": {
+      const definition = standardLibraryFunction(element.properties.templateId);
+      if (!definition) return null;
+      const match = /^arg_(\d+)$/.exec(port);
+      if (match) {
+        const index = Number(match[1]);
+        const parameter = definition.parameters[index];
+        return parameter ? { direction: "input", type: parameter.type } : null;
+      }
+      return port === "result"
+        ? { direction: "output", type: definition.resultType }
         : null;
     }
   }

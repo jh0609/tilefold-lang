@@ -215,6 +215,15 @@ export function NodePalette({
   const selectedCallable = callableTemplates.find(
     (template) => template.templateId === callTemplateId,
   );
+  const standardLibraryTemplates = callableTemplates.filter(
+    (template) =>
+      template.source === "standard-library" &&
+      `Standard Library ${template.displayName} ${template.parameters
+        .map((parameter) => `${parameter.name} ${formatCoreType(parameter.type)}`)
+        .join(" ")} ${formatCoreType(template.resultType)}`
+        .toLowerCase()
+        .includes(normalizedQuery),
+  );
 
   function runAction(action: PaletteAction) {
     if (action.kind === "element") onAddElement(action.elementKind);
@@ -228,7 +237,10 @@ export function NodePalette({
       setAuthoringFunction(true);
     }
     if (action.kind === "call" && callableTemplates.length > 0) {
-      setCallTemplateId(callableTemplates[0]!.templateId);
+      setCallTemplateId(
+        callableTemplates.find((template) => template.source === "project")
+          ?.templateId ?? callableTemplates[0]!.templateId,
+      );
       setAuthoringCall(true);
     }
   }
@@ -630,11 +642,46 @@ export function NodePalette({
             </div>
           </section>
         ))}
-        {visibleGroups.length === 0 && (
+        {visibleGroups.length === 0 && standardLibraryTemplates.length === 0 && (
           <div className="palette-empty" role="status">
             <strong>No matching nodes</strong>
             <span>Try a type such as Nat, function, or linear.</span>
           </div>
+        )}
+        {standardLibraryTemplates.length > 0 && (
+          <section className="palette-group" aria-label="Standard Library">
+            <h3>Standard Library</h3>
+            <div className="palette-items">
+              {standardLibraryTemplates.map((template) => (
+                <button
+                  type="button"
+                  key={template.templateId}
+                  className="palette-item tone-call"
+                  aria-label={`Add Standard Library ${template.displayName}`}
+                  onClick={() => {
+                    onAddCall(template.templateId);
+                  }}
+                >
+                  <span className="palette-symbol" aria-hidden="true">
+                    std
+                  </span>
+                  <span className="palette-item-copy">
+                    <span className="palette-item-name">
+                      <strong>{template.displayName}</strong>
+                    </span>
+                    <code>
+                      {template.parameters
+                        .map((parameter) => formatCoreType(parameter.type))
+                        .join(" → ")}
+                      {" → "}
+                      {formatCoreType(template.resultType)}
+                    </code>
+                    <span>Immutable Standard Library call</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
         )}
       </div>
       <div className="palette-legend" aria-label="Port legend">

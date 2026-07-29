@@ -15,10 +15,10 @@ class FakeWorker {
     | null = null;
   onerror: ((event: ErrorEvent) => void) | null = null;
   onmessageerror: ((event: MessageEvent) => void) | null = null;
-  posted: { requestId: number; projectJson: string }[] = [];
+  posted: { requestId: number; projectJson: string; mode: string }[] = [];
   terminate = vi.fn();
 
-  postMessage(message: { requestId: number; projectJson: string }) {
+  postMessage(message: { requestId: number; projectJson: string; mode: string }) {
     this.posted.push(message);
   }
 
@@ -59,7 +59,26 @@ describe("browser execution backend", () => {
     });
     await expect(second).resolves.toMatchObject({ result: "Nat(2)" });
     expect(worker.posted.map(({ requestId }) => requestId)).toEqual([1, 2]);
+    expect(worker.posted.map(({ mode }) => mode)).toEqual([
+      "transparent",
+      "transparent",
+    ]);
     expect(worker.terminate).not.toHaveBeenCalled();
+  });
+
+  it("passes the selected execution mode to the worker", async () => {
+    const worker = new FakeWorker();
+    const backend = createBrowserExecutionBackend(() => worker);
+    const pending = backend.run("{}", { mode: "fast" });
+    worker.respond(1, {
+      status: "completed",
+      result: "Nat(3)",
+      rewriteCount: 1,
+      trace: [{ index: 0, rule: "FastCallCompleted(tilefold.std.nat.add@v1)", subject: "function_1" }],
+    });
+
+    await expect(pending).resolves.toMatchObject({ result: "Nat(3)" });
+    expect(worker.posted[0]).toMatchObject({ mode: "fast" });
   });
 
   it("terminates the worker and settles active work as cancellation", async () => {

@@ -18,6 +18,12 @@ type element_kind =
       result_type : Core_type.t;
       captures : (string * Core_type.t) list;
     }
+  | Library_call of {
+      library : string;
+      function_id : string;
+      template_id : string;
+      version : string;
+    }
   | Apply of { parameter_type : Core_type.t; result_type : Core_type.t }
   | NatRec of Core_type.t
 
@@ -385,6 +391,43 @@ let decode_element_kind path json =
       let* captures_json = field path "captures" fields in
       let* captures = decode_captures (path ^ ".captures") captures_json in
       Ok (Function { template_id; parameter_type; result_type; captures })
+  | "library_call" ->
+      let* () =
+        reject_unknown path [ "kind"; "library"; "functionId"; "templateId"; "version" ] fields
+      in
+      let* library_json = field path "library" fields in
+      let* library = string_at (path ^ ".library") library_json in
+      let* function_id_json = field path "functionId" fields in
+      let* function_id = string_at (path ^ ".functionId") function_id_json in
+      let* template_id_json = field path "templateId" fields in
+      let* template_id = string_at (path ^ ".templateId") template_id_json in
+      let* version_json = field path "version" fields in
+      let* version = string_at (path ^ ".version") version_json in
+      if not (String.equal library Standard_library.namespace) then
+        error (path ^ ".library") (Invalid_value ("unknown library " ^ library))
+      else (
+        match Standard_library.find_function template_id with
+        | None ->
+            error (path ^ ".templateId")
+              (Invalid_value ("unknown Standard Library template " ^ template_id))
+        | Some info ->
+            let expected_function_id =
+              match info.Standard_library.id with
+              | Standard_library.Add -> "nat.add"
+              | Standard_library.Multiply -> "nat.multiply"
+              | Standard_library.Double -> "nat.double"
+              | Standard_library.Square -> "nat.square"
+            in
+            if not (String.equal info.Standard_library.stable_id template_id) then
+              error (path ^ ".templateId")
+                (Invalid_value ("unknown Standard Library template " ^ template_id))
+            else if not (String.equal expected_function_id function_id) then
+              error (path ^ ".functionId")
+                (Invalid_value ("function ID does not match " ^ template_id))
+            else if not (String.equal version Standard_library.version) then
+              error (path ^ ".version")
+                (Invalid_value ("unsupported Standard Library version " ^ version))
+            else Ok (Library_call { library; function_id; template_id; version }))
   | value -> error (path ^ ".kind") (Invalid_value ("unknown element kind " ^ value))
 
 let decode_port_anchor path json =
@@ -644,6 +687,7 @@ let decode_json text =
         "geometry";
         "view";
         "surfaceFunctions";
+        "surfaceLibraryCalls";
         "currentContainerId";
         "surfaceConnections";
         "surfaceResourceFlows";
@@ -732,6 +776,15 @@ let json_element_kind = function
             ("parameterType", json_type parameter_type);
             ("resultType", json_type result_type);
             ("captures", `List (json_captures captures));
+          ] )
+  | Library_call { library; function_id; template_id; version } ->
+      ( "library_call",
+        `Assoc
+          [
+            ("library", `String library);
+            ("functionId", `String function_id);
+            ("templateId", `String template_id);
+            ("version", `String version);
           ] )
 
 let json_element (element : element) =
@@ -957,6 +1010,7 @@ let core_kind = function
               Ok
                 (C.Function
                    { template_id; parameter_type; result_type; captures })))
+  | Library_call _ -> Error ()
 
 let duplicate_values values =
   let sorted = List.sort String.compare values in
@@ -1019,7 +1073,32 @@ let validate document =
             captures
       | _ -> ());
       match core_kind element.kind with
-      | Error () -> ()
+      | Error () -> (
+          match element.kind with
+          | Library_call { template_id; _ } -> (
+              match Standard_library.find_function template_id with
+              | None -> ()
+              | Some info ->
+                  let expected =
+                    List.init (Standard_library.arity info.id)
+                      (fun index -> "arg_" ^ string_of_int index)
+                    @ [ "result" ]
+                    |> List.sort String.compare
+                  in
+                  let actual =
+                    element.port_anchors
+                    |> List.map (fun (anchor : port_anchor) -> anchor.port)
+                    |> List.sort String.compare
+                  in
+                  let invalid =
+                    expected <> actual || duplicate_values actual <> []
+                  in
+                  if invalid then
+                    let port = String.concat "," actual in
+                    add
+                      (Validation_error.Invalid_port_anchor
+                         { element_id = element.id; port }))
+          | _ -> ())
       | Ok kind ->
           let expected =
             C.ports_of_node_kind kind
@@ -1115,6 +1194,131 @@ let geometry_bounds (bounds : bounds) =
     bottom = bounds.y + bounds.height;
   }
 
+let point_of_anchor (anchor : port_anchor) = { G.x = anchor.at.x; y = anchor.at.y }
+
+let anchor_named anchors name =
+  List.find_opt (fun (anchor : port_anchor) -> String.equal anchor.port name) anchors
+
+let generated_bounds points =
+  let xs = List.map (fun point -> point.G.x) points in
+  let ys = List.map (fun point -> point.G.y) points in
+  let min_x = (List.fold_left min max_int xs) - 8 in
+  let max_x = (List.fold_left max min_int xs) + 8 in
+  let min_y = (List.fold_left min max_int ys) - 8 in
+  let max_y = (List.fold_left max min_int ys) + 8 in
+  { G.left = min_x; top = min_y; right = max_x; bottom = max_y }
+
+let generated_wire id source target =
+  { G.id = id; points = [ source; target ] }
+
+let standard_library_generated_scene (element : element) =
+  match element.kind with
+  | Library_call { template_id; _ } -> (
+      match Standard_library.find_function template_id with
+      | None -> ([], [])
+      | Some info -> (
+          match Standard_library.id_of_template_id (Standard_library.function_template_id info.id) with
+          | None -> ([], [])
+          | Some _ ->
+              let arity = Standard_library.arity info.id in
+              let result_anchor = anchor_named element.port_anchors "result" in
+              let argument_anchors =
+                List.init arity (fun index -> anchor_named element.port_anchors ("arg_" ^ string_of_int index))
+              in
+              if Option.is_none result_anchor || List.exists Option.is_none argument_anchors then
+                ([], [])
+              else
+                let result_point = point_of_anchor (Option.get result_anchor) in
+                let argument_points =
+                  argument_anchors
+                  |> List.map (fun value -> point_of_anchor (Option.get value))
+                in
+                let function_value =
+                  {
+                    G.x = element.bounds.x + 12;
+                    y = element.bounds.y + (element.bounds.height / 2);
+                  }
+                in
+                let function_input index =
+                  {
+                    G.x = element.bounds.x + 32 + (index * 22);
+                    y = element.bounds.y + 16 + (index * 10);
+                  }
+                in
+                let apply_result index =
+                  if index = arity - 1 then result_point
+                  else
+                    {
+                      G.x = element.bounds.x + element.bounds.width - 48 + (index * 8);
+                      y = element.bounds.y + 22 + (index * 14);
+                    }
+                in
+                let node_id suffix =
+                  match S.Element_id.of_string (element.id ^ "__std_" ^ suffix) with
+                  | Ok id -> id
+                  | Error _ -> assert false
+                in
+                let wire_id suffix =
+                  match G.Wire_id.of_string (element.id ^ "__std_" ^ suffix) with
+                  | Ok id -> id
+                  | Error _ -> assert false
+                in
+                let function_element =
+                  {
+                    G.id = node_id "function";
+                    kind =
+                      C.Function
+                        {
+                          template_id = Standard_library.function_template_id info.id;
+                          parameter_type = info.parameter_type;
+                          result_type = info.result_type;
+                          captures = [];
+                        };
+                    bounds = generated_bounds [ function_value ];
+                    ports = [ (C.Port_key.value, function_value) ];
+                  }
+                in
+                let apply_elements =
+                  argument_points
+                  |> List.mapi (fun index argument_point ->
+                         let function_point = function_input index in
+                         let result_point = apply_result index in
+                         let result_type =
+                           if index = arity - 1 then Core_type.Nat
+                           else Core_type.Arrow (Core_type.Nat, Core_type.Nat)
+                         in
+                         {
+                           G.id = node_id ("apply_" ^ string_of_int index);
+                           kind =
+                             C.Apply
+                               {
+                                 apply_parameter_type = Core_type.Nat;
+                                 apply_result_type = result_type;
+                               };
+                           bounds =
+                             generated_bounds
+                               [ function_point; argument_point; result_point ];
+                           ports =
+                             [
+                               (C.Port_key.function_input, function_point);
+                               (C.Port_key.argument, argument_point);
+                               (C.Port_key.result, result_point);
+                             ];
+                         })
+                in
+                let internal_wires =
+                  argument_points
+                  |> List.mapi (fun index _ ->
+                         let source =
+                           if index = 0 then function_value else apply_result (index - 1)
+                         in
+                         generated_wire
+                           (wire_id ("wire_function_" ^ string_of_int index))
+                           source (function_input index))
+                in
+                (function_element :: apply_elements, internal_wires)))
+  | _ -> ([], [])
+
 let to_raw_scene document =
   let conversion_errors = ref [] in
   let invalid id message =
@@ -1122,6 +1326,14 @@ let to_raw_scene document =
   in
   let id convert value =
     match convert value with Ok value -> Some value | Error message -> invalid value message; None
+  in
+  let expanded_library_elements, expanded_library_wires =
+    document.elements
+    |> List.map standard_library_generated_scene
+    |> List.fold_left
+         (fun (elements, wires) (next_elements, next_wires) ->
+           (elements @ next_elements, wires @ next_wires))
+         ([], [])
   in
   let core_elements =
     document.elements
@@ -1137,6 +1349,7 @@ let to_raw_scene document =
                in
                Some { G.id = element_id; kind; bounds = geometry_bounds element.bounds; ports }
            | _ -> None)
+    |> fun elements -> elements @ expanded_library_elements
   in
   let captures_of_container (container : container) =
     container.boundary_ports
@@ -1238,6 +1451,7 @@ let to_raw_scene document =
                      wire.points;
                })
              (id G.Wire_id.of_string wire.id))
+    |> fun wires -> wires @ expanded_library_wires
   in
   let core_junctions =
     document.junctions

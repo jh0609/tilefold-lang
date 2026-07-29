@@ -880,6 +880,62 @@ let infer_relations scene snapped_wires =
           }
           :: binds,
           errors )
+    | Boundary { container_id = source_container; role = Boundary_parameter; _ },
+      Boundary { container_id = target_container; role = Boundary_result; _ } ->
+        if not (SS.Container_id.equal source_container target_container) then
+          ( connects,
+            binds,
+            Cross_container_wire_without_bind
+              {
+                wire_id = snapped.wire.id;
+                source_container;
+                target_container;
+              }
+            :: errors )
+        else
+          let relation_id =
+            make_id "bind"
+              [
+                SS.Container_id.to_string source_container;
+                role_to_string Boundary_parameter;
+                role_to_string Boundary_result;
+                Wire_id.to_string snapped.wire.id;
+              ]
+          in
+          ( connects,
+            { SS.relation_id; container_id = source_container; kind = SS.Bind_parameter_result }
+            :: binds,
+            errors )
+    | Boundary { container_id = source_container; role = Boundary_capture capture_key; _ },
+      Boundary { container_id = target_container; role = Boundary_result; _ } ->
+        if not (SS.Container_id.equal source_container target_container) then
+          ( connects,
+            binds,
+            Cross_container_wire_without_bind
+              {
+                wire_id = snapped.wire.id;
+                source_container;
+                target_container;
+              }
+            :: errors )
+        else
+          let relation_id =
+            make_id "bind"
+              [
+                SS.Container_id.to_string source_container;
+                role_to_string (Boundary_capture capture_key);
+                role_to_string Boundary_result;
+                Wire_id.to_string snapped.wire.id;
+              ]
+          in
+          ( connects,
+            {
+              SS.relation_id;
+              container_id = source_container;
+              kind = SS.Bind_capture_result capture_key;
+            }
+            :: binds,
+            errors )
     | Element_port { element_id; port_key; _ }, Boundary { container_id; role = Boundary_result; _ } ->
         let relation_id =
           make_id "bind"

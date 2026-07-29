@@ -32,7 +32,7 @@ function callableProject() {
   }).document;
   const called = addFunctionCall(withoutStarter, "entry", "choose_right");
   if ("error" in called) throw new Error(called.error);
-  return { ...called, container: authored.container };
+  return { ...called, applyElement: called.applyElement!, container: authored.container };
 }
 
 describe("source-mapped diagnostics", () => {
@@ -133,7 +133,7 @@ describe("source-mapped diagnostics", () => {
       summary: 'Call "apply_once" is missing a value for argument "f".',
       primarySource: {
         kind: "element",
-        elementId: called.applyElement.id,
+        elementId: called.applyElement!.id,
         port: "argument",
       },
     });

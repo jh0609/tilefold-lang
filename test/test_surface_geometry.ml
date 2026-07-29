@@ -364,6 +364,64 @@ let () =
   assert_scene_fixture ~expect_rule:"ApplyEnter" "nested-containment"
     (nested_containment_scene ()) "Nat" "Nat(7)"
 
+let capture_to_result_scene () =
+  let capture = { key = pk "predecessor"; typ = Core_type.Nat } in
+  let template_id = tid "capture-return-template" in
+  scene
+    [
+      entry ~dependencies:[ template_id ] "entry" Core_type.Nat (b 0 0 420 180);
+      template ~captures:[ capture ] "capture-return" Core_type.Nat Core_type.Nat
+        (b 40 220 340 340);
+    ]
+    [
+      element "entry-unit-drop" (Drop Core_type.Unit) (b 20 20 40 40)
+        [ ("input", p 20 30) ];
+      element "captured-value" (Nat_literal (nat "5")) (b 70 70 100 100)
+        [ ("value", p 100 85) ];
+      element "function"
+        (Function
+           {
+             template_id;
+             parameter_type = Core_type.Nat;
+             result_type = Core_type.Nat;
+             captures = [ capture ];
+           })
+        (b 150 55 210 105)
+        [ ("predecessor", p 150 70); ("value", p 210 85) ];
+      element "argument" (Nat_literal (nat "9")) (b 120 120 150 150)
+        [ ("value", p 150 135) ];
+      element "apply"
+        (Apply { apply_parameter_type = Core_type.Nat; apply_result_type = Core_type.Nat })
+        (b 250 70 310 130)
+        [ ("function", p 250 85); ("argument", p 250 115); ("result", p 310 100) ];
+      element "accumulator-drop" (Drop Core_type.Nat) (b 80 250 110 280)
+        [ ("input", p 80 265) ];
+    ]
+    [
+      boundary "entry-param" "entry" G.Boundary_parameter Core_type.Unit (p 0 30);
+      boundary "entry-result" "entry" G.Boundary_result Core_type.Nat (p 420 100);
+      boundary "inner-param" "capture-return" G.Boundary_parameter Core_type.Nat
+        (p 40 265);
+      boundary "inner-capture" "capture-return"
+        (G.Boundary_capture capture.key) Core_type.Nat (p 40 310);
+      boundary "inner-result" "capture-return" G.Boundary_result Core_type.Nat
+        (p 340 310);
+    ]
+    [
+      wire "w-entry-param" [ p 0 30; p 20 30 ];
+      wire "w-capture-function" [ p 100 85; p 150 70 ];
+      wire "w-function-apply" [ p 210 85; p 250 85 ];
+      wire "w-argument-apply" [ p 150 135; p 250 115 ];
+      wire "w-entry-result" [ p 310 100; p 420 100 ];
+      wire "w-inner-param" [ p 40 265; p 80 265 ];
+      wire "auto_rf_consumer_wire_capture_to_result" [ p 40 310; p 340 310 ];
+    ]
+    []
+
+let () =
+  assert_scene_fixture ~expect_rule:"ApplyEnter" "capture-boundary-to-result"
+    (capture_to_result_scene ()) "Nat" "Nat(5)"
+
 let crossing_scene () =
   scene
     [ entry "entry" Core_type.Nat (b 0 0 240 140) ]

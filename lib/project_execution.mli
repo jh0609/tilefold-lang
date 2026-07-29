@@ -3,3 +3,4 @@
     serialization format. *)
 
 val run_json : string -> string
+val run_json_with_mode : string -> mode:string -> string

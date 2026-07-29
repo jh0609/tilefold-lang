@@ -320,9 +320,16 @@
 }
 
 .kind-function > .element-body,
+.kind-library_call > .element-body,
 .kind-apply > .element-body {
   fill: #f2edfb;
   stroke: var(--call);
+}
+
+.standard-library-call > .element-body {
+  fill: #eef4ff;
+  stroke: #2e64d4;
+  stroke-dasharray: 7 4;
 }
 
 .element-kind {
@@ -337,6 +344,13 @@
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 9px;
   font-weight: 650;
+  pointer-events: none;
+}
+
+.element-library-source {
+  fill: #2e64d4;
+  font-size: 8px;
+  font-weight: 750;
   pointer-events: none;
 }
 

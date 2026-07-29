@@ -2,6 +2,7 @@
 
 interface Runner {
   runProjectJson(projectJson: string): string;
+  runProjectJsonWithMode?: (projectJson: string, mode: string) => string;
 }
 
 interface RunnerScope extends DedicatedWorkerGlobalScope {
@@ -22,16 +23,20 @@ try {
 }
 
 workerScope.onmessage = (
-  event: MessageEvent<{ requestId: number; projectJson: string }>,
+  event: MessageEvent<{ requestId: number; projectJson: string; mode?: string }>,
 ) => {
-  const { requestId, projectJson } = event.data;
+  const { requestId, projectJson, mode = "transparent" } = event.data;
   try {
     if (!workerScope.TilefoldRunner) {
       throw new Error("OCaml runner is unavailable.");
     }
+    const output =
+      mode === "transparent" || !workerScope.TilefoldRunner.runProjectJsonWithMode
+        ? workerScope.TilefoldRunner.runProjectJson(projectJson)
+        : workerScope.TilefoldRunner.runProjectJsonWithMode(projectJson, mode);
     workerScope.postMessage({
       requestId,
-      output: workerScope.TilefoldRunner.runProjectJson(projectJson),
+      output,
     });
   } catch (error) {
     workerScope.postMessage({

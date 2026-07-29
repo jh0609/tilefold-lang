@@ -10,6 +10,7 @@ module Project_document = Project_document
 module Project_execution = Project_execution
 module Rewrite_event = Rewrite_event
 module Runtime_value = Runtime_value
+module Standard_library = Standard_library
 module Surface_geometry = Surface_geometry
 module Surface_symbolic = Surface_symbolic
 

@@ -16,6 +16,10 @@ import {
 } from "../model/editorOps";
 import { wireEndpointAvailability } from "../model/portConnections";
 import { formatCoreType } from "../model/coreTypes";
+import {
+  standardLibraryFunction,
+  type StandardLibraryFunction,
+} from "../model/standardLibrary";
 import { CoreTypeEditor } from "./CoreTypeEditor";
 
 interface InspectorProps {
@@ -33,7 +37,10 @@ interface InspectorProps {
   canDelete: boolean;
   onDelete: () => void;
   onFocusTemplate: (templateId: string) => void;
+  onOpenStandardLibraryDefinition: (definition: StandardLibraryFunction) => void;
   onFocusEntry: () => void;
+  standardLibraryDefinition: StandardLibraryFunction | null;
+  onBackFromStandardLibraryDefinition: () => void;
   onEditSignature: (edit: SurfaceFunctionSignatureEdit) => boolean;
   onEditCaptures: (edit: TemplateCapturesEdit) => boolean;
   onFitContainer: (id: string) => void;
@@ -573,6 +580,7 @@ function ElementInspector({
   onElementTypeChange,
   onApplyTypesChange,
   onFocusTemplate,
+  onOpenStandardLibraryDefinition,
   onError,
 }: {
   element: ProjectElement;
@@ -587,6 +595,7 @@ function ElementInspector({
     resultType: CoreType,
   ) => void;
   onFocusTemplate: (templateId: string) => void;
+  onOpenStandardLibraryDefinition: (definition: StandardLibraryFunction) => void;
   onError: (error: string | null) => void;
 }) {
   const natValue =
@@ -681,8 +690,14 @@ function ElementInspector({
       {element.kind === "function" && (
         <section className="readout">
           <h3>Function template</h3>
+          {standardLibraryFunction(element.properties.templateId) && (
+            <span className="read-only-label">Standard Library · read only</span>
+          )}
           <code>
-            {surfaceFunction?.name ?? element.properties.templateId}
+            {surfaceFunction?.name ??
+              standardLibraryFunction(element.properties.templateId)
+                ?.displayName ??
+              element.properties.templateId}
           </code>
           {surfaceFunction && (
             <span>
@@ -709,14 +724,65 @@ function ElementInspector({
             The signature is owned by the template container and is read only
             on this closure.
           </p>
-          <button
-            type="button"
-            onClick={() =>
-              onFocusTemplate(element.properties.templateId)
-            }
-          >
-            Open template {element.properties.templateId}
-          </button>
+          {standardLibraryFunction(element.properties.templateId) ? (
+            <button
+              type="button"
+              onClick={() =>
+                onOpenStandardLibraryDefinition(
+                  standardLibraryFunction(element.properties.templateId)!,
+                )
+              }
+            >
+              Open Standard Library definition{" "}
+              {standardLibraryFunction(element.properties.templateId)?.displayName}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() =>
+                onFocusTemplate(element.properties.templateId)
+              }
+            >
+              Open template {element.properties.templateId}
+            </button>
+          )}
+        </section>
+      )}
+      {element.kind === "library_call" && (
+        <section className="readout">
+          <h3>Standard Library call</h3>
+          <span className="read-only-label">Standard Library · folded call</span>
+          <code>
+            {standardLibraryFunction(element.properties.templateId)
+              ?.displayName ?? element.properties.templateId}
+          </code>
+          <span>
+            {standardLibraryFunction(element.properties.templateId)?.parameters
+              .map((parameter) => formatCoreType(parameter.type))
+              .join(" · ")}{" "}
+            {"->"}{" "}
+            {formatCoreType(
+              standardLibraryFunction(element.properties.templateId)
+                ?.resultType ?? "unit",
+            )}
+          </span>
+          <p className="limitation">
+            This Surface call expands to the immutable Standard Library Core
+            definition during execution.
+          </p>
+          {standardLibraryFunction(element.properties.templateId) && (
+            <button
+              type="button"
+              onClick={() =>
+                onOpenStandardLibraryDefinition(
+                  standardLibraryFunction(element.properties.templateId)!,
+                )
+              }
+            >
+              Open Standard Library definition{" "}
+              {standardLibraryFunction(element.properties.templateId)?.displayName}
+            </button>
+          )}
         </section>
       )}
       <section className="readout">
@@ -758,7 +824,10 @@ export function Inspector({
   canDelete,
   onDelete,
   onFocusTemplate,
+  onOpenStandardLibraryDefinition,
   onFocusEntry,
+  standardLibraryDefinition,
+  onBackFromStandardLibraryDefinition,
   onEditSignature,
   onEditCaptures,
   onFitContainer,
@@ -779,7 +848,39 @@ export function Inspector({
       </p>
     </div>
   );
-  if (selection?.type === "element") {
+  if (standardLibraryDefinition) {
+    content = (
+      <>
+        <div className="inspector-heading">
+          <span className="kind-chip">standard library</span>
+          <h2>{standardLibraryDefinition.displayName}</h2>
+          <span className="read-only-label">Immutable definition · read only</span>
+        </div>
+        <section className="readout">
+          <h3>Signature</h3>
+          <span>
+            {standardLibraryDefinition.parameters
+              .map((parameter) => formatCoreType(parameter.type))
+              .join(" -> ")}{" "}
+            {"->"} {formatCoreType(standardLibraryDefinition.resultType)}
+          </span>
+          <code>
+            {standardLibraryDefinition.library}/
+            {standardLibraryDefinition.functionId}@
+            {standardLibraryDefinition.version}
+          </code>
+        </section>
+        <p className="limitation">
+          This definition is supplied by Tilefold and is not copied into the
+          project. Transparent execution lowers it to ordinary Core templates;
+          fast execution evaluates the verified Standard Library identity.
+        </p>
+        <button type="button" onClick={onBackFromStandardLibraryDefinition}>
+          Back to call
+        </button>
+      </>
+    );
+  } else if (selection?.type === "element") {
     const element = document.geometry.elements.find(
       (candidate) => candidate.id === selection.id,
     );
@@ -810,6 +911,7 @@ export function Inspector({
           onElementTypeChange={onElementTypeChange}
           onApplyTypesChange={onApplyTypesChange}
           onFocusTemplate={onFocusTemplate}
+          onOpenStandardLibraryDefinition={onOpenStandardLibraryDefinition}
           onError={onError}
         />
       );
