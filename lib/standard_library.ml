@@ -13,6 +13,11 @@ type function_id =
   | Not
   | And
   | Or
+  | Equal
+  | LessThan
+  | LessOrEqual
+  | Min
+  | Max
 
 type function_info = {
   id : function_id;
@@ -28,6 +33,7 @@ let version = "v1"
 let bool = Core_type.Bool
 let nat = Core_type.Nat
 let nat_to_nat = Core_type.Arrow (nat, nat)
+let nat_to_bool = Core_type.Arrow (nat, bool)
 let bool_to_bool = Core_type.Arrow (bool, bool)
 
 let stable_id = function
@@ -41,6 +47,11 @@ let stable_id = function
   | Not -> "tilefold.std.bool.not"
   | And -> "tilefold.std.bool.and"
   | Or -> "tilefold.std.bool.or"
+  | Equal -> "tilefold.std.nat.equal"
+  | LessThan -> "tilefold.std.nat.lessThan"
+  | LessOrEqual -> "tilefold.std.nat.lessOrEqual"
+  | Min -> "tilefold.std.nat.min"
+  | Max -> "tilefold.std.nat.max"
 
 let display_name = function
   | Add -> "add"
@@ -53,6 +64,11 @@ let display_name = function
   | Not -> "not"
   | And -> "and"
   | Or -> "or"
+  | Equal -> "equal"
+  | LessThan -> "lessThan"
+  | LessOrEqual -> "lessOrEqual"
+  | Min -> "min"
+  | Max -> "max"
 
 let function_template_id id =
   match CG.Function_template_id.of_string (stable_id id) with
@@ -69,10 +85,30 @@ let info id =
     | IsZero -> (nat, bool)
     | Not -> (bool, bool)
     | And | Or -> (bool, bool_to_bool)
+    | Equal | LessThan | LessOrEqual -> (nat, nat_to_bool)
+    | Min | Max -> (nat, nat_to_nat)
   in
   { id; stable_id = stable_id id; display_name = display_name id; version; parameter_type; result_type }
 
-let functions = List.map info [ Add; Multiply; Double; Square; Pred; Subtract; IsZero; Not; And; Or ]
+let functions =
+  List.map info
+    [
+      Add;
+      Multiply;
+      Double;
+      Square;
+      Pred;
+      Subtract;
+      IsZero;
+      Not;
+      And;
+      Or;
+      Equal;
+      LessThan;
+      LessOrEqual;
+      Min;
+      Max;
+    ]
 let find_function stable_id = List.find_opt (fun item -> String.equal item.stable_id stable_id) functions
 
 let id_of_template_id template_id =
@@ -84,7 +120,7 @@ let id_of_template_id template_id =
     functions
 
 let arity = function
-  | Add | Multiply | Subtract | And | Or -> 2
+  | Add | Multiply | Subtract | And | Or | Equal | LessThan | LessOrEqual | Min | Max -> 2
   | Double | Square | Pred | IsZero | Not -> 1
 
 let add_nat left right =
@@ -112,6 +148,10 @@ let evaluate_nat id args =
   | Subtract, [ left; right ] ->
       let result = Z.sub (Nat.to_z left) (Nat.to_z right) in
       if Z.sign result <= 0 then Ok Nat.zero else nat_result (Nat.of_z result)
+  | Min, [ left; right ] ->
+      if Z.leq (Nat.to_z left) (Nat.to_z right) then Ok left else Ok right
+  | Max, [ left; right ] ->
+      if Z.leq (Nat.to_z left) (Nat.to_z right) then Ok right else Ok left
   | _ -> Error "Standard Library evaluator received the wrong arity"
 
 let expect_nat = function
@@ -132,7 +172,7 @@ let collect_inputs expect args =
 
 let evaluate id args =
   match id with
-  | Add | Multiply | Double | Square | Pred | Subtract -> (
+  | Add | Multiply | Double | Square | Pred | Subtract | Min | Max -> (
       match collect_inputs expect_nat args with
       | Error _ as error -> error
       | Ok nat_args -> Result.map (fun value -> Runtime_value.Nat value) (evaluate_nat id nat_args))
@@ -161,6 +201,27 @@ let evaluate id args =
           let* left = expect_bool left in
           let* right = expect_bool right in
           Ok (Runtime_value.Bool (left || right))
+      | _ -> Error "Standard Library evaluator received the wrong arity")
+  | Equal -> (
+      match args with
+      | [ left; right ] ->
+          let* left = expect_nat left in
+          let* right = expect_nat right in
+          Ok (Runtime_value.Bool (Nat.equal left right))
+      | _ -> Error "Standard Library evaluator received the wrong arity")
+  | LessOrEqual -> (
+      match args with
+      | [ left; right ] ->
+          let* left = expect_nat left in
+          let* right = expect_nat right in
+          Ok (Runtime_value.Bool (Z.leq (Nat.to_z left) (Nat.to_z right)))
+      | _ -> Error "Standard Library evaluator received the wrong arity")
+  | LessThan -> (
+      match args with
+      | [ left; right ] ->
+          let* left = expect_nat left in
+          let* right = expect_nat right in
+          Ok (Runtime_value.Bool (Z.lt (Nat.to_z left) (Nat.to_z right)))
       | _ -> Error "Standard Library evaluator received the wrong arity")
 
 let node_id value =
@@ -446,6 +507,57 @@ let unary_call_template id target =
   CG.Function_template.create ~dependencies:[ CG.Function_template.id target ]
     ~id:(function_template_id id) ~parameter_type:nat ~result_type:nat
     ~captures:[] ~body ()
+
+let unary_std_call prefix target argument_source argument_type result_type =
+  let function_node_id = prefix ^ "-function" in
+  let apply_node_id = prefix ^ "-apply" in
+  let nodes =
+    [
+      node function_node_id (CG.Function (function_signature target []));
+      node apply_node_id (CG.Apply { apply_parameter_type = argument_type; apply_result_type = result_type });
+    ]
+  in
+  let result_source = { CG.node_id = node_id apply_node_id; port_key = CG.Port_key.result } in
+  let edges =
+    [
+      edge ("e-" ^ prefix ^ "-function")
+        (pref function_node_id "value")
+        { CG.node_id = node_id apply_node_id; port_key = CG.Port_key.function_input };
+      edge ("e-" ^ prefix ^ "-argument") argument_source
+        { CG.node_id = node_id apply_node_id; port_key = CG.Port_key.argument };
+    ]
+  in
+  (nodes, edges, result_source)
+
+let binary_std_call prefix target left_source right_source argument_type mid_type result_type =
+  let function_node_id = prefix ^ "-function" in
+  let apply_left_id = prefix ^ "-apply-left" in
+  let apply_right_id = prefix ^ "-apply-right" in
+  let nodes =
+    [
+      node function_node_id (CG.Function (function_signature target []));
+      node apply_left_id
+        (CG.Apply { apply_parameter_type = argument_type; apply_result_type = mid_type });
+      node apply_right_id
+        (CG.Apply { apply_parameter_type = argument_type; apply_result_type = result_type });
+    ]
+  in
+  let left_result = { CG.node_id = node_id apply_left_id; port_key = CG.Port_key.result } in
+  let final_result = { CG.node_id = node_id apply_right_id; port_key = CG.Port_key.result } in
+  let edges =
+    [
+      edge ("e-" ^ prefix ^ "-function")
+        (pref function_node_id "value")
+        { CG.node_id = node_id apply_left_id; port_key = CG.Port_key.function_input };
+      edge ("e-" ^ prefix ^ "-left") left_source
+        { CG.node_id = node_id apply_left_id; port_key = CG.Port_key.argument };
+      edge ("e-" ^ prefix ^ "-left-result") left_result
+        { CG.node_id = node_id apply_right_id; port_key = CG.Port_key.function_input };
+      edge ("e-" ^ prefix ^ "-right") right_source
+        { CG.node_id = node_id apply_right_id; port_key = CG.Port_key.argument };
+    ]
+  in
+  (nodes, edges, final_result)
 
 let pred_step_inner_template () =
   let predecessor = { CG.key = port_key "predecessor"; typ = nat } in
@@ -774,6 +886,246 @@ let binary_bool_template id =
   in
   (inner, outer)
 
+let binary_nat_outer_template id inner result_type =
+  let left_capture = { CG.key = port_key "a"; typ = nat } in
+  let nodes =
+    [
+      node "a" (CG.Parameter nat);
+      node "inner-function" (CG.Function (function_signature inner [ left_capture ]));
+      node "result" (CG.Result (Core_type.Arrow (nat, result_type)));
+    ]
+  in
+  let edges =
+    [
+      edge "e-a-capture" (pref "a" "value") { CG.node_id = node_id "inner-function"; port_key = left_capture.key };
+      edge "e-inner-result" (pref "inner-function" "value") (pref "result" "value");
+    ]
+  in
+  let body =
+    CG.Raw_graph.of_lists ~nodes ~edges ~default_node_order:[ node_id "inner-function" ]
+    |> validate_graph_with_templates_or_fail [ inner ]
+  in
+  CG.Function_template.create ~dependencies:[ CG.Function_template.id inner ]
+    ~id:(function_template_id id) ~parameter_type:nat
+    ~result_type:(Core_type.Arrow (nat, result_type))
+    ~captures:[] ~body ()
+
+let less_or_equal_inner_template subtract iszero =
+  let left_capture = { CG.key = port_key "a"; typ = nat } in
+  let subtract_nodes, subtract_edges, subtract_result =
+    binary_std_call "subtract" subtract (pref "a" "value") (pref "b" "value") nat nat_to_nat nat
+  in
+  let iszero_nodes, iszero_edges, iszero_result =
+    unary_std_call "iszero" iszero subtract_result nat bool
+  in
+  let nodes =
+    [ node "b" (CG.Parameter nat); node "a" (CG.Capture left_capture); node "result" (CG.Result bool) ]
+    @ subtract_nodes @ iszero_nodes
+  in
+  let edges =
+    subtract_edges @ iszero_edges
+    @ [ edge "e-iszero-result" iszero_result (pref "result" "value") ]
+  in
+  let body =
+    CG.Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:
+        [
+          node_id "subtract-function";
+          node_id "subtract-apply-left";
+          node_id "subtract-apply-right";
+          node_id "iszero-function";
+          node_id "iszero-apply";
+        ]
+    |> validate_graph_with_templates_or_fail [ subtract; iszero ]
+  in
+  CG.Function_template.create ~dependencies:[ CG.Function_template.id subtract; CG.Function_template.id iszero ]
+    ~id:(internal_id "less-or-equal-inner") ~parameter_type:nat ~result_type:bool
+    ~captures:[ left_capture ] ~body ()
+
+let equal_inner_template subtract iszero and_ =
+  let left_capture = { CG.key = port_key "a"; typ = nat } in
+  let nodes_prefix =
+    [
+      node "b" (CG.Parameter nat);
+      node "a" (CG.Capture left_capture);
+      node "copy-a" (CG.Copy nat);
+      node "copy-b" (CG.Copy nat);
+      node "result" (CG.Result bool);
+    ]
+  in
+  let edges_prefix =
+    [
+      edge "e-a-copy" (pref "a" "value") (pref "copy-a" "input");
+      edge "e-b-copy" (pref "b" "value") (pref "copy-b" "input");
+    ]
+  in
+  let sub_ab_nodes, sub_ab_edges, sub_ab_result =
+    binary_std_call "subtract-ab" subtract (pref "copy-a" "left") (pref "copy-b" "left") nat nat_to_nat nat
+  in
+  let sub_ba_nodes, sub_ba_edges, sub_ba_result =
+    binary_std_call "subtract-ba" subtract (pref "copy-b" "right") (pref "copy-a" "right") nat nat_to_nat nat
+  in
+  let zero_ab_nodes, zero_ab_edges, zero_ab_result =
+    unary_std_call "iszero-ab" iszero sub_ab_result nat bool
+  in
+  let zero_ba_nodes, zero_ba_edges, zero_ba_result =
+    unary_std_call "iszero-ba" iszero sub_ba_result nat bool
+  in
+  let and_nodes, and_edges, and_result =
+    binary_std_call "and" and_ zero_ab_result zero_ba_result bool bool_to_bool bool
+  in
+  let nodes =
+    nodes_prefix @ sub_ab_nodes @ sub_ba_nodes @ zero_ab_nodes @ zero_ba_nodes @ and_nodes
+  in
+  let edges =
+    edges_prefix @ sub_ab_edges @ sub_ba_edges @ zero_ab_edges @ zero_ba_edges @ and_edges
+    @ [ edge "e-and-result" and_result (pref "result" "value") ]
+  in
+  let body =
+    CG.Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:
+        [
+          node_id "copy-a";
+          node_id "copy-b";
+          node_id "subtract-ab-function";
+          node_id "subtract-ab-apply-left";
+          node_id "subtract-ab-apply-right";
+          node_id "subtract-ba-function";
+          node_id "subtract-ba-apply-left";
+          node_id "subtract-ba-apply-right";
+          node_id "iszero-ab-function";
+          node_id "iszero-ab-apply";
+          node_id "iszero-ba-function";
+          node_id "iszero-ba-apply";
+          node_id "and-function";
+          node_id "and-apply-left";
+          node_id "and-apply-right";
+        ]
+    |> validate_graph_with_templates_or_fail [ subtract; iszero; and_ ]
+  in
+  CG.Function_template.create
+    ~dependencies:[ CG.Function_template.id subtract; CG.Function_template.id iszero; CG.Function_template.id and_ ]
+    ~id:(internal_id "equal-inner") ~parameter_type:nat ~result_type:bool
+    ~captures:[ left_capture ] ~body ()
+
+let less_than_inner_template less_or_equal equal not_ and_ =
+  let left_capture = { CG.key = port_key "a"; typ = nat } in
+  let nodes_prefix =
+    [
+      node "b" (CG.Parameter nat);
+      node "a" (CG.Capture left_capture);
+      node "copy-a" (CG.Copy nat);
+      node "copy-b" (CG.Copy nat);
+      node "result" (CG.Result bool);
+    ]
+  in
+  let edges_prefix =
+    [
+      edge "e-a-copy" (pref "a" "value") (pref "copy-a" "input");
+      edge "e-b-copy" (pref "b" "value") (pref "copy-b" "input");
+    ]
+  in
+  let le_nodes, le_edges, le_result =
+    binary_std_call "less-or-equal" less_or_equal (pref "copy-a" "left") (pref "copy-b" "left") nat nat_to_bool bool
+  in
+  let equal_nodes, equal_edges, equal_result =
+    binary_std_call "equal" equal (pref "copy-a" "right") (pref "copy-b" "right") nat nat_to_bool bool
+  in
+  let not_nodes, not_edges, not_result =
+    unary_std_call "not" not_ equal_result bool bool
+  in
+  let and_nodes, and_edges, and_result =
+    binary_std_call "and" and_ le_result not_result bool bool_to_bool bool
+  in
+  let nodes = nodes_prefix @ le_nodes @ equal_nodes @ not_nodes @ and_nodes in
+  let edges =
+    edges_prefix @ le_edges @ equal_edges @ not_edges @ and_edges
+    @ [ edge "e-and-result" and_result (pref "result" "value") ]
+  in
+  let body =
+    CG.Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:
+        [
+          node_id "copy-a";
+          node_id "copy-b";
+          node_id "less-or-equal-function";
+          node_id "less-or-equal-apply-left";
+          node_id "less-or-equal-apply-right";
+          node_id "equal-function";
+          node_id "equal-apply-left";
+          node_id "equal-apply-right";
+          node_id "not-function";
+          node_id "not-apply";
+          node_id "and-function";
+          node_id "and-apply-left";
+          node_id "and-apply-right";
+        ]
+    |> validate_graph_with_templates_or_fail [ less_or_equal; equal; not_; and_ ]
+  in
+  CG.Function_template.create
+    ~dependencies:
+      [
+        CG.Function_template.id less_or_equal;
+        CG.Function_template.id equal;
+        CG.Function_template.id not_;
+        CG.Function_template.id and_;
+      ]
+    ~id:(internal_id "less-than-inner") ~parameter_type:nat ~result_type:bool
+    ~captures:[ left_capture ] ~body ()
+
+let minmax_inner_template id less_or_equal =
+  let left_capture = { CG.key = port_key "a"; typ = nat } in
+  let le_nodes, le_edges, le_result =
+    binary_std_call "less-or-equal" less_or_equal (pref "copy-a" "left") (pref "copy-b" "left") nat nat_to_bool bool
+  in
+  let false_source, true_source =
+    match id with
+    | Min -> (pref "copy-b" "right", pref "copy-a" "right")
+    | Max -> (pref "copy-a" "right", pref "copy-b" "right")
+    | _ -> invalid_arg "minmax stdlib target"
+  in
+  let inner_id = match id with Min -> "min-inner" | Max -> "max-inner" | _ -> assert false in
+  let nodes =
+    [
+      node "b" (CG.Parameter nat);
+      node "a" (CG.Capture left_capture);
+      node "copy-a" (CG.Copy nat);
+      node "copy-b" (CG.Copy nat);
+      node "boolrec" (CG.BoolRec nat);
+      node "result" (CG.Result nat);
+    ]
+    @ le_nodes
+  in
+  let edges =
+    [
+      edge "e-a-copy" (pref "a" "value") (pref "copy-a" "input");
+      edge "e-b-copy" (pref "b" "value") (pref "copy-b" "input");
+    ]
+    @ le_edges
+    @ [
+        edge "e-condition" le_result { CG.node_id = node_id "boolrec"; port_key = CG.Port_key.condition };
+        edge "e-false-case" false_source { CG.node_id = node_id "boolrec"; port_key = CG.Port_key.false_case };
+        edge "e-true-case" true_source { CG.node_id = node_id "boolrec"; port_key = CG.Port_key.true_case };
+        edge "e-result" { CG.node_id = node_id "boolrec"; port_key = CG.Port_key.result } (pref "result" "value");
+      ]
+  in
+  let body =
+    CG.Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:
+        [
+          node_id "copy-a";
+          node_id "copy-b";
+          node_id "less-or-equal-function";
+          node_id "less-or-equal-apply-left";
+          node_id "less-or-equal-apply-right";
+          node_id "boolrec";
+        ]
+    |> validate_graph_with_templates_or_fail [ less_or_equal ]
+  in
+  CG.Function_template.create ~dependencies:[ CG.Function_template.id less_or_equal ]
+    ~id:(internal_id inner_id) ~parameter_type:nat ~result_type:nat
+    ~captures:[ left_capture ] ~body ()
+
 let all_templates =
   let succ_inner = succ_inner_template () in
   let succ_outer = succ_outer_template succ_inner in
@@ -798,6 +1150,16 @@ let all_templates =
   let not_ = not_template () in
   let and_inner, and_ = binary_bool_template And in
   let or_inner, or_ = binary_bool_template Or in
+  let less_or_equal_inner = less_or_equal_inner_template subtract iszero in
+  let less_or_equal = binary_nat_outer_template LessOrEqual less_or_equal_inner bool in
+  let equal_inner = equal_inner_template subtract iszero and_ in
+  let equal = binary_nat_outer_template Equal equal_inner bool in
+  let less_than_inner = less_than_inner_template less_or_equal equal not_ and_ in
+  let less_than = binary_nat_outer_template LessThan less_than_inner bool in
+  let min_inner = minmax_inner_template Min less_or_equal in
+  let min = binary_nat_outer_template Min min_inner nat in
+  let max_inner = minmax_inner_template Max less_or_equal in
+  let max = binary_nat_outer_template Max max_inner nat in
   [
     succ_inner;
     succ_outer;
@@ -824,6 +1186,16 @@ let all_templates =
     and_;
     or_inner;
     or_;
+    less_or_equal_inner;
+    less_or_equal;
+    equal_inner;
+    equal;
+    less_than_inner;
+    less_than;
+    min_inner;
+    min;
+    max_inner;
+    max;
   ]
 
 let exposed_templates =

@@ -1,6 +1,6 @@
 {
   "generator": "js_of_ocaml",
   "profile": "release",
-  "sourceHash": "b80f1630f5ac9b25c43989d2c743e2f07b1f531b4877b20275d9da79188977aa",
+  "sourceHash": "9063c609c9259326bae4a4e06fd20b3d41122e8546435116df6e3a09e95f4c5d",
   "source": "bin/browser_runner.ml"
 }

@@ -243,11 +243,24 @@ The Standard Library palette exposes immutable folded calls for:
 - `not : Bool -> Bool`
 - `and : Bool -> Bool -> Bool`
 - `or : Bool -> Bool -> Bool`
+- `equal : Nat -> Nat -> Bool`
+- `lessThan : Nat -> Nat -> Bool`
+- `lessOrEqual : Nat -> Nat -> Bool`
+- `min : Nat -> Nat -> Nat`
+- `max : Nat -> Nat -> Nat`
 
 Transparent execution expands these calls to canonical read-only Core
 definitions. Fast execution dispatches only by verified `tilefold.std` identity
 and version. Bool results display as `Bool(True)` or `Bool(False)`, never as
 `Nat(0)` or `Nat(1)`.
+
+Examples:
+
+- `equal(4,4) -> Bool(True)`
+- `lessThan(3,5) -> Bool(True)`
+- `lessOrEqual(5,5) -> Bool(True)`
+- `min(8,3) -> Nat(3)`
+- `max(8,3) -> Nat(8)`
 
 - object, format, and version;
 - required geometry arrays;

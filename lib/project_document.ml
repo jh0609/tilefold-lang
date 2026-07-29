@@ -438,6 +438,11 @@ let decode_element_kind path json =
               | Standard_library.Not -> "bool.not"
               | Standard_library.And -> "bool.and"
               | Standard_library.Or -> "bool.or"
+              | Standard_library.Equal -> "nat.equal"
+              | Standard_library.LessThan -> "nat.lessThan"
+              | Standard_library.LessOrEqual -> "nat.lessOrEqual"
+              | Standard_library.Min -> "nat.min"
+              | Standard_library.Max -> "nat.max"
             in
             if not (String.equal info.Standard_library.stable_id template_id) then
               error (path ^ ".templateId")

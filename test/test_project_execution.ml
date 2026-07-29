@@ -1,6 +1,7 @@
 module E = Tilefold.Project_execution
 module SL = Tilefold.Standard_library
 module Nat = Tilefold.Nat
+module RV = Tilefold.Runtime_value
 
 let read_file path =
   let channel = open_in_bin path in
@@ -1015,6 +1016,66 @@ let () =
         [ Bool_arg true; Bool_arg false ],
         "bool",
         "Bool(True)" );
+      ( "nat.equal",
+        "tilefold.std.nat.equal",
+        [ Nat_arg "0"; Nat_arg "0" ],
+        "bool",
+        "Bool(True)" );
+      ( "nat.equal",
+        "tilefold.std.nat.equal",
+        [ Nat_arg "3"; Nat_arg "5" ],
+        "bool",
+        "Bool(False)" );
+      ( "nat.equal",
+        "tilefold.std.nat.equal",
+        [ Nat_arg "8"; Nat_arg "8" ],
+        "bool",
+        "Bool(True)" );
+      ( "nat.lessOrEqual",
+        "tilefold.std.nat.lessOrEqual",
+        [ Nat_arg "3"; Nat_arg "5" ],
+        "bool",
+        "Bool(True)" );
+      ( "nat.lessOrEqual",
+        "tilefold.std.nat.lessOrEqual",
+        [ Nat_arg "5"; Nat_arg "3" ],
+        "bool",
+        "Bool(False)" );
+      ( "nat.lessThan",
+        "tilefold.std.nat.lessThan",
+        [ Nat_arg "0"; Nat_arg "1" ],
+        "bool",
+        "Bool(True)" );
+      ( "nat.lessThan",
+        "tilefold.std.nat.lessThan",
+        [ Nat_arg "3"; Nat_arg "3" ],
+        "bool",
+        "Bool(False)" );
+      ( "nat.lessThan",
+        "tilefold.std.nat.lessThan",
+        [ Nat_arg "8"; Nat_arg "9" ],
+        "bool",
+        "Bool(True)" );
+      ( "nat.min",
+        "tilefold.std.nat.min",
+        [ Nat_arg "3"; Nat_arg "5" ],
+        "nat",
+        "Nat(3)" );
+      ( "nat.min",
+        "tilefold.std.nat.min",
+        [ Nat_arg "5"; Nat_arg "3" ],
+        "nat",
+        "Nat(3)" );
+      ( "nat.max",
+        "tilefold.std.nat.max",
+        [ Nat_arg "3"; Nat_arg "5" ],
+        "nat",
+        "Nat(5)" );
+      ( "nat.max",
+        "tilefold.std.nat.max",
+        [ Nat_arg "5"; Nat_arg "3" ],
+        "nat",
+        "Nat(5)" );
     ]
   in
   List.iter
@@ -1042,4 +1103,25 @@ let () =
     "121932631112635269";
   expect_evaluator SL.Double [ "12345678901234567890" ]
     "24691357802469135780";
-  expect_evaluator SL.Square [ "123456789" ] "15241578750190521"
+  expect_evaluator SL.Square [ "123456789" ] "15241578750190521";
+  expect_evaluator SL.Min [ "900719925474099312345"; "42" ] "42";
+  expect_evaluator SL.Max [ "900719925474099312345"; "42" ]
+    "900719925474099312345";
+  let expect_bool_evaluator id args expected =
+    match SL.evaluate id (List.map (fun value -> RV.Nat (nat value)) args) with
+    | Ok (RV.Bool actual) -> assert (Bool.equal actual expected)
+    | Ok _ -> failwith "expected Bool payload"
+    | Error message -> failwith message
+  in
+  expect_bool_evaluator SL.Equal [ "3"; "3" ] true;
+  expect_bool_evaluator SL.Equal [ "3"; "5" ] false;
+  expect_bool_evaluator SL.LessOrEqual [ "3"; "5" ] true;
+  expect_bool_evaluator SL.LessOrEqual [ "5"; "3" ] false;
+  expect_bool_evaluator SL.LessOrEqual
+    [ "900719925474099312345"; "900719925474099312346" ]
+    true;
+  expect_bool_evaluator SL.LessThan [ "3"; "5" ] true;
+  expect_bool_evaluator SL.LessThan [ "5"; "3" ] false;
+  expect_bool_evaluator SL.Equal
+    [ "123456789012345678901234567890"; "123456789012345678901234567890" ]
+    true

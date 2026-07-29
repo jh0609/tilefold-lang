@@ -436,6 +436,171 @@ function foldedStandardCallProject({ functionId, templateId, args, resultType = 
   });
 }
 
+function nestedEqualMinProject() {
+  return JSON.stringify({
+    format: "tilefold-project",
+    version: 2,
+    geometry: {
+      snapTolerance: 8,
+      elements: [
+        {
+          id: "unit-drop",
+          kind: "drop",
+          bounds: { x: 80, y: 80, width: 88, height: 56 },
+          properties: { type: "unit" },
+          portAnchors: [{ port: "input", x: 80, y: 108 }],
+        },
+        {
+          id: "three-left",
+          kind: "nat_literal",
+          bounds: { x: 80, y: 180, width: 96, height: 56 },
+          properties: { value: "3" },
+          portAnchors: [{ port: "value", x: 176, y: 208 }],
+        },
+        {
+          id: "five",
+          kind: "nat_literal",
+          bounds: { x: 80, y: 270, width: 96, height: 56 },
+          properties: { value: "5" },
+          portAnchors: [{ port: "value", x: 176, y: 298 }],
+        },
+        {
+          id: "min-call",
+          kind: "library_call",
+          bounds: { x: 260, y: 210, width: 156, height: 106 },
+          properties: {
+            library: "tilefold.std",
+            functionId: "nat.min",
+            templateId: "tilefold.std.nat.min",
+            version: "v1",
+          },
+          portAnchors: [
+            { port: "arg_0", x: 260, y: 245 },
+            { port: "arg_1", x: 260, y: 281 },
+            { port: "result", x: 416, y: 263 },
+          ],
+        },
+        {
+          id: "three-right",
+          kind: "nat_literal",
+          bounds: { x: 300, y: 360, width: 96, height: 56 },
+          properties: { value: "3" },
+          portAnchors: [{ port: "value", x: 396, y: 388 }],
+        },
+        {
+          id: "equal-call",
+          kind: "library_call",
+          bounds: { x: 500, y: 285, width: 156, height: 106 },
+          properties: {
+            library: "tilefold.std",
+            functionId: "nat.equal",
+            templateId: "tilefold.std.nat.equal",
+            version: "v1",
+          },
+          portAnchors: [
+            { port: "arg_0", x: 500, y: 320 },
+            { port: "arg_1", x: 500, y: 356 },
+            { port: "result", x: 656, y: 338 },
+          ],
+        },
+      ],
+      containers: [
+        {
+          id: "entry",
+          kind: {
+            kind: "entry",
+            templateId: "entry_template",
+            resultType: "bool",
+            dependencies: ["tilefold.std.nat.min", "tilefold.std.nat.equal"],
+          },
+          bounds: { x: 0, y: 0, width: 760, height: 460 },
+          boundaryPorts: [
+            { id: "entry-parameter", role: "parameter", type: "unit", anchor: { x: 0, y: 108 } },
+            { id: "entry-result", role: "result", type: "bool", anchor: { x: 760, y: 338 } },
+          ],
+        },
+      ],
+      wires: [
+        {
+          id: "w-unit-drop",
+          points: [
+            { x: 0, y: 108 },
+            { x: 80, y: 108 },
+          ],
+          sourceHint: { kind: "boundary_port", containerId: "entry", boundaryId: "entry-parameter" },
+          targetHint: { kind: "element_port", elementId: "unit-drop", port: "input" },
+        },
+        {
+          id: "w-three-min",
+          points: [
+            { x: 176, y: 208 },
+            { x: 260, y: 245 },
+          ],
+          sourceHint: { kind: "element_port", elementId: "three-left", port: "value" },
+          targetHint: { kind: "element_port", elementId: "min-call", port: "arg_0" },
+        },
+        {
+          id: "w-five-min",
+          points: [
+            { x: 176, y: 298 },
+            { x: 260, y: 281 },
+          ],
+          sourceHint: { kind: "element_port", elementId: "five", port: "value" },
+          targetHint: { kind: "element_port", elementId: "min-call", port: "arg_1" },
+        },
+        {
+          id: "w-min-equal",
+          points: [
+            { x: 416, y: 263 },
+            { x: 500, y: 320 },
+          ],
+          sourceHint: { kind: "element_port", elementId: "min-call", port: "result" },
+          targetHint: { kind: "element_port", elementId: "equal-call", port: "arg_0" },
+        },
+        {
+          id: "w-three-equal",
+          points: [
+            { x: 396, y: 388 },
+            { x: 500, y: 356 },
+          ],
+          sourceHint: { kind: "element_port", elementId: "three-right", port: "value" },
+          targetHint: { kind: "element_port", elementId: "equal-call", port: "arg_1" },
+        },
+        {
+          id: "w-result",
+          points: [
+            { x: 656, y: 338 },
+            { x: 760, y: 338 },
+          ],
+          sourceHint: { kind: "element_port", elementId: "equal-call", port: "result" },
+          targetHint: { kind: "boundary_port", containerId: "entry", boundaryId: "entry-result" },
+        },
+      ],
+      junctions: [],
+    },
+    surfaceLibraryCalls: [
+      {
+        id: "library-call-min",
+        library: "tilefold.std",
+        functionId: "nat.min",
+        templateId: "tilefold.std.nat.min",
+        version: "v1",
+        functionElementId: "min-call",
+        applyElementIds: [],
+      },
+      {
+        id: "library-call-equal",
+        library: "tilefold.std",
+        functionId: "nat.equal",
+        templateId: "tilefold.std.nat.equal",
+        version: "v1",
+        functionElementId: "equal-call",
+        applyElementIds: [],
+      },
+    ],
+  });
+}
+
 const fixtures = new Map([
   ["example", exampleText],
   ["nat-zero", withNat("0")],
@@ -566,6 +731,50 @@ fixtures.set(
     resultType: "bool",
   }),
 );
+fixtures.set(
+  "standard-library-equal-folded",
+  foldedStandardCallProject({
+    functionId: "nat.equal",
+    templateId: "tilefold.std.nat.equal",
+    args: ["3", "3"],
+    resultType: "bool",
+  }),
+);
+fixtures.set(
+  "standard-library-less-than-folded",
+  foldedStandardCallProject({
+    functionId: "nat.lessThan",
+    templateId: "tilefold.std.nat.lessThan",
+    args: ["3", "5"],
+    resultType: "bool",
+  }),
+);
+fixtures.set(
+  "standard-library-less-or-equal-folded",
+  foldedStandardCallProject({
+    functionId: "nat.lessOrEqual",
+    templateId: "tilefold.std.nat.lessOrEqual",
+    args: ["5", "3"],
+    resultType: "bool",
+  }),
+);
+fixtures.set(
+  "standard-library-min-folded",
+  foldedStandardCallProject({
+    functionId: "nat.min",
+    templateId: "tilefold.std.nat.min",
+    args: ["5", "3"],
+  }),
+);
+fixtures.set(
+  "standard-library-max-folded",
+  foldedStandardCallProject({
+    functionId: "nat.max",
+    templateId: "tilefold.std.nat.max",
+    args: ["3", "5"],
+  }),
+);
+fixtures.set("standard-library-equal-min-nested", nestedEqualMinProject());
 const naturalNumberExpectations = new Map([
   ["successor", { result: "Nat(3)", rewriteCount: 5 }],
   ["addition", { result: "Nat(5)", rewriteCount: 34 }],

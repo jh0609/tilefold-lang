@@ -15,6 +15,11 @@ type function_id =
   | Not
   | And
   | Or
+  | Equal
+  | LessThan
+  | LessOrEqual
+  | Min
+  | Max
 
 type function_info = {
   id : function_id;

@@ -104,7 +104,8 @@ graphs.
 
 ## Follow-up
 
-Future functions such as `equal`, `lessThan`, `lessOrEqual`, `min`, `max`, and
-`power` can build on the same distinct `Bool` type, `BoolRec`, and versioned
-Standard Library identity model. Project Library fast execution remains outside
-this decision.
+Decision 0034 adds `equal`, `lessThan`, `lessOrEqual`, `min`, and `max` on top
+of this Bool foundation. Future functions such as `power`, `divides`, `modulo`,
+and `isPrime` can continue to build on the same distinct `Bool` type,
+`BoolRec`, and versioned Standard Library identity model. Project Library fast
+execution remains outside this decision.

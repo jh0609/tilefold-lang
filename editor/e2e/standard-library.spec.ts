@@ -626,6 +626,11 @@ test("places a complete multi-argument Standard Library call from the palette", 
   const beforeLibraryCallCount = await page
     .locator('g.element-node[data-node-kind="library_call"]')
     .count();
+  await expect(page.getByRole("button", { name: "Add Standard Library equal" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add Standard Library lessThan" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add Standard Library lessOrEqual" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add Standard Library min" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add Standard Library max" })).toBeVisible();
   await page.getByRole("button", { name: "Add Standard Library add" }).click();
 
   await expect
@@ -760,6 +765,54 @@ test("compares Standard Library transparent and fast execution for all exposed c
         resultType: "bool",
       }),
       expected: "Bool(True)",
+    },
+    {
+      name: "equal",
+      project: foldedStandardCallProject({
+        functionId: "nat.equal",
+        templateId: "tilefold.std.nat.equal",
+        args: ["3", "3"],
+        resultType: "bool",
+      }),
+      expected: "Bool(True)",
+    },
+    {
+      name: "lessThan",
+      project: foldedStandardCallProject({
+        functionId: "nat.lessThan",
+        templateId: "tilefold.std.nat.lessThan",
+        args: ["3", "5"],
+        resultType: "bool",
+      }),
+      expected: "Bool(True)",
+    },
+    {
+      name: "lessOrEqual",
+      project: foldedStandardCallProject({
+        functionId: "nat.lessOrEqual",
+        templateId: "tilefold.std.nat.lessOrEqual",
+        args: ["5", "3"],
+        resultType: "bool",
+      }),
+      expected: "Bool(False)",
+    },
+    {
+      name: "min",
+      project: foldedStandardCallProject({
+        functionId: "nat.min",
+        templateId: "tilefold.std.nat.min",
+        args: ["3", "5"],
+      }),
+      expected: "Nat(3)",
+    },
+    {
+      name: "max",
+      project: foldedStandardCallProject({
+        functionId: "nat.max",
+        templateId: "tilefold.std.nat.max",
+        args: ["3", "5"],
+      }),
+      expected: "Nat(5)",
     },
   ];
 
