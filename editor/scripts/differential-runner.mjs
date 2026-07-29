@@ -26,7 +26,7 @@ function toWslPath(value) {
   return `/mnt/${match[1].toLowerCase()}/${match[2]}`;
 }
 
-function nativeRun(projectJson) {
+function nativeRun(projectJson, mode = "transparent") {
   let result = spawnSync(
     "opam",
     [
@@ -37,6 +37,8 @@ function nativeRun(projectJson) {
       "--root",
       repositoryRoot,
       "bin/project_runner.exe",
+      "--",
+      mode,
     ],
     { cwd: repositoryRoot, input: projectJson, encoding: "utf8" },
   );
@@ -50,7 +52,7 @@ function nativeRun(projectJson) {
     const command = [
       `cd ${shellQuote(wslRepositoryRoot)}`,
       `eval "$(opam env --shell=sh --switch=${shellQuote(wslSwitch)})"`,
-      `dune exec --root ${shellQuote(wslRepositoryRoot)} bin/project_runner.exe`,
+      `dune exec --root ${shellQuote(wslRepositoryRoot)} bin/project_runner.exe -- ${shellQuote(mode)}`,
     ].join(" && ");
     result = spawnSync("wsl", ["bash", "-lc", command], {
       cwd: repositoryRoot,
@@ -64,8 +66,8 @@ function nativeRun(projectJson) {
   return JSON.parse(result.stdout);
 }
 
-function browserRun(projectJson) {
-  return JSON.parse(TilefoldRunner.runProjectJson(projectJson));
+function browserRun(projectJson, mode = "transparent") {
+  return JSON.parse(TilefoldRunner.runProjectJsonWithMode(projectJson, mode));
 }
 
 const exampleText = await readFile(
@@ -775,6 +777,43 @@ fixtures.set(
   }),
 );
 fixtures.set("standard-library-equal-min-nested", nestedEqualMinProject());
+fixtures.set("standard-library-equal-big-fast", {
+  mode: "fast",
+  projectJson: foldedStandardCallProject({
+    functionId: "nat.equal",
+    templateId: "tilefold.std.nat.equal",
+    args: [
+      "123456789012345678901234567890",
+      "123456789012345678901234567890",
+    ],
+    resultType: "bool",
+  }),
+});
+fixtures.set("standard-library-less-or-equal-big-fast", {
+  mode: "fast",
+  projectJson: foldedStandardCallProject({
+    functionId: "nat.lessOrEqual",
+    templateId: "tilefold.std.nat.lessOrEqual",
+    args: ["900719925474099312345", "900719925474099312346"],
+    resultType: "bool",
+  }),
+});
+fixtures.set("standard-library-min-big-fast", {
+  mode: "fast",
+  projectJson: foldedStandardCallProject({
+    functionId: "nat.min",
+    templateId: "tilefold.std.nat.min",
+    args: ["900719925474099312345", "42"],
+  }),
+});
+fixtures.set("standard-library-max-big-fast", {
+  mode: "fast",
+  projectJson: foldedStandardCallProject({
+    functionId: "nat.max",
+    templateId: "tilefold.std.nat.max",
+    args: ["900719925474099312345", "42"],
+  }),
+});
 const naturalNumberExpectations = new Map([
   ["successor", { result: "Nat(3)", rewriteCount: 5 }],
   ["addition", { result: "Nat(5)", rewriteCount: 34 }],
@@ -799,9 +838,12 @@ for (const name of await readdir(fixtureDirectory)) {
   }
 }
 
-for (const [name, projectJson] of fixtures) {
-  const native = nativeRun(projectJson);
-  const browser = browserRun(projectJson);
+for (const [name, fixture] of fixtures) {
+  const projectJson =
+    typeof fixture === "string" ? fixture : fixture.projectJson;
+  const mode = typeof fixture === "string" ? "transparent" : fixture.mode;
+  const native = nativeRun(projectJson, mode);
+  const browser = browserRun(projectJson, mode);
   if (JSON.stringify(native) !== JSON.stringify(browser)) {
     throw new Error(
       `${name}: native/browser mismatch\n${JSON.stringify(native)}\n${JSON.stringify(browser)}`,
