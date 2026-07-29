@@ -564,9 +564,11 @@ export function App() {
       setInspectorError("Call creation requires a host container.");
       return false;
     }
-    const previousApplyIds = new Set(
+    const previousCallableIds = new Set(
       document.geometry.elements
-        .filter((element) => element.kind === "apply")
+        .filter(
+          (element) => element.kind === "apply" || element.kind === "project_call",
+        )
         .map((element) => element.id),
     );
     const nextDocument = runCommand({
@@ -575,11 +577,12 @@ export function App() {
       templateId,
     });
     if (!nextDocument) return false;
-    const apply = nextDocument.geometry.elements.find(
+    const callable = nextDocument.geometry.elements.find(
       (element) =>
-        element.kind === "apply" && !previousApplyIds.has(element.id),
+        (element.kind === "apply" || element.kind === "project_call") &&
+        !previousCallableIds.has(element.id),
     );
-    if (apply) setSelection({ type: "element", id: apply.id });
+    if (callable) setSelection({ type: "element", id: callable.id });
     setConnectionMessage(
       `Created a call to ${templateId}; Unit and Nat arguments get temporary inputs, while function arguments wait for explicit wiring.`,
     );

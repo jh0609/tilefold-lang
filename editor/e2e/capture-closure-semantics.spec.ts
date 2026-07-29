@@ -91,6 +91,12 @@ function byTemplate(page: Page, templateId: string) {
   );
 }
 
+function callByTemplate(page: Page, templateId: string) {
+  return page.locator(
+    `g.element-node[data-node-kind="project_call"][data-template-id="${templateId}"]`,
+  );
+}
+
 function port(page: Page, id: string, name: string, direction: string) {
   return page.getByTestId(`port-element:${id}:${name}`).or(page.locator(
     `[data-node-id="${id}"][data-port-name="${name}"][data-port-direction="${direction}"]`,
@@ -256,71 +262,34 @@ async function createPredStep(page: Page) {
   await expect(page.getByText(/Created predStep/)).toBeVisible();
 
   await page.getByRole("button", { name: "Fit view" }).click();
-  const outer = page.locator('g.container-shape[data-template-id="predStep"]');
-  const inner = page.locator(
-    'g.container-shape[data-template-id="predStep_curried_1"]',
-  );
-  const outerId = await outer.getAttribute("data-container-id");
-  const innerId = await inner.getAttribute("data-container-id");
-  expect(outerId).not.toBeNull();
-  expect(innerId).not.toBeNull();
+  const container = page.locator('g.container-shape[data-template-id="predStep"]');
+  await expect(container).toBeVisible();
+  await expect(
+    page.locator('g.container-shape[data-template-id="predStep_curried_1"]'),
+  ).toHaveCount(0);
+  const containerId = await container.getAttribute("data-container-id");
+  expect(containerId).not.toBeNull();
 
-  await openContainer(page, innerId!);
-  await page.getByRole("button", { name: "Edit captures" }).click();
-  await page.getByRole("button", { name: "Add capture" }).click();
-  await page.getByLabel("Capture 1 name").fill("index");
-  await page.getByLabel("Capture 1 type").selectOption("nat");
-  await page.getByRole("button", { name: "Apply captures" }).click();
-  await expect(page.getByText("index: Nat")).toBeVisible();
-
-  const innerFunction = byTemplate(page, "predStep_curried_1");
-  const innerFunctionId = await innerFunction.getAttribute("data-node-id");
-  expect(innerFunctionId).not.toBeNull();
-  await dragConnect(
-    page,
-    boundaryPort(page, outerId!, "parameter", "output"),
-    port(page, innerFunctionId!, "index", "input"),
-    0,
-  );
-
-  await page.getByRole("button", { name: "Fit view" }).click();
-  await openContainer(page, innerId!);
+  await openContainer(page, containerId!);
   const oldResultWire = page
     .locator(
-      `polyline[data-target-container-id="${innerId}"][data-target-boundary-role="result"][data-source-node-kind="nat_literal"]`,
+      `polyline[data-target-container-id="${containerId}"][data-target-boundary-role="result"][data-source-node-kind="nat_literal"]`,
     )
     .first();
   const oldResultLiteralId = await oldResultWire.getAttribute("data-source-node-id");
   expect(oldResultLiteralId).not.toBeNull();
   await selectAndDelete(page, oldResultWire);
   await selectAndDelete(page, element(page, oldResultLiteralId!));
-  const copyId = await addNodeAndGetId(page, "Add Copy", "copy");
-  const dropId = await addNodeAndGetId(page, "Add Drop", "drop");
-  const innerBounds = await containerBounds(page, innerId!);
-  await setElementPosition(page, copyId, innerBounds.x + 70, innerBounds.y + 92);
-  await setElementPosition(page, dropId, innerBounds.x + 100, innerBounds.y + 212);
-  await element(page, dropId).click();
-  await page.getByLabel("Value type").selectOption("nat");
   await dragConnect(
     page,
-    boundaryPort(page, innerId!, "capture:index", "output"),
-    port(page, copyId, "input", "input"),
+    boundaryPort(page, containerId!, "parameter", "output").nth(0),
+    boundaryPort(page, containerId!, "result", "input"),
     0,
   );
-  await dragConnect(
-    page,
-    port(page, copyId, "left", "output"),
-    boundaryPort(page, innerId!, "result", "input"),
-  );
-  await dragConnect(
-    page,
-    port(page, copyId, "right", "output"),
-    port(page, dropId, "input", "input"),
-  );
-  await fitContainerToContent(page, innerId!);
+  await fitContainerToContent(page, containerId!);
 
-  await returnToEntry(page, outerId!);
-  return { outerId: outerId!, innerId: innerId! };
+  await returnToEntry(page, containerId!);
+  return { outerId: containerId!, innerId: containerId! };
 }
 
 async function deleteFunctionOutputDrop(page: Page, functionId: string) {
@@ -336,62 +305,40 @@ async function deleteFunctionOutputDrop(page: Page, functionId: string) {
 
 async function buildPredStepEntry(page: Page, index: number, previous: number) {
   await removeInitialEntryGraph(page);
-  await enlargeEntryContainer(page);
-  const functionId = await byTemplate(page, "predStep").first().getAttribute("data-node-id");
-  expect(functionId).not.toBeNull();
-  await setElementPosition(page, functionId!, 50, 165);
-  const applyIndexId = await addNodeAndGetId(page, "Add Apply", "apply");
-  await setElementPosition(page, applyIndexId, 125, 55);
-  await element(page, applyIndexId).focus();
-  await page.keyboard.press("Enter");
-  await setNatArrowNat(page, "Result type");
-  const applyPreviousId = await addNodeAndGetId(page, "Add Apply", "apply");
-  await setElementPosition(page, applyPreviousId, 125, 220);
-  const indexId = await addNodeAndGetId(page, "Add Nat", "nat_literal");
-  await setElementPosition(page, indexId, 15, 70);
-  const previousId = await addNodeAndGetId(page, "Add Nat", "nat_literal");
-  await setElementPosition(page, previousId, 15, 250);
-  await setNatValue(page, indexId, index);
-  await setNatValue(page, previousId, previous);
-  await dragConnect(
-    page,
-    port(page, functionId!, "value", "output"),
-    port(page, applyIndexId, "function", "input"),
-    0,
-  );
-  await expect(
-    page.locator(
-      `polyline[data-source-node-id="${functionId}"][data-source-port-name="value"][data-target-node-id="${applyIndexId}"][data-target-port-name="function"]`,
-    ),
-  ).toHaveCount(1);
-  await dragConnect(
-    page,
-    port(page, indexId, "value", "output"),
-    port(page, applyIndexId, "argument", "input"),
-  );
-  await dragConnect(
-    page,
-    port(page, applyIndexId, "result", "output"),
-    port(page, applyPreviousId, "function", "input"),
-  );
-  await expect(
-    page.locator(
-      `polyline[data-source-node-id="${applyIndexId}"][data-source-port-name="result"][data-target-node-id="${applyPreviousId}"][data-target-port-name="function"]`,
-    ),
-  ).toHaveCount(1);
-  await dragConnect(
-    page,
-    port(page, previousId, "value", "output"),
-    port(page, applyPreviousId, "argument", "input"),
-  );
+  await page.getByRole("button", { name: "Add Call" }).click();
+  await page.getByLabel("Template to call").selectOption("predStep");
+  await page.getByRole("button", { name: "Create call" }).click();
+  const callId = await callByTemplate(page, "predStep").last().getAttribute("data-node-id");
+  expect(callId).not.toBeNull();
+  await setElementPosition(page, callId!, 72, 135);
+  const indexWire = page
+    .locator(`polyline[data-target-node-id="${callId}"][data-target-port-name="arg_0"]`)
+    .first();
+  const previousWire = page
+    .locator(`polyline[data-target-node-id="${callId}"][data-target-port-name="arg_1"]`)
+    .first();
+  const indexId = await indexWire.getAttribute("data-source-node-id");
+  const previousId = await previousWire.getAttribute("data-source-node-id");
+  expect(indexId).not.toBeNull();
+  expect(previousId).not.toBeNull();
+  await setElementPosition(page, indexId!, 15, 90);
+  await setElementPosition(page, previousId!, 15, 210);
+  await setNatValue(page, indexId!, index);
+  await setNatValue(page, previousId!, previous);
+  const resultDropWire = page
+    .locator(`polyline[data-source-node-id="${callId}"][data-source-port-name="result"][data-target-node-kind="drop"]`)
+    .first();
+  const resultDropId = await resultDropWire.getAttribute("data-target-node-id");
+  expect(resultDropId).not.toBeNull();
+  await selectAndDelete(page, element(page, resultDropId!));
   await dragConnectViaMidpoint(
     page,
-    port(page, applyPreviousId, "result", "output"),
+    port(page, callId!, "result", "output"),
     boundaryPort(page, "entry", "result", "input"),
   );
   await expect(
     page.locator(
-      `polyline[data-source-node-id="${applyPreviousId}"][data-source-port-name="result"][data-target-container-id="entry"][data-target-boundary-role="result"]`,
+      `polyline[data-source-node-id="${callId}"][data-source-port-name="result"][data-target-container-id="entry"][data-target-boundary-role="result"]`,
     ),
   ).toHaveCount(1);
   await fitContainerToContent(page, "entry");
@@ -485,87 +432,56 @@ test.describe("capture closure execution semantics", () => {
     await removeInitialEntryGraph(page);
 
     async function addPredStepApplication(index: number, previous: number) {
-      const beforeFunctions = await byTemplate(page, "predStep").evaluateAll(
+      const beforeCalls = await callByTemplate(page, "predStep").evaluateAll(
         (nodes) => nodes.map((node) => node.getAttribute("data-node-id") ?? ""),
       );
-      const beforeApplies = await page
-        .locator('g.element-node[data-node-kind="apply"]')
-        .evaluateAll((nodes) =>
-          nodes.map((node) => node.getAttribute("data-node-id") ?? ""),
-        );
       await page.getByRole("button", { name: "Add Call" }).click();
       await page.getByLabel("Template to call").selectOption("predStep");
       await page.getByRole("button", { name: "Create call" }).click();
-      const beforeFunctionSet = new Set(beforeFunctions);
-      const functionCloneId = (
-        await byTemplate(page, "predStep").evaluateAll((nodes) =>
+      const beforeCallSet = new Set(beforeCalls);
+      const callId = (
+        await callByTemplate(page, "predStep").evaluateAll((nodes) =>
           nodes.map((node) => node.getAttribute("data-node-id") ?? ""),
         )
-      ).find((id) => !beforeFunctionSet.has(id));
-      expect(functionCloneId).toBeTruthy();
-      const beforeApplySet = new Set(beforeApplies);
-      const newApplyIds = (
-        await page.locator('g.element-node[data-node-kind="apply"]').evaluateAll(
-          (nodes) => nodes.map((node) => node.getAttribute("data-node-id") ?? ""),
-        )
-      ).filter((id) => !beforeApplySet.has(id));
-      expect(newApplyIds).toHaveLength(1);
-      const applyIndexId = newApplyIds[0];
-      expect(applyIndexId).toBeTruthy();
+      ).find((id) => !beforeCallSet.has(id));
+      expect(callId).toBeTruthy();
       const indexWire = page
         .locator(
-          `polyline[data-target-node-id="${applyIndexId}"][data-target-port-name="argument"]`,
+          `polyline[data-target-node-id="${callId}"][data-target-port-name="arg_0"]`,
+        )
+        .first();
+      const previousWire = page
+        .locator(
+          `polyline[data-target-node-id="${callId}"][data-target-port-name="arg_1"]`,
         )
         .first();
       const indexId = await indexWire.getAttribute("data-source-node-id");
+      const previousId = await previousWire.getAttribute("data-source-node-id");
       expect(indexId).not.toBeNull();
-      const applyPreviousId = await addNodeAndGetId(page, "Add Apply", "apply");
-      const previousId = await addNodeAndGetId(page, "Add Nat", "nat_literal");
-      const rowY = index === 1 ? 55 : 345;
+      expect(previousId).not.toBeNull();
+      const rowY = index === 1 ? 55 : 245;
       await setElementPosition(page, indexId!, 10, rowY + 15);
-      await setElementPosition(page, functionCloneId!, 35, rowY + 95);
-      await setElementPosition(page, applyIndexId!, 90, rowY);
-      await setElementPosition(page, applyPreviousId, 90, rowY + 145);
+      await setElementPosition(page, callId!, 72, rowY + 70);
       await setElementPosition(page, previousId!, 10, rowY + 175);
       await setNatValue(page, indexId!, index);
       await setNatValue(page, previousId!, previous);
-      await expect(
-        page.locator(
-          `polyline[data-source-node-id="${functionCloneId}"][data-target-node-id="${applyIndexId}"]`,
-        ),
-      ).toHaveCount(1);
-      const applyIndexDropWire = page
+      const resultDropWire = page
         .locator(
-          `polyline[data-source-node-id="${applyIndexId}"][data-source-port-name="result"][data-target-node-kind="drop"]`,
+          `polyline[data-source-node-id="${callId}"][data-source-port-name="result"][data-target-node-kind="drop"]`,
         )
         .first();
-      const applyIndexDropId = await applyIndexDropWire.getAttribute("data-target-node-id");
-      expect(applyIndexDropId).not.toBeNull();
-      await selectAndDelete(page, element(page, applyIndexDropId!));
-      await dragConnect(
-        page,
-        port(page, applyIndexId!, "result", "output"),
-        port(page, applyPreviousId, "function", "input"),
-      );
-      await expect(
-        page.locator(
-          `polyline[data-source-node-id="${applyIndexId}"][data-source-port-name="result"][data-target-node-id="${applyPreviousId}"][data-target-port-name="function"]`,
-        ),
-      ).toHaveCount(1);
-      await dragConnect(
-        page,
-        port(page, previousId, "value", "output"),
-        port(page, applyPreviousId, "argument", "input"),
-      );
-      return applyPreviousId;
+      const resultDropId = await resultDropWire.getAttribute("data-target-node-id");
+      expect(resultDropId).not.toBeNull();
+      await selectAndDelete(page, element(page, resultDropId!));
+      return callId!;
     }
 
     const applyA = await addPredStepApplication(1, 9);
     const applyB = await addPredStepApplication(5, 2);
     await page.locator('g.container-shape[data-container-id="entry"]').focus();
     await page.keyboard.press("Enter");
-    await dragBy(page, page.getByTestId("container-entry-resize-south-east"), 0, 420);
-    let inactiveDrop = await addNatDropAt(page, 125, 540);
+    await dragBy(page, page.getByTestId("container-entry-resize-south-east"), 0, 300);
+    let inactiveDrop = await addNatDropAt(page, 125, 430);
     await dragConnect(
       page,
       port(page, applyB, "result", "output"),
@@ -588,7 +504,7 @@ test.describe("capture closure execution semantics", () => {
       page.locator(`polyline[data-source-node-id="${applyA}"][data-target-container-id="entry"]`),
     );
     await selectAndDelete(page, element(page, inactiveDrop));
-    inactiveDrop = await addNatDropAt(page, 125, 250);
+    inactiveDrop = await addNatDropAt(page, 125, 220);
     await dragConnect(
       page,
       port(page, applyA, "result", "output"),
@@ -610,7 +526,7 @@ test.describe("capture closure execution semantics", () => {
       page.locator(`polyline[data-source-node-id="${applyB}"][data-target-container-id="entry"]`),
     );
     await selectAndDelete(page, element(page, inactiveDrop));
-    inactiveDrop = await addNatDropAt(page, 125, 540);
+    inactiveDrop = await addNatDropAt(page, 125, 430);
     await dragConnect(
       page,
       port(page, applyB, "result", "output"),

@@ -22,7 +22,17 @@ export interface ConnectablePort {
   hint: EndpointHint;
 }
 
+function surfaceFunctionForElement(
+  document: ProjectDocument,
+  templateId: string,
+) {
+  return document.surfaceFunctions?.find(
+    (functionInfo) => functionInfo.templateId === templateId,
+  );
+}
+
 function elementPortType(
+  document: ProjectDocument,
   element: ProjectElement,
   port: string,
 ): { direction: PortDirection; type: CoreType } | null {
@@ -127,6 +137,22 @@ function elementPortType(
         ? { direction: "output", type: definition.resultType }
         : null;
     }
+    case "project_call": {
+      const functionInfo = surfaceFunctionForElement(
+        document,
+        element.properties.templateId,
+      );
+      if (!functionInfo) return null;
+      const match = /^arg_(\d+)$/.exec(port);
+      if (match) {
+        const index = Number(match[1]);
+        const parameter = functionInfo.parameters[index];
+        return parameter ? { direction: "input", type: parameter.type } : null;
+      }
+      return port === "result"
+        ? { direction: "output", type: functionInfo.result.type }
+        : null;
+    }
   }
 }
 
@@ -136,7 +162,7 @@ export function collectConnectablePorts(
   const ports: ConnectablePort[] = [];
   for (const element of document.geometry.elements) {
     for (const anchor of element.portAnchors) {
-      const schema = elementPortType(element, anchor.port);
+      const schema = elementPortType(document, element, anchor.port);
       if (!schema) continue;
       ports.push({
         key: `element:${element.id}:${anchor.port}`,

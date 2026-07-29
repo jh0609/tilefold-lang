@@ -42,6 +42,7 @@ const KIND_LABELS: Record<ProjectElement["kind"], string> = {
   copy: "Copy",
   function: "Function",
   library_call: "Library Call",
+  project_call: "Call",
   apply: "Apply",
   bool_rec: "BoolRec",
   nat_rec: "NatRec",
@@ -105,6 +106,15 @@ function nodeSignature(element: ProjectElement, ports: ConnectablePort[]) {
         .map((parameter) => formatCoreType(parameter.type))
         .join(" · ")} → ${formatCoreType(definition.resultType)}`;
     }
+    case "project_call": {
+      const inputs = ports
+        .filter((port) => port.direction === "input")
+        .sort((left, right) => left.name.localeCompare(right.name));
+      const result = output("result");
+      return result
+        ? `${inputs.map((port) => formatCoreType(port.type)).join(" · ")} → ${formatCoreType(result)}`
+        : "";
+    }
   }
 }
 
@@ -120,6 +130,9 @@ function nodeDisplayLabel(element: ProjectElement): string {
       standardLibraryFunction(element.properties.templateId)?.displayName ??
       "Unknown library call"
     );
+  }
+  if (element.kind === "project_call") {
+    return element.properties.templateId;
   }
   return KIND_LABELS[element.kind];
 }
@@ -203,6 +216,8 @@ export function ElementNode({
       data-template-id={
         element.kind === "function" || element.kind === "library_call"
           ? element.properties.templateId
+          : element.kind === "project_call"
+            ? element.properties.templateId
           : undefined
       }
       data-library={

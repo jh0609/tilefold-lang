@@ -200,7 +200,7 @@ describe("Tilefold editor UI", () => {
     await user.click(screen.getByRole("button", { name: "Create call" }));
 
     expect(screen.getByText(/Created a call to template_1/)).toBeInTheDocument();
-    expect(screen.getByTestId("element-node_apply_1")).toBeInTheDocument();
+    expect(screen.getByText("Call")).toBeInTheDocument();
     expect(screen.getByText(/2 undo · 0 redo/)).toBeInTheDocument();
   });
 

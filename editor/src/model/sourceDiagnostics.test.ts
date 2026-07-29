@@ -32,7 +32,7 @@ function callableProject() {
   }).document;
   const called = addFunctionCall(withoutStarter, "entry", "choose_right");
   if ("error" in called) throw new Error(called.error);
-  return { ...called, applyElement: called.applyElement!, container: authored.container };
+  return { ...called, callElement: called.functionElement, container: authored.container };
 }
 
 describe("source-mapped diagnostics", () => {
@@ -66,13 +66,13 @@ describe("source-mapped diagnostics", () => {
     );
   });
 
-  it("maps a missing named Call argument to the referenced Apply port", () => {
-    const { document, applyElement } = callableProject();
+  it("maps a missing named Call argument to the referenced Call port", () => {
+    const { document, callElement } = callableProject();
     const argumentWire = document.geometry.wires.find(
       (wire) =>
         wire.targetHint?.kind === "element_port" &&
-        wire.targetHint.elementId === applyElement.id &&
-        wire.targetHint.port === "argument",
+        wire.targetHint.elementId === callElement.id &&
+        wire.targetHint.port === "arg_0",
     );
     expect(argumentWire).toBeDefined();
     const broken = {
@@ -98,14 +98,14 @@ describe("source-mapped diagnostics", () => {
       phase: "surface-validation",
       summary: 'Call "choose_right" is missing a value for argument "left".',
       primarySource: {
-        kind: "element",
-        elementId: applyElement.id,
-        port: "argument",
+          kind: "element",
+          elementId: callElement.id,
+          port: "arg_0",
       },
     });
     expect(diagnosticSourceSelection(missing?.primarySource)).toEqual({
       type: "element",
-      id: applyElement.id,
+      id: callElement.id,
     });
   });
 
@@ -133,8 +133,8 @@ describe("source-mapped diagnostics", () => {
       summary: 'Call "apply_once" is missing a value for argument "f".',
       primarySource: {
         kind: "element",
-        elementId: called.applyElement!.id,
-        port: "argument",
+        elementId: called.functionElement.id,
+        port: "arg_0",
       },
     });
   });
@@ -178,7 +178,7 @@ describe("source-mapped diagnostics", () => {
   });
 
   it("uses renamed and reordered argument identity when reporting missing Call inputs", () => {
-    const { document, functionElement, applyElement } = callableProject();
+    const { document, callElement } = callableProject();
     const edited = editSurfaceFunctionSignature(document, {
       templateId: "choose_right",
       name: "renamed_choose",
@@ -193,8 +193,8 @@ describe("source-mapped diagnostics", () => {
     const valueWire = edited.document.geometry.wires.find(
       (wire) =>
         wire.targetHint?.kind === "element_port" &&
-        wire.targetHint.elementId === applyElement.id &&
-        wire.targetHint.port === "argument",
+        wire.targetHint.elementId === callElement.id &&
+        wire.targetHint.port === "arg_0",
     );
     expect(valueWire).toBeDefined();
     const broken = {
@@ -216,8 +216,8 @@ describe("source-mapped diagnostics", () => {
       summary: 'Call "renamed_choose" is missing a value for argument "ignored".',
       primarySource: {
         kind: "element",
-        elementId: applyElement.id,
-        port: "argument",
+        elementId: callElement.id,
+        port: "arg_0",
       },
     });
     expect(

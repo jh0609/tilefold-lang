@@ -115,9 +115,10 @@ The app is a React 19 + TypeScript + Vite project. Tests use Vitest, jsdom,
 React Testing Library, user-event, and Playwright. The Playwright suite runs one
 Chromium project against the production Vite preview. It covers the browser
 Surface function authoring flow: create a named multi-argument function, edit
-its body through SVG port dragging, return to entry, create a Call, wire the
-result, run the OCaml worker, export Project JSON, import it in a fresh page,
-rerun, and verify referenced-template deletion protection. Playwright reports,
+one flat body container through SVG port dragging, return to entry, create one
+folded Call node with all arguments, wire the result, run the OCaml worker,
+export Project JSON, import it in a fresh page, rerun, and verify
+referenced-template deletion protection. Playwright reports,
 traces, screenshots, videos, and build output are local test artifacts and are
 not committed. The editor has no canvas/graph framework, global state library,
 or UI framework.
@@ -173,6 +174,30 @@ automatic routing, resize handles, dark mode, or elaborate transitions. A
 persistent left palette exposes the implemented Core node kinds by category,
 searches names, signatures, descriptions, and keywords, and includes a compact
 Function template authoring form plus an existing-template Call action.
+
+Named Surface functions are authored as flat containers. For example:
+
+```text
+clamp(n : Nat, lower : Nat, upper : Nat) : Nat
+  = min(max(n, lower), upper)
+
+clamp(3, 5, 10)  -> Nat(5)
+clamp(7, 5, 10)  -> Nat(7)
+clamp(15, 5, 10) -> Nat(10)
+```
+
+Every argument appears as a boundary output in the same function body. A
+complete project Call node exposes `arg_0`, `arg_1`, ... in declaration order
+and lowers to the usual curried Function/Apply chain before execution. If a
+body consumes one argument twice, as in:
+
+```text
+between(n : Nat, lower : Nat, upper : Nat) : Bool
+  = and(lessOrEqual(lower, n), lessOrEqual(n, upper))
+```
+
+the author must still place an explicit `Copy` for `n`; flat authoring does not
+weaken Core's linear resource rules.
 Result is represented by the orange result boundary defined by Project JSON v2
 rather than inventing a Result element kind.
 

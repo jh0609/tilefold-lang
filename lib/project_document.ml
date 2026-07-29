@@ -25,6 +25,7 @@ type element_kind =
       template_id : string;
       version : string;
     }
+  | Project_call of { template_id : string }
   | Apply of { parameter_type : Core_type.t; result_type : Core_type.t }
   | NatRec of Core_type.t
   | BoolRec of Core_type.t
@@ -82,6 +83,23 @@ type outlet = { id : string; order : int; anchor : point }
 type junction = { id : string; anchor : point; outlets : outlet list }
 type view = { camera_x : int; camera_y : int; zoom : int }
 
+type surface_parameter = { name : string; typ : Core_type.t }
+
+type surface_function = {
+  name : string;
+  template_id : string;
+  body_container_id : string;
+  parameters : surface_parameter list;
+  result_name : string;
+  result_type : Core_type.t;
+}
+
+type surface_project_call = {
+  id : string;
+  template_id : string;
+  function_element_id : string;
+}
+
 type t = {
   format : string;
   version : int;
@@ -91,6 +109,8 @@ type t = {
   wires : wire list;
   junctions : junction list;
   view : view option;
+  surface_functions : surface_function list;
+  surface_project_calls : surface_project_call list;
 }
 
 module Decode_error = struct
@@ -454,6 +474,11 @@ let decode_element_kind path json =
               error (path ^ ".version")
                 (Invalid_value ("unsupported Standard Library version " ^ version))
             else Ok (Library_call { library; function_id; template_id; version }))
+  | "project_call" ->
+      let* () = reject_unknown path [ "kind"; "templateId" ] fields in
+      let* template_json = field path "templateId" fields in
+      let* template_id = string_at (path ^ ".templateId") template_json in
+      Ok (Project_call { template_id })
   | value -> error (path ^ ".kind") (Invalid_value ("unknown element kind " ^ value))
 
 let decode_port_anchor path json =
@@ -698,6 +723,52 @@ let decode_view path json =
   let* zoom = get "zoom" in
   Ok { camera_x; camera_y; zoom }
 
+let decode_surface_parameter path json =
+  let* fields = object_at path json in
+  let* () = reject_unknown path [ "name"; "type" ] fields in
+  let* name_json = field path "name" fields in
+  let* name = string_at (path ^ ".name") name_json in
+  let* type_json = field path "type" fields in
+  let* typ = decode_type (path ^ ".type") type_json in
+  Ok { name; typ }
+
+let decode_surface_function path json =
+  let* fields = object_at path json in
+  let* () =
+    reject_unknown path
+      [ "name"; "templateId"; "bodyContainerId"; "parameters"; "result" ]
+      fields
+  in
+  let* name_json = field path "name" fields in
+  let* name = string_at (path ^ ".name") name_json in
+  let* template_json = field path "templateId" fields in
+  let* template_id = string_at (path ^ ".templateId") template_json in
+  let* body_json = field path "bodyContainerId" fields in
+  let* body_container_id = string_at (path ^ ".bodyContainerId") body_json in
+  let* parameters_json = field path "parameters" fields in
+  let* parameters =
+    decode_list (path ^ ".parameters") decode_surface_parameter parameters_json
+  in
+  let* result_json = field path "result" fields in
+  let* result_fields = object_at (path ^ ".result") result_json in
+  let* () = reject_unknown (path ^ ".result") [ "name"; "type" ] result_fields in
+  let* result_name_json = field (path ^ ".result") "name" result_fields in
+  let* result_name = string_at (path ^ ".result.name") result_name_json in
+  let* result_type_json = field (path ^ ".result") "type" result_fields in
+  let* result_type = decode_type (path ^ ".result.type") result_type_json in
+  Ok { name; template_id; body_container_id; parameters; result_name; result_type }
+
+let decode_surface_project_call path json =
+  let* fields = object_at path json in
+  let* () = reject_unknown path [ "id"; "templateId"; "functionElementId" ] fields in
+  let* id_json = field path "id" fields in
+  let* id = string_at (path ^ ".id") id_json in
+  let* template_json = field path "templateId" fields in
+  let* template_id = string_at (path ^ ".templateId") template_json in
+  let* element_json = field path "functionElementId" fields in
+  let* function_element_id = string_at (path ^ ".functionElementId") element_json in
+  Ok { id; template_id; function_element_id }
+
 let decode_json text =
   let parsed =
     try Ok (Yojson.Safe.from_string text)
@@ -713,6 +784,7 @@ let decode_json text =
         "geometry";
         "view";
         "surfaceFunctions";
+        "surfaceProjectCalls";
         "surfaceLibraryCalls";
         "currentContainerId";
         "surfaceConnections";
@@ -755,7 +827,30 @@ let decode_json text =
         let* value = decode_view "$.view" json in
         Ok (Some value)
   in
-  Ok { format; version; snap_tolerance; elements; containers; wires; junctions; view }
+  let* surface_functions =
+    match optional_field "surfaceFunctions" fields with
+    | None -> Ok []
+    | Some json -> decode_list "$.surfaceFunctions" decode_surface_function json
+  in
+  let* surface_project_calls =
+    match optional_field "surfaceProjectCalls" fields with
+    | None -> Ok []
+    | Some json ->
+        decode_list "$.surfaceProjectCalls" decode_surface_project_call json
+  in
+  Ok
+    {
+      format;
+      version;
+      snap_tolerance;
+      elements;
+      containers;
+      wires;
+      junctions;
+      view;
+      surface_functions;
+      surface_project_calls;
+    }
 
 let json_point (point : point) =
   `Assoc [ ("x", `Int point.x); ("y", `Int point.y) ]
@@ -815,6 +910,8 @@ let json_element_kind = function
             ("templateId", `String template_id);
             ("version", `String version);
           ] )
+  | Project_call { template_id } ->
+      ("project_call", `Assoc [ ("templateId", `String template_id) ])
 
 let json_element (element : element) =
   let kind, properties = json_element_kind element.kind in
@@ -947,6 +1044,38 @@ let json_junction (junction : junction) =
                    ])) );
     ]
 
+let json_surface_function (function_info : surface_function) =
+  `Assoc
+    [
+      ("name", `String function_info.name);
+      ("templateId", `String function_info.template_id);
+      ("bodyContainerId", `String function_info.body_container_id);
+      ( "parameters",
+        `List
+          (List.map
+             (fun (parameter : surface_parameter) ->
+               `Assoc
+                 [
+                   ("name", `String parameter.name);
+                   ("type", json_type parameter.typ);
+                 ])
+             function_info.parameters) );
+      ( "result",
+        `Assoc
+          [
+            ("name", `String function_info.result_name);
+            ("type", json_type function_info.result_type);
+          ] );
+    ]
+
+let json_surface_project_call (call : surface_project_call) =
+  `Assoc
+    [
+      ("id", `String call.id);
+      ("templateId", `String call.template_id);
+      ("functionElementId", `String call.function_element_id);
+    ]
+
 let encode_json document =
   let by_id get left right = String.compare (get left) (get right) in
   let geometry =
@@ -997,6 +1126,30 @@ let encode_json document =
                 ] );
           ]
   in
+  let fields =
+    if document.surface_functions = [] then fields
+    else
+      fields
+      @ [
+          ( "surfaceFunctions",
+            `List
+              (document.surface_functions
+              |> List.sort (by_id (fun (value : surface_function) -> value.template_id))
+              |> List.map json_surface_function) );
+        ]
+  in
+  let fields =
+    if document.surface_project_calls = [] then fields
+    else
+      fields
+      @ [
+          ( "surfaceProjectCalls",
+            `List
+              (document.surface_project_calls
+              |> List.sort (by_id (fun (value : surface_project_call) -> value.id))
+              |> List.map json_surface_project_call) );
+        ]
+  in
   Yojson.Safe.pretty_to_string ~std:true (`Assoc fields) ^ "\n"
 
 let valid_id value =
@@ -1042,6 +1195,7 @@ let core_kind = function
                 (C.Function
                    { template_id; parameter_type; result_type; captures })))
   | Library_call _ -> Error ()
+  | Project_call _ -> Error ()
 
 let duplicate_values values =
   let sorted = List.sort String.compare values in
@@ -1112,6 +1266,34 @@ let validate document =
               | Some info ->
                   let expected =
                     List.init (Standard_library.arity info.id)
+                      (fun index -> "arg_" ^ string_of_int index)
+                    @ [ "result" ]
+                    |> List.sort String.compare
+                  in
+                  let actual =
+                    element.port_anchors
+                    |> List.map (fun (anchor : port_anchor) -> anchor.port)
+                    |> List.sort String.compare
+                  in
+                  let invalid =
+                    expected <> actual || duplicate_values actual <> []
+                  in
+                  if invalid then
+                    let port = String.concat "," actual in
+                    add
+                      (Validation_error.Invalid_port_anchor
+                         { element_id = element.id; port }))
+          | Project_call { template_id } -> (
+              match
+                List.find_opt
+                  (fun (function_info : surface_function) ->
+                    String.equal function_info.template_id template_id)
+                  document.surface_functions
+              with
+              | None -> ()
+              | Some function_info ->
+                  let expected =
+                    List.init (List.length function_info.parameters)
                       (fun index -> "arg_" ^ string_of_int index)
                     @ [ "result" ]
                     |> List.sort String.compare
@@ -1230,15 +1412,6 @@ let point_of_anchor (anchor : port_anchor) = { G.x = anchor.at.x; y = anchor.at.
 let anchor_named anchors name =
   List.find_opt (fun (anchor : port_anchor) -> String.equal anchor.port name) anchors
 
-let generated_bounds points =
-  let xs = List.map (fun point -> point.G.x) points in
-  let ys = List.map (fun point -> point.G.y) points in
-  let min_x = (List.fold_left min max_int xs) - 8 in
-  let max_x = (List.fold_left max min_int xs) + 8 in
-  let min_y = (List.fold_left min max_int ys) - 8 in
-  let max_y = (List.fold_left max min_int ys) + 8 in
-  { G.left = min_x; top = min_y; right = max_x; bottom = max_y }
-
 let generated_wire id source target =
   { G.id = id; points = [ source; target ] }
 
@@ -1254,6 +1427,31 @@ let standard_library_apply_types info =
   loop (Standard_library.arity info.Standard_library.id)
     (Core_type.Arrow (info.parameter_type, info.result_type))
     []
+
+let curried_type parameters result_type =
+  List.fold_right
+    (fun (parameter : surface_parameter) result ->
+      Core_type.Arrow (parameter.typ, result))
+    parameters result_type
+
+let surface_function_apply_types function_info =
+  let rec loop index acc =
+    match List.nth_opt function_info.parameters index with
+    | None -> Ok (List.rev acc)
+    | Some parameter ->
+        let remaining =
+          let rec drop count values =
+            match (count, values) with
+            | 0, values -> values
+            | _, [] -> []
+            | count, _ :: rest -> drop (count - 1) rest
+          in
+          drop (index + 1) function_info.parameters
+        in
+        let result_type = curried_type remaining function_info.result_type in
+        loop (index + 1) ((parameter.typ, result_type) :: acc)
+  in
+  loop 0 []
 
 let standard_library_generated_scene (element : element) =
   match element.kind with
@@ -1321,7 +1519,7 @@ let standard_library_generated_scene (element : element) =
                               result_type = info.result_type;
                               captures = [];
                             };
-                        bounds = generated_bounds [ function_value ];
+                        bounds = geometry_bounds element.bounds;
                         ports = [ (C.Port_key.value, function_value) ];
                       }
                     in
@@ -1338,9 +1536,7 @@ let standard_library_generated_scene (element : element) =
                                      apply_parameter_type = parameter_type;
                                      apply_result_type = result_type;
                                    };
-                               bounds =
-                                 generated_bounds
-                                   [ function_point; argument_point; result_point ];
+                               bounds = geometry_bounds element.bounds;
                                ports =
                                  [
                                    (C.Port_key.function_input, function_point);
@@ -1362,6 +1558,326 @@ let standard_library_generated_scene (element : element) =
                     (function_element :: apply_elements, internal_wires)))
   | _ -> ([], [])
 
+let project_call_generated_scene document (element : element) =
+  match element.kind with
+  | Project_call { template_id } -> (
+      match
+        List.find_opt
+          (fun (function_info : surface_function) ->
+            String.equal function_info.template_id template_id)
+          document.surface_functions
+      with
+      | None -> ([], [])
+      | Some function_info -> (
+          match function_info.parameters with
+          | [] -> ([], [])
+          | first_parameter :: rest_parameters ->
+              let arity = List.length function_info.parameters in
+              let result_anchor = anchor_named element.port_anchors "result" in
+              let argument_anchors =
+                List.init arity (fun index ->
+                    anchor_named element.port_anchors ("arg_" ^ string_of_int index))
+              in
+              if Option.is_none result_anchor || List.exists Option.is_none argument_anchors then
+                ([], [])
+              else
+                match surface_function_apply_types function_info with
+                | Error () -> ([], [])
+                | Ok apply_types ->
+                    let result_point = point_of_anchor (Option.get result_anchor) in
+                    let argument_points =
+                      argument_anchors
+                      |> List.map (fun value -> point_of_anchor (Option.get value))
+                    in
+                    let function_value =
+                      {
+                        G.x = element.bounds.x + 12;
+                        y = element.bounds.y + (element.bounds.height / 2);
+                      }
+                    in
+                    let function_input index =
+                      {
+                        G.x = element.bounds.x + 32 + (index * 22);
+                        y = element.bounds.y + 16 + (index * 10);
+                      }
+                    in
+                    let apply_result index =
+                      if index = arity - 1 then result_point
+                      else
+                        {
+                          G.x = element.bounds.x + element.bounds.width - 48 + (index * 8);
+                          y = element.bounds.y + 22 + (index * 14);
+                        }
+                    in
+                    let node_id suffix =
+                      match S.Element_id.of_string (element.id ^ "__call_" ^ suffix) with
+                      | Ok id -> id
+                      | Error _ -> assert false
+                    in
+                    let wire_id suffix =
+                      match G.Wire_id.of_string (element.id ^ "__call_" ^ suffix) with
+                      | Ok id -> id
+                      | Error _ -> assert false
+                    in
+                    let function_element =
+                      {
+                        G.id = node_id "function";
+                        kind =
+                          C.Function
+                            {
+                              template_id =
+                                (match C.Function_template_id.of_string template_id with
+                                | Ok id -> id
+                                | Error _ -> assert false);
+                              parameter_type = first_parameter.typ;
+                              result_type =
+                                curried_type rest_parameters function_info.result_type;
+                              captures = [];
+                            };
+                        bounds = geometry_bounds element.bounds;
+                        ports = [ (C.Port_key.value, function_value) ];
+                      }
+                    in
+                    let apply_elements =
+                      List.combine argument_points apply_types
+                      |> List.mapi (fun index (argument_point, (parameter_type, result_type)) ->
+                             let function_point = function_input index in
+                             let result_point = apply_result index in
+                             {
+                               G.id = node_id ("apply_" ^ string_of_int index);
+                               kind =
+                                 C.Apply
+                                   {
+                                     apply_parameter_type = parameter_type;
+                                     apply_result_type = result_type;
+                                   };
+                               bounds = geometry_bounds element.bounds;
+                               ports =
+                                 [
+                                   (C.Port_key.function_input, function_point);
+                                   (C.Port_key.argument, argument_point);
+                                   (C.Port_key.result, result_point);
+                                 ];
+                             })
+                    in
+                    let internal_wires =
+                      argument_points
+                      |> List.mapi (fun index _ ->
+                             let source =
+                               if index = 0 then function_value else apply_result (index - 1)
+                             in
+                             generated_wire
+                               (wire_id ("wire_function_" ^ string_of_int index))
+                               source (function_input index))
+                    in
+                    (function_element :: apply_elements, internal_wires)))
+  | _ -> ([], [])
+
+let multi_surface_function_for_body document container_id =
+  document.surface_functions
+  |> List.find_opt (fun function_info ->
+         String.equal function_info.body_container_id container_id
+         && List.length function_info.parameters > 1)
+
+let flat_body_template_id (function_info : surface_function) =
+  function_info.template_id ^ "__flat_body"
+
+let curried_template_id (function_info : surface_function) index =
+  if index = 0 then function_info.template_id
+  else function_info.template_id ^ "__curried_" ^ string_of_int index
+
+let flat_generated_capture key typ = { C.key = key; typ }
+
+let list_filteri predicate values =
+  values
+  |> List.mapi (fun index value -> (index, value))
+  |> List.filter_map (fun (index, value) ->
+         if predicate index value then Some value else None)
+
+let port_key_or_fail value =
+  match C.Port_key.of_string value with Ok key -> key | Error _ -> assert false
+
+let function_template_id_or_fail value =
+  match C.Function_template_id.of_string value with Ok id -> id | Error _ -> assert false
+
+let sort_parameters_by_port_key parameters =
+  parameters
+  |> List.sort (fun (left : surface_parameter) (right : surface_parameter) ->
+         C.Port_key.compare (port_key_or_fail left.name) (port_key_or_fail right.name))
+
+let generated_curried_surface_scene document =
+  let make_for_function function_info =
+    match function_info.parameters with
+    | [] | [ _ ] -> ([], [], [], [])
+    | parameters ->
+        let last_index = List.length parameters - 1 in
+        let containers = ref [] in
+        let boundaries = ref [] in
+        let elements = ref [] in
+        let wires = ref [] in
+        let base_x =
+          50_000
+          + (List.length !containers * 2_000)
+          + (String.length function_info.template_id * 10)
+        in
+        for index = 0 to last_index - 1 do
+          let parameter = List.nth parameters index in
+          let previous = list_filteri (fun i _ -> i < index) parameters in
+          let captured_for_next =
+            list_filteri (fun i _ -> i <= index) parameters
+          in
+          let remaining_after_current =
+            list_filteri (fun i _ -> i > index) parameters
+          in
+          let result_type =
+            curried_type remaining_after_current function_info.result_type
+          in
+          let container_id = curried_template_id function_info index in
+          let next_template_id =
+            if index = last_index - 1 then flat_body_template_id function_info
+            else curried_template_id function_info (index + 1)
+          in
+          let x = base_x + (index * 480) in
+          let y = 50_000 in
+          let bounds = { G.left = x; top = y; right = x + 360; bottom = y + 180 } in
+          let container =
+            {
+              G.id =
+                (match S.Container_id.of_string ("__flat_" ^ container_id) with
+                | Ok id -> id
+                | Error _ -> assert false);
+              kind =
+                S.Template
+                  {
+                    template_id = function_template_id_or_fail container_id;
+                    parameter_type = parameter.typ;
+                    result_type;
+                    captures =
+                      List.map
+                        (fun (parameter : surface_parameter) ->
+                          flat_generated_capture (port_key_or_fail parameter.name)
+                            parameter.typ)
+                        previous;
+                    dependencies = [ function_template_id_or_fail next_template_id ];
+                  };
+              bounds;
+            }
+          in
+          containers := container :: !containers;
+          let boundary_id suffix =
+            match G.Boundary_id.of_string ("__flat_" ^ container_id ^ "_" ^ suffix) with
+            | Ok id -> id
+            | Error _ -> assert false
+          in
+          boundaries :=
+            {
+              G.id = boundary_id "parameter";
+              container_id = container.G.id;
+              role = G.Boundary_parameter;
+              typ = parameter.typ;
+              position = { G.x = x; y = y + 64 };
+            }
+            :: {
+                 G.id = boundary_id "result";
+                 container_id = container.G.id;
+                 role = G.Boundary_result;
+                 typ = result_type;
+                 position = { G.x = x + 360; y = y + 64 };
+               }
+            :: !boundaries;
+          previous
+          |> List.iteri (fun capture_index (capture : surface_parameter) ->
+                 boundaries :=
+                   {
+                     G.id = boundary_id ("capture_" ^ capture.name);
+                     container_id = container.G.id;
+                     role = G.Boundary_capture (port_key_or_fail capture.name);
+                     typ = capture.typ;
+                     position = { G.x = x; y = y + 112 + (capture_index * 24) };
+                   }
+                   :: !boundaries);
+          let function_id =
+            match S.Element_id.of_string ("__flat_" ^ container_id ^ "_function") with
+            | Ok id -> id
+            | Error _ -> assert false
+          in
+          let function_x = x + 168 in
+          let function_y = y + 48 in
+          let ordered_captures_for_next =
+            sort_parameters_by_port_key captured_for_next
+          in
+          let captures =
+            List.map
+              (fun (capture : surface_parameter) ->
+                flat_generated_capture (port_key_or_fail capture.name) capture.typ)
+              ordered_captures_for_next
+          in
+          let function_element =
+            {
+              G.id = function_id;
+              kind =
+                C.Function
+                  {
+                    template_id = function_template_id_or_fail next_template_id;
+                    parameter_type =
+                      (List.nth parameters (index + 1)).typ;
+                    result_type =
+                      curried_type
+                        (list_filteri (fun i _ -> i > index + 1) parameters)
+                        function_info.result_type;
+                    captures;
+                  };
+              bounds =
+                { G.left = function_x; top = function_y; right = function_x + 128; bottom = function_y + 72 };
+              ports =
+                (List.mapi
+                   (fun capture_index (capture : surface_parameter) ->
+                     ( port_key_or_fail capture.name,
+                       { G.x = function_x; y = function_y + 24 + (capture_index * 20) } ))
+                   ordered_captures_for_next)
+                @ [ (C.Port_key.value, { G.x = function_x + 128; y = function_y + 36 }) ];
+            }
+          in
+          elements := function_element :: !elements;
+          let wire_id suffix =
+            match G.Wire_id.of_string ("__flat_" ^ container_id ^ "_" ^ suffix) with
+            | Ok id -> id
+            | Error _ -> assert false
+          in
+          let connect_capture source_point target_key suffix =
+            let target =
+              List.assoc target_key function_element.G.ports
+            in
+            wires :=
+              generated_wire (wire_id suffix) source_point target :: !wires
+          in
+          connect_capture { G.x = x; y = y + 64 } (port_key_or_fail parameter.name)
+            ("parameter_to_" ^ parameter.name);
+          previous
+          |> List.iteri (fun capture_index (capture : surface_parameter) ->
+                 connect_capture
+                   { G.x = x; y = y + 112 + (capture_index * 24) }
+                   (port_key_or_fail capture.name)
+                   ("capture_to_" ^ capture.name));
+          wires :=
+            generated_wire (wire_id "result")
+              { G.x = function_x + 128; y = function_y + 36 }
+              { G.x = x + 360; y = y + 64 }
+            :: !wires
+        done;
+        (!containers, !boundaries, !elements, !wires)
+  in
+  document.surface_functions
+  |> List.map make_for_function
+  |> List.fold_left
+       (fun (containers, boundaries, elements, wires)
+            (next_containers, next_boundaries, next_elements, next_wires) ->
+         ( containers @ next_containers,
+           boundaries @ next_boundaries,
+           elements @ next_elements,
+           wires @ next_wires ))
+       ([], [], [], [])
+
 let to_raw_scene document =
   let conversion_errors = ref [] in
   let invalid id message =
@@ -1378,6 +1894,22 @@ let to_raw_scene document =
            (elements @ next_elements, wires @ next_wires))
          ([], [])
   in
+  let expanded_project_call_elements, expanded_project_call_wires =
+    document.elements
+    |> List.map (project_call_generated_scene document)
+    |> List.fold_left
+         (fun (elements, wires) (next_elements, next_wires) ->
+           (elements @ next_elements, wires @ next_wires))
+         ([], [])
+  in
+  let
+    ( generated_flat_containers,
+      generated_flat_boundaries,
+      generated_flat_elements,
+      generated_flat_wires )
+    =
+    generated_curried_surface_scene document
+  in
   let core_elements =
     document.elements
     |> List.filter_map (fun (element : element) ->
@@ -1392,19 +1924,38 @@ let to_raw_scene document =
                in
                Some { G.id = element_id; kind; bounds = geometry_bounds element.bounds; ports }
            | _ -> None)
-    |> fun elements -> elements @ expanded_library_elements
+    |> fun elements ->
+    elements @ expanded_library_elements @ expanded_project_call_elements
+    @ generated_flat_elements
+  in
+  let flat_info_for_container (container : container) =
+    multi_surface_function_for_body document container.id
   in
   let captures_of_container (container : container) =
-    container.boundary_ports
-    |> List.filter_map (fun (boundary : boundary_port) ->
-           match boundary.role with
-           | Capture key ->
-               (match C.Port_key.of_string key with
-               | Ok key -> Some { C.key; typ = boundary.typ }
-               | Error message -> invalid key message; None)
-           | _ -> None)
-    |> List.sort (fun (left : C.capture) (right : C.capture) ->
-           C.Port_key.compare left.C.key right.C.key)
+    match flat_info_for_container container with
+    | Some function_info ->
+        let parameters = function_info.parameters in
+        parameters
+        |> List.rev
+        |> List.tl
+        |> List.rev
+        |> List.filter_map (fun (parameter : surface_parameter) ->
+               match C.Port_key.of_string parameter.name with
+               | Ok key -> Some { C.key; typ = parameter.typ }
+               | Error message -> invalid parameter.name message; None)
+        |> List.sort (fun (left : C.capture) (right : C.capture) ->
+               C.Port_key.compare left.C.key right.C.key)
+    | None ->
+        container.boundary_ports
+        |> List.filter_map (fun (boundary : boundary_port) ->
+               match boundary.role with
+               | Capture key ->
+                   (match C.Port_key.of_string key with
+                   | Ok key -> Some { C.key; typ = boundary.typ }
+                   | Error message -> invalid key message; None)
+               | _ -> None)
+        |> List.sort (fun (left : C.capture) (right : C.capture) ->
+               C.Port_key.compare left.C.key right.C.key)
   in
   let dependencies values =
     values
@@ -1433,6 +1984,17 @@ let to_raw_scene document =
                        (id C.Function_template_id.of_string template_id)
                  | Template
                      { template_id; parameter_type; result_type; dependencies = deps } ->
+                     let template_id, parameter_type, result_type =
+                       match flat_info_for_container container with
+                       | None -> (template_id, parameter_type, result_type)
+                       | Some function_info ->
+                           let last_parameter =
+                             List.hd (List.rev function_info.parameters)
+                           in
+                           ( flat_body_template_id function_info,
+                             last_parameter.typ,
+                             function_info.result_type )
+                     in
                      Option.map
                        (fun template_id ->
                          S.Template
@@ -1449,10 +2011,26 @@ let to_raw_scene document =
                  (fun kind ->
                    { G.id = container_id; kind; bounds = geometry_bounds container.bounds })
                  kind)
+    |> fun containers -> containers @ generated_flat_containers
   in
   let boundaries =
-    document.containers
+    (document.containers
     |> List.concat_map (fun (container : container) ->
+           let flat_info = flat_info_for_container container in
+           let flat_last_parameter_id =
+             match flat_info with
+             | None -> None
+             | Some _function_info -> (
+                 container.boundary_ports
+                 |> List.filter (fun (boundary : boundary_port) ->
+                        boundary.role = Parameter)
+                 |> List.sort (fun (left : boundary_port) (right : boundary_port) ->
+                        Int.compare left.anchor.y right.anchor.y)
+                 |> List.rev
+                 |> function
+                 | boundary :: _ -> Some boundary.id
+                 | [] -> None)
+           in
            container.boundary_ports
            |> List.filter_map (fun (boundary : boundary_port) ->
                   match
@@ -1462,7 +2040,36 @@ let to_raw_scene document =
                   | Some boundary_id, Some container_id ->
                       let role =
                         match boundary.role with
-                        | Parameter -> Some G.Boundary_parameter
+                        | Parameter -> (
+                            match flat_info with
+                            | Some function_info
+                              when Some boundary.id <> flat_last_parameter_id ->
+                                let ordered_parameters =
+                                  container.boundary_ports
+                                  |> List.filter (fun (candidate : boundary_port) ->
+                                         candidate.role = Parameter)
+                                  |> List.sort (fun (left : boundary_port) (right : boundary_port) ->
+                                         Int.compare left.anchor.y right.anchor.y)
+                                in
+                                let parameter_index =
+                                  ordered_parameters
+                                  |> List.mapi (fun index value -> (index, value))
+                                  |> List.find_map
+                                       (fun (index, (candidate : boundary_port)) ->
+                                         if String.equal candidate.id boundary.id then
+                                           Some index
+                                         else None)
+                                in
+                                (match parameter_index with
+                                | Some index -> (
+                                    match List.nth_opt function_info.parameters index with
+                                    | Some parameter ->
+                                        Option.map
+                                          (fun key -> G.Boundary_capture key)
+                                          (id C.Port_key.of_string parameter.name)
+                                    | None -> None)
+                                | None -> None)
+                            | _ -> Some G.Boundary_parameter)
                         | Result -> Some G.Boundary_result
                         | Capture key ->
                             Option.map
@@ -1479,7 +2086,8 @@ let to_raw_scene document =
                             position = absolute container boundary.anchor;
                           })
                         role
-                  | _ -> None))
+                  | _ -> None)))
+    @ generated_flat_boundaries
   in
   let core_wires =
     document.wires
@@ -1494,7 +2102,9 @@ let to_raw_scene document =
                      wire.points;
                })
              (id G.Wire_id.of_string wire.id))
-    |> fun wires -> wires @ expanded_library_wires
+    |> fun wires ->
+    wires @ expanded_library_wires @ expanded_project_call_wires
+    @ generated_flat_wires
   in
   let core_junctions =
     document.junctions

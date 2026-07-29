@@ -95,6 +95,12 @@ export type ProjectElement =
         templateId: StableId;
         version: StableId;
       };
+    })
+  | (ElementBase & {
+      kind: "project_call";
+      properties: {
+        templateId: StableId;
+      };
     });
 
 export type ContainerKind =
@@ -208,6 +214,7 @@ export interface ProjectDocument {
   surfaceConnections?: SurfaceConnection[];
   surfaceResourceFlows?: SurfaceResourceFlow[];
   surfaceLibraryCalls?: SurfaceLibraryCall[];
+  surfaceProjectCalls?: SurfaceProjectCall[];
   surfaceFunctions?: SurfaceFunctionMetadata[];
   currentContainerId?: StableId;
   view?: SavedView;
@@ -234,6 +241,12 @@ export interface SurfaceLibraryCall {
   applyElementIds: StableId[];
 }
 
+export interface SurfaceProjectCall {
+  id: StableId;
+  templateId: StableId;
+  functionElementId: StableId;
+}
+
 export type Selection =
   | { type: "element"; id: StableId }
   | { type: "boundary"; id: StableId; containerId: StableId }
@@ -258,6 +271,7 @@ export const ELEMENT_KINDS = [
   "copy",
   "function",
   "library_call",
+  "project_call",
   "apply",
   "bool_rec",
   "nat_rec",

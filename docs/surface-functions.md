@@ -143,7 +143,7 @@ parameter index and tree path.
 
 ## Editor integration slice
 
-The browser editor now stores optional Project JSON v1 `surfaceFunctions`
+The browser editor now stores optional Project JSON v2 `surfaceFunctions`
 metadata for authoring named functions without exposing internal Core IDs. The
 metadata records the function name, ordered argument names and Unit/Nat types,
 the named result, and the body container to reopen. It is UI/navigation data
@@ -151,13 +151,35 @@ over ordinary project geometry: execution still goes through Function, Apply,
 boundary ports, wires, geometry inference, symbolic lowering, and Core.
 
 For this editor slice, a named multi-argument function is represented by one
-editable template body. Earlier arguments appear as ordered Function capture
-ports and the final argument remains the template Parameter boundary. A single
-Call palette action can therefore show named arguments in declaration order
-while still producing ordinary closure creation and Apply geometry. The
-expression-based `Surface_program` lowering above remains the reference model
-for deterministic currying and balanced Copy/Drop generation; richer editor
-body analysis and source-mapped lowering diagnostics remain future work.
+editable template body. All arguments appear as ordered boundary outputs in
+that body, and the result appears as one boundary input. A single folded
+project Call node shows named arguments in declaration order while lowering
+deterministically to ordinary curried Function and Apply geometry at execution
+time.
+
+Example:
+
+```text
+clamp(n : Nat, lower : Nat, upper : Nat) : Nat
+  = min(max(n, lower), upper)
+
+clamp(3, 5, 10)  -> Nat(5)
+clamp(7, 5, 10)  -> Nat(7)
+clamp(15, 5, 10) -> Nat(10)
+```
+
+Flat authoring does not imply implicit sharing. A function such as:
+
+```text
+between(n : Nat, lower : Nat, upper : Nat) : Bool
+  = and(lessOrEqual(lower, n), lessOrEqual(n, upper))
+```
+
+must still use an explicit `Copy` to consume `n` twice. Automatic Drops are
+authoring placeholders and lower to explicit Core Drops. The expression-based
+`Surface_program` lowering above remains the reference model for deterministic
+currying and balanced Copy/Drop generation; richer editor body analysis and
+source-mapped lowered-graph inspection remain future work.
 
 ## Deliberate exclusions
 

@@ -750,9 +750,9 @@ let () =
     {
       "name": "captureReturn",
       "templateId": "captureReturn",
+      "bodyContainerId": "capture-return-container",
       "parameters": [{ "name": "accumulator", "type": "nat" }],
-      "resultName": "result",
-      "captures": [{ "key": "predecessor", "type": "nat" }]
+      "result": { "name": "result", "type": "nat" }
     }
   ],
   "surfaceConnections": [

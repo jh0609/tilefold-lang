@@ -322,13 +322,13 @@ const captureWire = namedCall.document.geometry.wires.find(
   (wire) =>
     wire.targetHint?.kind === "element_port" &&
     wire.targetHint.elementId === namedCall.functionElement.id &&
-    wire.targetHint.port === "left",
+    wire.targetHint.port === "arg_0",
 );
 const argumentWire = namedCall.document.geometry.wires.find(
   (wire) =>
     wire.targetHint?.kind === "element_port" &&
-    wire.targetHint.elementId === namedCall.applyElement!.id &&
-    wire.targetHint.port === "argument",
+    wire.targetHint.elementId === namedCall.functionElement.id &&
+    wire.targetHint.port === "arg_1",
 );
 const captureSource =
   captureWire?.sourceHint?.kind === "element_port"
@@ -341,7 +341,7 @@ const argumentSource =
 const resultDropWire = namedCall.document.geometry.wires.find(
   (wire) =>
     wire.sourceHint?.kind === "element_port" &&
-    wire.sourceHint.elementId === namedCall.applyElement!.id &&
+    wire.sourceHint.elementId === namedCall.functionElement.id &&
     wire.sourceHint.port === "result" &&
     wire.targetHint?.kind === "element_port",
 );
@@ -349,7 +349,7 @@ const resultDropId =
   resultDropWire?.targetHint?.kind === "element_port"
     ? resultDropWire.targetHint.elementId
     : "";
-const applyResult = namedCall.applyElement!.portAnchors.find(
+const applyResult = namedCall.functionElement.portAnchors.find(
   (anchor) => anchor.port === "result",
 )!;
 const entryResult = namedCall.document.geometry.containers[0]!.boundaryPorts.find(
@@ -394,7 +394,7 @@ const executableNamedCall = {
         ],
         sourceHint: {
           kind: "element_port" as const,
-          elementId: namedCall.applyElement!.id,
+          elementId: namedCall.functionElement.id,
           port: "result",
         },
         targetHint: {

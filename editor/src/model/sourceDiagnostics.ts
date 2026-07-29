@@ -355,6 +355,69 @@ export function preflightProjectDiagnostics(
   for (const element of [...document.geometry.elements].sort((left, right) =>
     left.id.localeCompare(right.id),
   )) {
+    if (element.kind === "project_call") {
+      const templateId = element.properties.templateId;
+      const surfaceFunction = document.surfaceFunctions?.find(
+        (functionInfo) => functionInfo.templateId === templateId,
+      );
+      if (!surfaceFunction) continue;
+      const callContainerId = elementOwnerId(document, element);
+      surfaceFunction.parameters.forEach((parameter, index) => {
+        const port = `arg_${index}`;
+        const hint: EndpointHint = {
+          kind: "element_port",
+          elementId: element.id,
+          port,
+        };
+        if (!portKeys.has(`element:${element.id}:${port}`)) return;
+        if (hasIncomingWire(document.geometry.wires, hint)) return;
+        diagnostics.push(
+          diagnostic({
+            id: `diag:missing-call-arg:${element.id}:${parameter.name}`,
+            code: "surface.missing-call-argument",
+            phase: "surface-validation",
+            severity: "error",
+            summary: `Call "${surfaceFunction.name}" is missing a value for argument "${parameter.name}".`,
+            detail: "Connect a value to the named argument port before running.",
+            primarySource: {
+              kind: "element",
+              containerId: callContainerId,
+              elementId: element.id,
+              port,
+            },
+            relatedSources: callRelatedSources(document, templateId),
+            coreReferences: [`surface-port:${element.id}:${port}`],
+          }),
+        );
+      });
+      if (
+        !hasOutgoingWire(document.geometry.wires, {
+          kind: "element_port",
+          elementId: element.id,
+          port: "result",
+        })
+      ) {
+        diagnostics.push(
+          diagnostic({
+            id: `diag:unused-call-result:${element.id}`,
+            code: "surface.unconsumed-call-result",
+            phase: "surface-validation",
+            severity: "error",
+            summary: `Call "${surfaceFunction.name}" result is not connected.`,
+            detail: "Connect the call result to a consumer or to the graph result.",
+            primarySource: {
+              kind: "element",
+              containerId: callContainerId,
+              elementId: element.id,
+              port: "result",
+            },
+            relatedSources: callRelatedSources(document, templateId),
+            coreReferences: [`surface-port:${element.id}:result`],
+          }),
+        );
+      }
+      continue;
+    }
     if (element.kind !== "function") continue;
     const templateId = element.properties.templateId;
     const surfaceFunction = document.surfaceFunctions?.find(

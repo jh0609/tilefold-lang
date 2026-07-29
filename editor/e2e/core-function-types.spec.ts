@@ -144,7 +144,7 @@ test("leaves function-typed Call arguments explicit and source-maps the diagnost
   await expect(diagnostic).toBeVisible();
   await diagnostic.click();
   await expect(
-    page.locator('g.element-node.selected[data-node-kind="apply"]'),
+    page.locator('g.element-node.selected[data-node-kind="project_call"]'),
   ).toBeVisible();
   await expectNoBrowserIssues(issues);
 });

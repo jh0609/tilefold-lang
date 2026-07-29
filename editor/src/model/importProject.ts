@@ -7,6 +7,7 @@ import {
   type ProjectWire,
   type SurfaceFunctionMetadata,
   type SurfaceLibraryCall,
+  type SurfaceProjectCall,
 } from "./project";
 import { collectConnectablePorts } from "./portConnections";
 import {
@@ -277,6 +278,13 @@ function elementAt(value: unknown, path: string): ProjectElement {
       }
       break;
     }
+    case "project_call": {
+      stringAt(
+        required(properties, "templateId", `${path}.properties`),
+        `${path}.properties.templateId`,
+      );
+      break;
+    }
   }
   const anchors = arrayAt(
     required(element, "portAnchors", path),
@@ -308,6 +316,22 @@ function elementAt(value: unknown, path: string): ProjectElement {
       .sort();
     if (JSON.stringify(actual) !== JSON.stringify(expected)) {
       throw new StructureError(`${path}.portAnchors`, `expected ports ${expected.join(", ")}`);
+    }
+  }
+  if (kind === "project_call") {
+    const templateId = stringAt(
+      required(properties, "templateId", `${path}.properties`),
+      `${path}.properties.templateId`,
+    );
+    const actual = anchors
+      .map((anchor, index) => {
+        const anchorPath = `${path}.portAnchors[${index}]`;
+        const record = objectAt(anchor, anchorPath);
+        return stringAt(required(record, "port", anchorPath), `${anchorPath}.port`);
+      })
+      .sort();
+    if (!actual.includes("result") || actual.some((port) => port !== "result" && !/^arg_\d+$/.test(port))) {
+      throw new StructureError(`${path}.portAnchors`, `invalid project call ports for ${templateId}`);
     }
   }
   return element as unknown as ProjectElement;
@@ -529,6 +553,17 @@ function surfaceLibraryCallAt(value: unknown, path: string): SurfaceLibraryCall 
     `${path}.applyElementIds`,
   ).forEach((id, index) => stringAt(id, `${path}.applyElementIds[${index}]`));
   return value as SurfaceLibraryCall;
+}
+
+function surfaceProjectCallAt(value: unknown, path: string): SurfaceProjectCall {
+  const record = objectAt(value, path);
+  idAt(record, path);
+  stringAt(required(record, "templateId", path), `${path}.templateId`);
+  stringAt(
+    required(record, "functionElementId", path),
+    `${path}.functionElementId`,
+  );
+  return value as SurfaceProjectCall;
 }
 
 function checkRenderingReferences(
@@ -867,6 +902,47 @@ function checkSurfaceLibraryCallReferences(document: ProjectDocument): void {
   }
 }
 
+function checkSurfaceProjectCallReferences(document: ProjectDocument): void {
+  const calls = document.surfaceProjectCalls ?? [];
+  if (calls.length === 0) return;
+  const ids = new Set<string>();
+  const elements = new Map(
+    document.geometry.elements.map((element) => [element.id, element]),
+  );
+  const functions = new Map(
+    (document.surfaceFunctions ?? []).map((functionInfo) => [
+      functionInfo.templateId,
+      functionInfo,
+    ]),
+  );
+  for (const [index, call] of calls.entries()) {
+    const path = `$.surfaceProjectCalls[${index}]`;
+    if (ids.has(call.id)) {
+      throw new StructureError(`${path}.id`, `duplicate project call ${call.id}`);
+    }
+    ids.add(call.id);
+    const functionInfo = functions.get(call.templateId);
+    if (!functionInfo) {
+      throw new StructureError(`${path}.templateId`, `unknown Surface function ${call.templateId}`);
+    }
+    const element = elements.get(call.functionElementId);
+    if (!element || element.kind !== "project_call") {
+      throw new StructureError(`${path}.functionElementId`, `missing project call element ${call.functionElementId}`);
+    }
+    if (element.properties.templateId !== call.templateId) {
+      throw new StructureError(`${path}.functionElementId`, `Project call element does not reference ${call.templateId}`);
+    }
+    const expected = [
+      ...functionInfo.parameters.map((_parameter, parameterIndex) => `arg_${parameterIndex}`),
+      "result",
+    ].sort();
+    const actual = element.portAnchors.map((anchor) => anchor.port).sort();
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      throw new StructureError(`${path}.functionElementId`, `expected ports ${expected.join(", ")}`);
+    }
+  }
+}
+
 function surfaceConnectionAt(value: unknown, path: string): void {
   const record = objectAt(value, path);
   idAt(record, path);
@@ -1153,6 +1229,12 @@ export function parseProjectJson(text: string): ProjectDocument {
         surfaceLibraryCallAt(value, `$.surfaceLibraryCalls[${index}]`),
     );
   }
+  if (document.surfaceProjectCalls !== undefined) {
+    arrayAt(document.surfaceProjectCalls, "$.surfaceProjectCalls").forEach(
+      (value, index) =>
+        surfaceProjectCallAt(value, `$.surfaceProjectCalls[${index}]`),
+    );
+  }
   if (document.surfaceConnections !== undefined) {
     arrayAt(document.surfaceConnections, "$.surfaceConnections").forEach(
       (value, index) =>
@@ -1173,6 +1255,7 @@ export function parseProjectJson(text: string): ProjectDocument {
   checkSurfaceFunctionReferences(surfaceFunctions, containers);
   checkSurfaceResourceFlowReferences(parsed as ProjectDocument);
   checkSurfaceLibraryCallReferences(parsed as ProjectDocument);
+  checkSurfaceProjectCallReferences(parsed as ProjectDocument);
   if (document.view !== undefined) {
     const view = objectAt(document.view, "$.view");
     integerAt(required(view, "cameraX", "$.view"), "$.view.cameraX");

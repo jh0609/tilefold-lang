@@ -659,93 +659,52 @@ describe("editor operations", () => {
         container.kind.kind === "template" &&
         container.kind.templateId === "isZeroStep",
     )!;
-    const inner = result.document.geometry.containers.find(
-      (container) =>
-        container.kind.kind === "template" &&
-        container.kind.templateId === "isZeroStep_curried_1",
-    )!;
     const outerResult = outer.boundaryPorts.find(
       (boundary) => boundary.role === "result",
     )!;
-    const innerFunction = result.document.geometry.elements.find(
-      (element) =>
-        element.kind === "function" &&
-        element.properties.templateId === "isZeroStep_curried_1",
-    )!;
-    const resultWire = result.document.geometry.wires.find(
-      (wire) =>
-        wire.sourceHint?.kind === "element_port" &&
-        wire.sourceHint.elementId === innerFunction.id &&
-        wire.sourceHint.port === "value" &&
-        wire.targetHint?.kind === "boundary_port" &&
-        wire.targetHint.containerId === outer.id &&
-        wire.targetHint.boundaryId === outerResult.id,
-    );
-    expect(resultWire).toBeDefined();
+    expect(
+      result.document.geometry.containers.some(
+        (container) =>
+          container.kind.kind === "template" &&
+          container.kind.templateId === "isZeroStep_curried_1",
+      ),
+    ).toBe(false);
+    expect(
+      outer.boundaryPorts
+        .filter((boundary) => boundary.role === "parameter")
+        .map((boundary) => boundary.type),
+    ).toEqual(["nat", "nat"]);
 
     const ports = collectConnectablePorts(result.document);
-    const functionValue = ports.find(
-      (port) =>
-        port.ownerId === innerFunction.id &&
-        port.name === "value" &&
-        port.direction === "output",
-    )!;
     const resultPort = ports.find(
       (port) =>
         port.hint.kind === "boundary_port" &&
         port.hint.containerId === outer.id &&
         port.hint.boundaryId === outerResult.id,
     )!;
-    expect(functionValue.type).toEqual({ arrow: ["nat", "nat"] });
-    expect(resultPort.type).toEqual(functionValue.type);
+    expect(resultPort.type).toEqual("nat");
     expect(preflightProjectDiagnostics(result.document)).toEqual([]);
 
-    const innerParameter = inner.boundaryPorts.find(
-      (boundary) => boundary.role === "parameter",
-    )!;
-    const innerResult = inner.boundaryPorts.find(
-      (boundary) => boundary.role === "result",
-    )!;
     expect(
-      result.document.geometry.wires.some(
-        (wire) => {
-          const targetHint = wire.targetHint;
-          return (
-            wire.sourceHint?.kind === "boundary_port" &&
-            wire.sourceHint.containerId === inner.id &&
-            wire.sourceHint.boundaryId === innerParameter.id &&
-            targetHint?.kind === "element_port" &&
-            result.document.geometry.elements.some(
-              (element) =>
-                element.id === targetHint.elementId &&
-                element.kind === "drop",
-            )
-          );
-        },
+      result.document.surfaceFunctions?.[0]?.parameters.map(
+        (parameter) => parameter.name,
       ),
-    ).toBe(true);
+    ).toEqual(["index", "previous"]);
     expect(
-      result.document.geometry.wires.some(
-        (wire) =>
-          wire.targetHint?.kind === "boundary_port" &&
-          wire.targetHint.containerId === inner.id &&
-          wire.targetHint.boundaryId === innerResult.id,
+      result.document.geometry.elements.filter(
+        (element) =>
+          element.kind === "function" &&
+          element.properties.templateId === "isZeroStep",
       ),
-    ).toBe(true);
+    ).toHaveLength(1);
 
     const imported = parseProjectJson(exportProjectJson(result.document));
     expect(preflightProjectDiagnostics(imported)).toEqual([]);
     expect(
-      imported.geometry.wires.some(
-        (wire) =>
-          wire.sourceHint?.kind === "element_port" &&
-          wire.sourceHint.elementId === innerFunction.id &&
-          wire.sourceHint.port === "value" &&
-          wire.targetHint?.kind === "boundary_port" &&
-          wire.targetHint.containerId === outer.id &&
-          wire.targetHint.boundaryId === outerResult.id,
+      imported.surfaceFunctions?.[0]?.parameters.map(
+        (parameter) => parameter.name,
       ),
-    ).toBe(true);
+    ).toEqual(["index", "previous"]);
   });
 
   it("connects generated isZeroStep Function.value to NatRec.step", () => {
@@ -961,7 +920,7 @@ describe("editor operations", () => {
           { name: "right", type: "nat" },
         ],
         captures: [],
-        resultType: { arrow: ["nat", "nat"] },
+        resultType: "nat",
       }),
     ]);
 
@@ -971,13 +930,19 @@ describe("editor operations", () => {
       "choose_right",
     );
     if ("error" in called) throw new Error(called.error);
+    expect(called.functionElement.kind).toBe("project_call");
     expect(called.functionElement.portAnchors.map((anchor) => anchor.port)).toEqual([
-      "value",
-    ]);
-    expect(called.applyElement!.portAnchors.map((anchor) => anchor.port)).toEqual([
-      "function",
-      "argument",
+      "arg_0",
+      "arg_1",
       "result",
+    ]);
+    expect(called.applyElement).toBeNull();
+    expect(called.document.surfaceProjectCalls).toEqual([
+      {
+        id: "project_call_1",
+        templateId: "choose_right",
+        functionElementId: called.functionElement.id,
+      },
     ]);
   });
 
@@ -1100,33 +1065,29 @@ describe("editor operations", () => {
         ],
         captures: [],
         parameterType: functionType,
-        resultType: { arrow: ["nat", "nat"] },
+        resultType: "nat",
       }),
     ]);
 
     const called = addFunctionCall(authored.document, "entry", "apply_once");
     if ("error" in called) throw new Error(called.error);
-    expect(called.functionElement.kind).toBe("function");
-    if (called.functionElement.kind !== "function") {
-      throw new Error("expected a project Function element");
-    }
-    expect(called.functionElement.properties.captures).toEqual([]);
+    expect(called.functionElement.kind).toBe("project_call");
     expect(
       called.document.geometry.wires.some(
         (wire) =>
           wire.targetHint?.kind === "element_port" &&
           wire.targetHint.elementId === called.functionElement.id &&
-          wire.targetHint.port === "f",
+          wire.targetHint.port === "arg_0",
       ),
     ).toBe(false);
     expect(
       called.document.geometry.wires.some(
         (wire) =>
           wire.targetHint?.kind === "element_port" &&
-          wire.targetHint.elementId === called.applyElement!.id &&
-          wire.targetHint.port === "argument",
+          wire.targetHint.elementId === called.functionElement.id &&
+          wire.targetHint.port === "arg_1",
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("leaves an Arrow final argument unconnected instead of creating a fake literal", () => {
@@ -1145,8 +1106,8 @@ describe("editor operations", () => {
       called.document.geometry.wires.some(
         (wire) =>
           wire.targetHint?.kind === "element_port" &&
-          wire.targetHint.elementId === called.applyElement!.id &&
-          wire.targetHint.port === "argument",
+          wire.targetHint.elementId === called.functionElement.id &&
+          wire.targetHint.port === "arg_0",
       ),
     ).toBe(false);
     expect(
@@ -1174,13 +1135,12 @@ describe("editor operations", () => {
     }).document;
     const called = addFunctionCall(withoutStarter, "entry", "choose_right");
     if ("error" in called) throw new Error(called.error);
-    const callFunction = called.functionElement;
-    const apply = called.applyElement!;
+    const callElement = called.functionElement;
     const oldRightWire = called.document.geometry.wires.find(
       (wire) =>
         wire.targetHint?.kind === "element_port" &&
-        wire.targetHint.elementId === apply.id &&
-        wire.targetHint.port === "argument",
+        wire.targetHint.elementId === callElement.id &&
+        wire.targetHint.port === "arg_1",
     )!;
 
     const edited = editSurfaceFunctionSignature(called.document, {
@@ -1223,25 +1183,26 @@ describe("editor operations", () => {
       parameterType: "nat",
       resultType: { arrow: ["nat", "nat"] },
     });
-    const editedFunction = edited.document.geometry.elements.find(
-      (element) => element.id === callFunction.id && element.kind === "function",
+    const editedCall = edited.document.geometry.elements.find(
+      (element) => element.id === callElement.id && element.kind === "project_call",
     );
-    expect(editedFunction?.properties).toMatchObject({
+    expect(editedCall?.properties).toMatchObject({
       templateId: "choose_right",
-      parameterType: "nat",
-      resultType: { arrow: ["nat", "nat"] },
-      captures: [],
     });
     expect(
       edited.document.geometry.wires.find((wire) => wire.id === oldRightWire.id)
         ?.targetHint,
-    ).toBeUndefined();
+    ).toEqual({
+      kind: "element_port",
+      elementId: callElement.id,
+      port: "arg_0",
+    });
     expect(
       edited.document.geometry.wires.some(
         (wire) =>
           wire.targetHint?.kind === "element_port" &&
-          wire.targetHint.elementId === apply.id &&
-          wire.targetHint.port === "argument",
+          wire.targetHint.elementId === callElement.id &&
+          wire.targetHint.port === "arg_1",
       ),
     ).toBe(true);
     expect(() =>
@@ -1307,9 +1268,10 @@ describe("editor operations", () => {
       resultName: "result",
       resultType: "nat",
     });
-    expect(removed).toEqual({
-      error: 'Disconnect 1 connection(s) before removing "left".',
-    });
+    if ("error" in removed) throw new Error(removed.error);
+    expect(removed.document.surfaceFunctions?.[0]?.parameters).toEqual([
+      { name: "right", type: "nat" },
+    ]);
 
     const typed = editSurfaceFunctionSignature(authored.document, {
       templateId: "choose_right",
@@ -1321,8 +1283,10 @@ describe("editor operations", () => {
       resultName: "result",
       resultType: "nat",
     });
-    expect(typed).toEqual({
-      error: 'Disconnect 1 connection(s) before changing "left" type.',
+    if ("error" in typed) throw new Error(typed.error);
+    expect(typed.document.surfaceFunctions?.[0]?.parameters[0]).toEqual({
+      name: "left",
+      type: "unit",
     });
   });
 
@@ -1826,7 +1790,7 @@ describe("editor operations", () => {
 });
 
 describe("template capture authoring", () => {
-  it("adds a lexical capture to a curried template and replaces the outer auto Drop", () => {
+  it("adds a lexical capture to a flat template and replaces its auto Drop", () => {
     let project = parseProjectJson(exampleJson);
     const created = addFunctionTemplate(project, "entry", {
       templateId: "predStep",
@@ -1839,34 +1803,31 @@ describe("template capture authoring", () => {
     });
     if ("error" in created) throw new Error(created.error);
     project = created.document;
-    const innerTemplateId = "predStep_curried_1";
     const edited = editTemplateCaptures(project, {
-      templateId: innerTemplateId,
-      captures: [{ key: "index", type: "nat" }],
+      templateId: "predStep",
+      captures: [{ key: "seed", type: "nat" }],
     });
     if ("error" in edited) throw new Error(edited.error);
     project = edited.document;
 
-    expect(templateCaptureDrafts(project, innerTemplateId)).toEqual([
-      { key: "index", type: "nat" },
+    expect(templateCaptureDrafts(project, "predStep")).toEqual([
+      { key: "seed", type: "nat" },
     ]);
-    const innerFunction = project.geometry.elements.find(
-      (element): element is Extract<ProjectElement, { kind: "function" }> =>
-        element.kind === "function" &&
-        element.properties.templateId === innerTemplateId,
-    )!;
     const ports = collectConnectablePorts(project);
     const source = ports.find(
       (port) =>
         port.hint.kind === "boundary_port" &&
         port.hint.containerId === created.container.id &&
-        port.name === "parameter",
+        port.name === "capture:seed",
     )!;
-    const target = ports.find(
+    const manualDrop = addElement(project, "drop", { x: 520, y: 180 });
+    project = manualDrop.document;
+    const updatedPorts = collectConnectablePorts(project);
+    const target = updatedPorts.find(
       (port) =>
         port.hint.kind === "element_port" &&
-        port.hint.elementId === innerFunction.id &&
-        port.hint.port === "index",
+        port.ownerId === manualDrop.element.id &&
+        port.name === "input",
     )!;
     const connected = addWire(project, source, target);
     if ("error" in connected) throw new Error(connected.error);
@@ -1885,8 +1846,8 @@ describe("template capture authoring", () => {
     ).toBe(false);
     expect(preflightProjectDiagnostics(project)).toEqual([]);
     const reparsed = parseProjectJson(exportProjectJson(project));
-    expect(templateCaptureDrafts(reparsed, innerTemplateId)).toEqual([
-      { key: "index", type: "nat" },
+    expect(templateCaptureDrafts(reparsed, "predStep")).toEqual([
+      { key: "seed", type: "nat" },
     ]);
   });
 

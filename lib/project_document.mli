@@ -25,6 +25,7 @@ type element_kind =
       template_id : string;
       version : string;
     }
+  | Project_call of { template_id : string }
   | Apply of {
       parameter_type : Core_type.t;
       result_type : Core_type.t;
@@ -102,6 +103,23 @@ type view = {
   zoom : int;
 }
 
+type surface_parameter = { name : string; typ : Core_type.t }
+
+type surface_function = {
+  name : string;
+  template_id : string;
+  body_container_id : string;
+  parameters : surface_parameter list;
+  result_name : string;
+  result_type : Core_type.t;
+}
+
+type surface_project_call = {
+  id : string;
+  template_id : string;
+  function_element_id : string;
+}
+
 type t = {
   format : string;
   version : int;
@@ -111,6 +129,8 @@ type t = {
   wires : wire list;
   junctions : junction list;
   view : view option;
+  surface_functions : surface_function list;
+  surface_project_calls : surface_project_call list;
 }
 
 module Decode_error : sig

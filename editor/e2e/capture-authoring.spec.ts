@@ -81,60 +81,34 @@ test("authors a curried lexical capture through the UI", async ({ page }) => {
   await expect(page.getByText(/Created predStep/)).toBeVisible();
 
   await page.getByRole("button", { name: "Fit view" }).click();
-  const outerContainer = page.locator(
+  const container = page.locator(
     'g.container-shape[data-template-id="predStep"]',
   );
-  const innerContainer = page.locator(
-    'g.container-shape[data-template-id="predStep_curried_1"]',
-  );
-  await expect(outerContainer).toBeVisible();
-  await expect(innerContainer).toBeVisible();
-  const outerContainerId = await outerContainer.getAttribute("data-container-id");
-  const innerContainerId = await innerContainer.getAttribute("data-container-id");
-  expect(outerContainerId).not.toBeNull();
-  expect(innerContainerId).not.toBeNull();
-
-  await innerContainer.click({ force: true });
-  await page.getByRole("button", { name: "Edit captures" }).click();
-  await page.getByRole("button", { name: "Add capture" }).click();
-  await page.getByLabel("Capture 1 name").fill("index");
-  await page.getByLabel("Capture 1 type").selectOption("nat");
-  await page.getByRole("button", { name: "Apply captures" }).click();
-  await expect(page.getByText("index: Nat")).toBeVisible();
-
-  const innerFunction = page.locator(
-    'g.element-node[data-node-kind="function"][data-template-id="predStep_curried_1"]',
-  );
-  await expect(innerFunction).toBeVisible();
-  const innerFunctionId = await innerFunction.getAttribute("data-node-id");
-  expect(innerFunctionId).not.toBeNull();
-  await dragConnect(
-    page,
-    boundaryPort(page, outerContainerId!, "parameter", "output"),
-    elementPort(page, innerFunctionId!, "index", "input"),
-    0,
-  );
+  await expect(container).toBeVisible();
   await expect(
-    page.locator(
-      `polyline[data-source-container-id="${outerContainerId}"][data-target-node-id="${innerFunctionId}"][data-target-port-name="index"]`,
-    ),
-  ).toHaveCount(1);
+    page.locator('g.container-shape[data-template-id="predStep_curried_1"]'),
+  ).toHaveCount(0);
+  const containerId = await container.getAttribute("data-container-id");
+  expect(containerId).not.toBeNull();
 
-  await page.getByRole("button", { name: "Fit view" }).click();
-  await innerContainer.click({ force: true });
+  await container.click({ force: true });
+  await expect(page.getByText(/predStep\(index: Nat, previous: Nat\)/)).toBeVisible();
+  await expect(
+    boundaryPort(page, containerId!, "parameter", "output"),
+  ).toHaveCount(2);
   const oldResultWire = page.locator(
-    `polyline[data-target-container-id="${innerContainerId}"][data-target-boundary-role="result"][data-source-node-kind="nat_literal"]`,
+    `polyline[data-target-container-id="${containerId}"][data-target-boundary-role="result"][data-source-node-kind="nat_literal"]`,
   );
   await deleteSelected(page, oldResultWire);
   await dragConnect(
     page,
-    boundaryPort(page, innerContainerId!, "capture:index", "output"),
-    boundaryPort(page, innerContainerId!, "result", "input"),
+    boundaryPort(page, containerId!, "parameter", "output").nth(0),
+    boundaryPort(page, containerId!, "result", "input"),
     0,
   );
   await expect(
     page.locator(
-      `polyline[data-source-container-id="${innerContainerId}"][data-source-boundary-role="capture"][data-target-boundary-role="result"]`,
+      `polyline[data-source-container-id="${containerId}"][data-source-boundary-role="parameter"][data-target-boundary-role="result"]`,
     ),
   ).toHaveCount(1);
 
@@ -146,9 +120,10 @@ test("authors a curried lexical capture through the UI", async ({ page }) => {
   await page.reload();
   await page.getByLabel("Open JSON file").setInputFiles(path);
   await expect(
-    page.locator(
-      'g.container-shape[data-template-id="predStep_curried_1"]',
-    ),
+    page.locator('g.container-shape[data-template-id="predStep"]'),
   ).toBeVisible();
+  await expect(
+    page.locator('g.container-shape[data-template-id="predStep_curried_1"]'),
+  ).toHaveCount(0);
   await expectNoBrowserIssues(issues);
 });
