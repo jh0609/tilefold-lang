@@ -18,6 +18,8 @@ npm run dev
 
 See [`editor/README.md`](editor/README.md) for supported editing operations,
 tests, production builds, and current limitations.
+For repeatable local, Playwright, and Vercel verification steps, see
+[`docs/editor-verification-runbook.md`](docs/editor-verification-runbook.md).
 
 Execution modes are documented in [`docs/fast-run.md`](docs/fast-run.md).
 
