@@ -648,10 +648,10 @@ test("places a complete multi-argument Standard Library call from the palette", 
   const functionId = await functionNode.getAttribute("data-node-id");
   expect(functionId).not.toBeNull();
   await expect(page.getByTestId(`element-${functionId}-kind-label`)).toHaveText(
-    "add",
+    "+",
   );
   await expect(page.getByTestId(`element-${functionId}-library-source`)).toHaveText(
-    "Standard Library",
+    "Add · Standard Library",
   );
   await expect(functionNode).toHaveAttribute("data-library", "tilefold.std");
   await expect(functionNode).toHaveAttribute("data-library-function-id", "nat.add");
@@ -663,6 +663,70 @@ test("places a complete multi-argument Standard Library call from the palette", 
   await expect(page.getByText("Immutable definition · read only")).toBeVisible();
   await page.getByRole("button", { name: "Back to call" }).click();
   await expect(page.getByTestId(`element-${functionId}-kind-label`)).toBeVisible();
+
+  await expectNoBrowserIssues(issues);
+});
+
+test("shows mathematical symbols for folded Standard Library operations", async ({
+  page,
+}) => {
+  const issues = watchBrowserIssues(page);
+  await page.goto("/");
+
+  await page.getByRole("searchbox", { name: "Search nodes" }).fill("lessOrEqual");
+  await expect(
+    page.getByRole("button", { name: "Add Standard Library lessOrEqual" }),
+  ).toBeVisible();
+  await page.getByRole("searchbox", { name: "Search nodes" }).fill("≤");
+  await expect(
+    page.getByRole("button", { name: "Add Standard Library lessOrEqual" }),
+  ).toBeVisible();
+  await page.getByRole("searchbox", { name: "Search nodes" }).fill("<=");
+  await expect(
+    page.getByRole("button", { name: "Add Standard Library lessOrEqual" }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Add Standard Library lessOrEqual" }).click();
+  const lessOrEqual = page.locator(
+    'g.element-node[data-node-kind="library_call"][data-template-id="tilefold.std.nat.lessOrEqual"]',
+  );
+  const lessOrEqualId = await lessOrEqual.getAttribute("data-node-id");
+  expect(lessOrEqualId).not.toBeNull();
+  await expect(page.getByTestId(`element-${lessOrEqualId}-kind-label`)).toHaveText("≤");
+  await expect(lessOrEqual).toHaveAccessibleName(
+    "Standard Library call Less than or equal",
+  );
+  await lessOrEqual.focus();
+  await expect(page.getByTestId(`element-${lessOrEqualId}-library-source`)).toHaveText(
+    "Less than or equal · Standard Library",
+  );
+
+  await page.getByRole("searchbox", { name: "Search nodes" }).fill("multiply");
+  await page.getByRole("button", { name: "Add Standard Library multiply" }).click();
+  const multiply = page.locator(
+    'g.element-node[data-node-kind="library_call"][data-template-id="tilefold.std.nat.multiply"]',
+  );
+  const multiplyId = await multiply.getAttribute("data-node-id");
+  expect(multiplyId).not.toBeNull();
+  await expect(page.getByTestId(`element-${multiplyId}-kind-label`)).toHaveText("×");
+
+  await page.getByRole("searchbox", { name: "Search nodes" }).fill("square");
+  await page.getByRole("button", { name: "Add Standard Library square" }).click();
+  const square = page.locator(
+    'g.element-node[data-node-kind="library_call"][data-template-id="tilefold.std.nat.square"]',
+  );
+  const squareId = await square.getAttribute("data-node-id");
+  expect(squareId).not.toBeNull();
+  await expect(page.getByTestId(`element-${squareId}-kind-label`)).toHaveText("x²");
+
+  await page.getByRole("searchbox", { name: "Search nodes" }).fill("and");
+  await page.getByRole("button", { name: "Add Standard Library and" }).click();
+  const andCall = page.locator(
+    'g.element-node[data-node-kind="library_call"][data-template-id="tilefold.std.bool.and"]',
+  );
+  const andId = await andCall.getAttribute("data-node-id");
+  expect(andId).not.toBeNull();
+  await expect(page.getByTestId(`element-${andId}-kind-label`)).toHaveText("∧");
 
   await expectNoBrowserIssues(issues);
 });
@@ -822,8 +886,20 @@ test("compares Standard Library transparent and fast execution for all exposed c
     await page.goto("/");
     await expect(page.getByRole("button", { name: "Add Standard Library add" })).toBeVisible();
     await page.getByLabel("Open JSON file").setInputFiles(fixturePath);
+    const expectedLabel: Record<string, string> = {
+      add: "+",
+      multiply: "×",
+      square: "x²",
+      subtract: "−",
+      not: "¬",
+      and: "∧",
+      or: "∨",
+      equal: "=",
+      lessThan: "<",
+      lessOrEqual: "≤",
+    };
     await expect(page.getByTestId("element-std-call-kind-label")).toHaveText(
-      scenario.name,
+      expectedLabel[scenario.name] ?? scenario.name,
     );
 
     await page.getByLabel("Execution mode").selectOption("transparent");

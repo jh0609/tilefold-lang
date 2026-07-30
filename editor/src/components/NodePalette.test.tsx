@@ -192,6 +192,21 @@ describe("NodePalette", () => {
           resultType: { arrow: ["nat", "nat"] },
           captures: [],
         },
+        {
+          templateId: "tilefold.std.nat.lessOrEqual",
+          displayName: "lessOrEqual",
+          source: "standard-library",
+          libraryFunctionId: "nat.lessOrEqual",
+          libraryVersion: "v1",
+          parameters: [
+            { name: "a", type: "nat" },
+            { name: "b", type: "nat" },
+          ],
+          resultName: "result",
+          parameterType: "nat",
+          resultType: "bool",
+          captures: [],
+        },
       ],
       onAddCall,
     });
@@ -202,5 +217,18 @@ describe("NodePalette", () => {
     );
 
     expect(onAddCall).toHaveBeenCalledWith("tilefold.std.nat.add");
+
+    await user.clear(screen.getByRole("searchbox", { name: "Search nodes" }));
+    await user.type(screen.getByRole("searchbox", { name: "Search nodes" }), "≤");
+    expect(
+      screen.getByRole("button", { name: "Add Standard Library lessOrEqual" }),
+    ).toBeVisible();
+    expect(screen.getByText("≤")).toBeInTheDocument();
+
+    await user.clear(screen.getByRole("searchbox", { name: "Search nodes" }));
+    await user.type(screen.getByRole("searchbox", { name: "Search nodes" }), "<=");
+    expect(
+      screen.getByRole("button", { name: "Add Standard Library lessOrEqual" }),
+    ).toBeVisible();
   });
 });

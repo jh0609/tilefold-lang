@@ -4,7 +4,7 @@ import type { ConnectablePort } from "../model/portConnections";
 import type { ProjectElement } from "../model/project";
 import { ElementNode } from "./ElementNode";
 
-function renderRec(element: ProjectElement, ports: ConnectablePort[]) {
+function renderElement(element: ProjectElement, ports: ConnectablePort[]) {
   render(
     <svg>
       <ElementNode
@@ -39,7 +39,7 @@ describe("ElementNode Rec type labels", () => {
       ],
       properties: { type: "bool" },
     };
-    renderRec(element, [
+    renderElement(element, [
       {
         key: "element:rec:base",
         ownerId: "rec",
@@ -78,7 +78,7 @@ describe("ElementNode Rec type labels", () => {
       portAnchors: [{ port: "true_case", x: 10, y: 72 }],
       properties: { type: "nat" },
     };
-    renderRec(element, [
+    renderElement(element, [
       {
         key: "element:choose:true_case",
         ownerId: "choose",
@@ -96,6 +96,108 @@ describe("ElementNode Rec type labels", () => {
 
     expect(screen.getByTestId("element-choose-kind-label")).toHaveTextContent(
       "BoolRec<Nat>",
+    );
+  });
+});
+
+describe("ElementNode Standard Library symbols", () => {
+  it("renders folded arithmetic and comparison calls with mathematical symbols", () => {
+    const element: ProjectElement = {
+      id: "le",
+      kind: "library_call",
+      bounds: { x: 10, y: 20, width: 156, height: 82 },
+      portAnchors: [],
+      properties: {
+        library: "tilefold.std",
+        functionId: "nat.lessOrEqual",
+        templateId: "tilefold.std.nat.lessOrEqual",
+        version: "v1",
+      },
+    };
+    renderElement(element, []);
+
+    expect(screen.getByTestId("element-le-kind-label")).toHaveTextContent("≤");
+    expect(screen.getByTestId("element-le-library-source")).toHaveTextContent(
+      "Less than or equal · Standard Library",
+    );
+    expect(
+      screen.getByRole("button", { name: "Standard Library call Less than or equal" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/lessOrEqual : Nat → Nat → Bool/)).toBeInTheDocument();
+  });
+
+  it("uses the unary square presentation and falls back for unmapped functions", () => {
+    render(
+      <svg>
+        <ElementNode
+          element={{
+            id: "square",
+            kind: "library_call",
+            bounds: { x: 10, y: 20, width: 156, height: 82 },
+            portAnchors: [],
+            properties: {
+              library: "tilefold.std",
+              functionId: "nat.square",
+              templateId: "tilefold.std.nat.square",
+              version: "v1",
+            },
+          }}
+          selected={false}
+          traceHighlighted={false}
+          ports={[]}
+          connectionTargetKey={null}
+          compatiblePortKeys={new Set()}
+          rejectedPortKeys={new Set()}
+          pixelsPerCanvasUnit={1}
+          onSelect={vi.fn()}
+          onPointerDown={vi.fn()}
+          onResizePointerDown={vi.fn()}
+          onPortPointerDown={vi.fn()}
+        />
+        <ElementNode
+          element={{
+            id: "pred",
+            kind: "library_call",
+            bounds: { x: 10, y: 120, width: 156, height: 82 },
+            portAnchors: [],
+            properties: {
+              library: "tilefold.std",
+              functionId: "nat.pred",
+              templateId: "tilefold.std.nat.pred",
+              version: "v1",
+            },
+          }}
+          selected={false}
+          traceHighlighted={false}
+          ports={[]}
+          connectionTargetKey={null}
+          compatiblePortKeys={new Set()}
+          rejectedPortKeys={new Set()}
+          pixelsPerCanvasUnit={1}
+          onSelect={vi.fn()}
+          onPointerDown={vi.fn()}
+          onResizePointerDown={vi.fn()}
+          onPortPointerDown={vi.fn()}
+        />
+      </svg>,
+    );
+
+    expect(screen.getByTestId("element-square-kind-label")).toHaveTextContent("x²");
+    expect(screen.getByTestId("element-pred-kind-label")).toHaveTextContent("pred");
+  });
+
+  it("does not symbolize user-defined calls with matching names", () => {
+    const element: ProjectElement = {
+      id: "user-call",
+      kind: "project_call",
+      bounds: { x: 10, y: 20, width: 156, height: 82 },
+      portAnchors: [],
+      properties: { templateId: "multiply" },
+    };
+    renderElement(element, []);
+
+    expect(screen.getByTestId("element-user-call-kind-label")).toHaveTextContent(
+      "multiply",
     );
   });
 });

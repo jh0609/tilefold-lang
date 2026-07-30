@@ -45,6 +45,30 @@ Trace Run records the transparent Core rewrite trace; Fast Run shares the same
 decode, validation, and lowering preflight, then computes supported programs
 without materializing every raw rewrite event.
 
+### Standard Library Canvas Symbols
+
+Folded Standard Library calls use familiar mathematical symbols on the canvas
+so arithmetic, comparison, and logical graphs read like formulas. The creation
+menu, search, Inspector, tooltips, accessibility names, Project JSON, and runner
+protocols keep the stable function names and identifiers.
+
+| Standard Library ID | Canvas symbol | Search aliases |
+| --- | --- | --- |
+| `nat.add` | `+` | `add`, `plus`, `+` |
+| `nat.subtract` | `−` | `subtract`, `minus`, `-`, `−` |
+| `nat.multiply` | `×` | `multiply`, `times`, `*`, `×` |
+| `nat.square` | `x²` | `square`, `squared`, `x²`, `^2` |
+| `nat.equal` | `=` | `equal`, `equals`, `=` |
+| `nat.lessThan` | `<` | `lessThan`, `less than`, `<` |
+| `nat.lessOrEqual` | `≤` | `lessOrEqual`, `less than or equal`, `<=`, `≤` |
+| `bool.and` | `∧` | `and`, `logical and`, `&&`, `∧` |
+| `bool.or` | `∨` | `or`, `logical or`, `||`, `∨` |
+| `bool.not` | `¬` | `not`, `logical not`, `!`, `¬` |
+
+Standard Library functions without a dedicated mathematical symbol continue to
+show their English name. User-defined functions are never symbolized just
+because their name matches a Standard Library function.
+
 The editor's **Example** picker includes executable natural-number projects for
 `Succ(2) = 3`, `2 + 3 = 5`, and `3 × 4 = 12`. Addition and multiplication are
 defined with Tilefold's total `NatRec` primitive recursion; multiplication

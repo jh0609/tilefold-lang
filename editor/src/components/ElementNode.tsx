@@ -4,6 +4,11 @@ import type { ConnectablePort } from "../model/portConnections";
 import { formatCoreType } from "../model/coreTypes";
 import { INTERACTION_CHROME, screenUnits } from "../model/interactionChrome";
 import { standardLibraryFunction } from "../model/standardLibrary";
+import {
+  standardLibraryPresentation,
+  standardLibrarySignature,
+  standardLibraryTooltip,
+} from "../model/standardLibraryPresentation";
 
 interface ElementNodeProps {
   element: ProjectElement;
@@ -106,9 +111,7 @@ function nodeSignature(element: ProjectElement, ports: ConnectablePort[]) {
     case "library_call": {
       const definition = standardLibraryFunction(element.properties.templateId);
       if (!definition) return "Unknown library call";
-      return `${definition.parameters
-        .map((parameter) => formatCoreType(parameter.type))
-        .join(" · ")} → ${formatCoreType(definition.resultType)}`;
+      return standardLibrarySignature(definition);
     }
     case "project_call": {
       const inputs = ports
@@ -139,8 +142,10 @@ function nodeDisplayLabel(element: ProjectElement): string {
     );
   }
   if (element.kind === "library_call") {
+    const definition = standardLibraryFunction(element.properties.templateId);
     return (
-      standardLibraryFunction(element.properties.templateId)?.displayName ??
+      standardLibraryPresentation(definition)?.symbol ??
+      definition?.displayName ??
       "Unknown library call"
     );
   }
@@ -209,6 +214,10 @@ export function ElementNode({
     element.kind === "function" || element.kind === "library_call"
       ? standardLibraryFunction(element.properties.templateId)
       : undefined;
+  const standardPresentation =
+    element.kind === "library_call"
+      ? standardLibraryPresentation(standardDefinition)
+      : undefined;
   const portVisibleRadius = screenUnits(
     INTERACTION_CHROME.portVisibleRadiusPx,
     pixelsPerCanvasUnit,
@@ -251,7 +260,11 @@ export function ElementNode({
       }
       data-trace-highlighted={traceHighlighted ? "true" : undefined}
       role="button"
-      aria-label={`${standardDefinition ? "Standard Library call " : ""}${displayLabel} element ${element.id}`}
+      aria-label={
+        standardDefinition
+          ? `Standard Library call ${standardPresentation?.accessibilityName ?? standardDefinition.displayName}`
+          : `${displayLabel} element ${element.id}`
+      }
       tabIndex={0}
       onClick={(event) => {
         event.stopPropagation();
@@ -265,6 +278,7 @@ export function ElementNode({
       }}
       onPointerDown={(event) => onPointerDown(event, element)}
     >
+      {standardDefinition && <title>{standardLibraryTooltip(standardDefinition)}</title>}
       <rect
         className="element-body"
         x={x}
@@ -287,7 +301,7 @@ export function ElementNode({
       )}
       {!literal && (
         <text
-          className="element-kind"
+          className={`element-kind${standardPresentation ? " operation-symbol" : ""}`}
           data-testid={`element-${element.id}-kind-label`}
           x={compact ? contentLeft - 14 : contentLeft}
           y={y + (compact ? 7 : 22)}
@@ -303,7 +317,9 @@ export function ElementNode({
           x={contentLeft}
           y={y + 38}
         >
-          Standard Library
+          {standardPresentation
+            ? `${standardPresentation.shortName} · Standard Library`
+            : "Standard Library"}
         </text>
       )}
       {value !== undefined && (

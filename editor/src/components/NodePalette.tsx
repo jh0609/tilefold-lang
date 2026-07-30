@@ -6,6 +6,10 @@ import type {
 } from "../model/editorOps";
 import type { CoreType } from "../model/project";
 import { formatCoreType } from "../model/coreTypes";
+import {
+  standardLibraryPresentation,
+  standardLibrarySearchText,
+} from "../model/standardLibraryPresentation";
 import { CoreTypeEditor } from "./CoreTypeEditor";
 
 type PaletteAction =
@@ -236,11 +240,18 @@ export function NodePalette({
   const standardLibraryTemplates = callableTemplates.filter(
     (template) =>
       template.source === "standard-library" &&
-      `Standard Library ${template.displayName} ${template.parameters
-        .map((parameter) => `${parameter.name} ${formatCoreType(parameter.type)}`)
-        .join(" ")} ${formatCoreType(template.resultType)}`
-        .toLowerCase()
-        .includes(normalizedQuery),
+      standardLibrarySearchText({
+        library: "tilefold.std",
+        functionId: template.libraryFunctionId ?? template.templateId,
+        templateId: template.templateId,
+        displayName: template.displayName,
+        version: (template.libraryVersion ?? "v1") as "v1",
+        parameters: template.parameters,
+        resultName: template.resultName,
+        parameterType: template.parameterType,
+        templateResultType: template.resultType,
+        resultType: template.resultType,
+      }).includes(normalizedQuery),
   );
 
   function runAction(action: PaletteAction) {
@@ -671,32 +682,50 @@ export function NodePalette({
             <h3>Standard Library</h3>
             <div className="palette-items">
               {standardLibraryTemplates.map((template) => (
-                <button
-                  type="button"
-                  key={template.templateId}
-                  className="palette-item tone-call"
-                  aria-label={`Add Standard Library ${template.displayName}`}
-                  onClick={() => {
-                    onAddCall(template.templateId);
-                  }}
-                >
-                  <span className="palette-symbol" aria-hidden="true">
-                    std
-                  </span>
-                  <span className="palette-item-copy">
-                    <span className="palette-item-name">
-                      <strong>{template.displayName}</strong>
-                    </span>
-                    <code>
-                      {template.parameters
-                        .map((parameter) => formatCoreType(parameter.type))
-                        .join(" → ")}
-                      {" → "}
-                      {formatCoreType(template.resultType)}
-                    </code>
-                    <span>Immutable Standard Library call</span>
-                  </span>
-                </button>
+                (() => {
+                  const definition = {
+                    library: "tilefold.std" as const,
+                    functionId: template.libraryFunctionId ?? template.templateId,
+                    templateId: template.templateId,
+                    displayName: template.displayName,
+                    version: (template.libraryVersion ?? "v1") as "v1",
+                    parameters: template.parameters,
+                    resultName: template.resultName,
+                    parameterType: template.parameterType,
+                    templateResultType: template.resultType,
+                    resultType: template.resultType,
+                  };
+                  const presentation = standardLibraryPresentation(definition);
+                  return (
+                    <button
+                      type="button"
+                      key={template.templateId}
+                      className="palette-item tone-call"
+                      aria-label={`Add Standard Library ${template.displayName}`}
+                      title={`${presentation?.accessibilityName ?? template.displayName} · ${template.displayName}`}
+                      onClick={() => {
+                        onAddCall(template.templateId);
+                      }}
+                    >
+                      <span className="palette-symbol" aria-hidden="true">
+                        {presentation?.symbol ?? "std"}
+                      </span>
+                      <span className="palette-item-copy">
+                        <span className="palette-item-name">
+                          <strong>{template.displayName}</strong>
+                        </span>
+                        <code>
+                          {template.parameters
+                            .map((parameter) => formatCoreType(parameter.type))
+                            .join(" → ")}
+                          {" → "}
+                          {formatCoreType(template.resultType)}
+                        </code>
+                        <span>Immutable Standard Library call</span>
+                      </span>
+                    </button>
+                  );
+                })()
               ))}
             </div>
           </section>

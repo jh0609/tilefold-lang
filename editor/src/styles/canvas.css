@@ -350,6 +350,12 @@
   pointer-events: none;
 }
 
+.element-kind.operation-symbol {
+  font-size: 24px;
+  font-weight: 850;
+  dominant-baseline: middle;
+}
+
 .element-signature {
   fill: #475467;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
