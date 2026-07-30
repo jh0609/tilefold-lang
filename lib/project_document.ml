@@ -113,6 +113,44 @@ type t = {
   surface_project_calls : surface_project_call list;
 }
 
+let bounds_contains (outer : bounds) (inner : bounds) =
+  inner.x >= outer.x
+  && inner.y >= outer.y
+  && inner.x + inner.width <= outer.x + outer.width
+  && inner.y + inner.height <= outer.y + outer.height
+
+let container_area (container : container) =
+  container.bounds.width * container.bounds.height
+
+let element_owner_container (containers : container list) (element : element) =
+  containers
+  |> List.filter (fun container -> bounds_contains container.bounds element.bounds)
+  |> List.sort (fun left right ->
+         Int.compare (container_area left) (container_area right))
+  |> function
+  | owner :: _ -> Some owner
+  | [] -> None
+
+let element_template_reference (element : element) =
+  match element.kind with
+  | Function { template_id; _ }
+  | Project_call { template_id }
+  | Library_call { template_id; _ } ->
+      Some template_id
+  | _ -> None
+
+let graph_dependencies_for_container (document : t) (container : container) =
+  document.elements
+  |> List.filter_map (fun element ->
+         match
+           ( element_owner_container document.containers element,
+             element_template_reference element )
+         with
+         | Some owner, Some template_id when owner.id = container.id ->
+             Some template_id
+         | _ -> None)
+  |> List.sort_uniq String.compare
+
 module Decode_error = struct
   type kind =
     | Invalid_json of string
@@ -1962,6 +2000,11 @@ let to_raw_scene document =
     |> List.filter_map (id C.Function_template_id.of_string)
     |> List.sort C.Function_template_id.compare
   in
+  let container_dependencies container stored =
+    List.sort_uniq String.compare
+      (stored @ graph_dependencies_for_container document container)
+    |> dependencies
+  in
   let core_containers =
     document.containers
     |> List.filter_map (fun (container : container) ->
@@ -1979,7 +2022,7 @@ let to_raw_scene document =
                              template_id;
                              result_type;
                              captures;
-                             dependencies = dependencies deps;
+                             dependencies = container_dependencies container deps;
                            })
                        (id C.Function_template_id.of_string template_id)
                  | Template
@@ -2003,7 +2046,7 @@ let to_raw_scene document =
                              parameter_type;
                              result_type;
                              captures;
-                             dependencies = dependencies deps;
+                             dependencies = container_dependencies container deps;
                            })
                        (id C.Function_template_id.of_string template_id)
                in

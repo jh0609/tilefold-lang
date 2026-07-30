@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { readFile, writeFile } from "node:fs/promises";
 
 type BrowserIssues = { consoleErrors: string[]; pageErrors: string[] };
 
@@ -600,11 +601,35 @@ test("passes a flat multi-argument Surface function value to NatRec.step", async
   const download = await downloadPromise;
   const savedPath = testInfo.outputPath("factorial-function-value.tilefold.json");
   await download.saveAs(savedPath);
+  const exported = JSON.parse(await readFile(savedPath, "utf8"));
+  const entryContainer = exported.geometry.containers.find(
+    (container: { id: string }) => container.id === "entry",
+  );
+  expect(entryContainer.kind.dependencies).toEqual(["factorialStep"]);
+  const stale = structuredClone(exported);
+  stale.geometry.containers = stale.geometry.containers.map(
+    (container: { id: string; kind: { dependencies: string[] } }) =>
+      container.id === "entry"
+        ? { ...container, kind: { ...container.kind, dependencies: [] } }
+        : container,
+  );
+  const stalePath = testInfo.outputPath("factorial-missing-dependency.tilefold.json");
+  await writeFile(stalePath, JSON.stringify(stale, null, 2), "utf8");
   await page.reload();
-  await page.getByLabel("Open JSON file").setInputFiles(savedPath);
-  await expect(page.getByText("factorial-function-value.tilefold.json")).toBeVisible();
+  await page.getByLabel("Open JSON file").setInputFiles(stalePath);
+  await expect(page.getByText("factorial-missing-dependency.tilefold.json")).toBeVisible();
   await setNatValue(page, countId, 5);
   await runAndExpect(page, "Nat(120)");
+  const recoveredDownloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export JSON" }).click();
+  const recoveredDownload = await recoveredDownloadPromise;
+  const recoveredPath = testInfo.outputPath("factorial-recovered-dependency.tilefold.json");
+  await recoveredDownload.saveAs(recoveredPath);
+  const recovered = JSON.parse(await readFile(recoveredPath, "utf8"));
+  const recoveredEntry = recovered.geometry.containers.find(
+    (container: { id: string }) => container.id === "entry",
+  );
+  expect(recoveredEntry.kind.dependencies).toEqual(["factorialStep"]);
   await expect(page.getByText(/missing function template/i)).toHaveCount(0);
   await expectNoBrowserIssues(issues);
 });

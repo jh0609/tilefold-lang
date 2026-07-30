@@ -264,8 +264,23 @@ export function applyEditorCommand(
         };
       }
     }
-    case "delete_selection":
-      return deleteSelection(document, command.selection);
+    case "delete_selection": {
+      const result = deleteSelection(document, command.selection);
+      if ("error" in result) return result;
+      try {
+        return {
+          document: parseProjectJson(exportProjectJson(result.document)),
+        };
+      } catch (error) {
+        return {
+          document,
+          error:
+            error instanceof Error
+              ? `Deleted selection failed the editor structure check: ${error.message}`
+              : "Deleted selection failed the editor structure check.",
+        };
+      }
+    }
     case "move_element": {
       const result = moveElement(document, command.id, command.to);
       if ("error" in result) return { document, error: result.error };

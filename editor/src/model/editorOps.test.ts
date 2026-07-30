@@ -1042,6 +1042,95 @@ describe("editor operations", () => {
     ]);
   });
 
+  it("derives container dependencies from Function value and Project call references", () => {
+    const project = parseProjectJson(exampleJson);
+    const first = addFunctionTemplate(project, "entry", {
+      templateId: "factorialStep",
+      parameters: [
+        { name: "index", type: "nat" },
+        { name: "previous", type: "nat" },
+      ],
+      resultType: "nat",
+    });
+    if ("error" in first) throw new Error(first.error);
+    const withFunctionReference = parseProjectJson(
+      exportProjectJson({
+        ...first.document,
+        geometry: {
+          ...first.document.geometry,
+          containers: first.document.geometry.containers.map((container) =>
+            container.id === "entry"
+              ? { ...container, kind: { ...container.kind, dependencies: [] } }
+              : container,
+          ),
+        },
+      }),
+    );
+    expect(
+      withFunctionReference.geometry.containers.find(
+        (container) => container.id === "entry",
+      )?.kind.dependencies,
+    ).toEqual(["factorialStep"]);
+
+    const withCall = addFunctionCall(
+      withFunctionReference,
+      "entry",
+      "factorialStep",
+    );
+    if ("error" in withCall) throw new Error(withCall.error);
+    expect(
+      parseProjectJson(exportProjectJson(withCall.document)).geometry.containers.find(
+        (container) => container.id === "entry",
+      )?.kind.dependencies,
+    ).toEqual(["factorialStep"]);
+
+    const deleted = deleteSelection(withFunctionReference, {
+      type: "element",
+      id: first.element.id,
+    });
+    if ("error" in deleted) throw new Error(deleted.error);
+    expect(
+      parseProjectJson(exportProjectJson(deleted.document)).geometry.containers.find(
+        (container) => container.id === "entry",
+      )?.kind.dependencies,
+    ).toEqual([]);
+
+    const second = addFunctionTemplate(withFunctionReference, "entry", {
+      templateId: "otherStep",
+      parameters: [{ name: "value", type: "nat" }],
+      resultType: "nat",
+    });
+    if ("error" in second) throw new Error(second.error);
+    const retargeted = parseProjectJson(
+      exportProjectJson({
+        ...second.document,
+        geometry: {
+          ...second.document.geometry,
+          elements: second.document.geometry.elements.map((element) =>
+            element.id === first.element.id && element.kind === "function"
+              ? {
+                  ...element,
+                  properties: {
+                    ...element.properties,
+                    templateId: "otherStep",
+                  },
+                }
+              : element,
+          ),
+          containers: second.document.geometry.containers.map((container) =>
+            container.id === "entry"
+              ? { ...container, kind: { ...container.kind, dependencies: [] } }
+              : container,
+          ),
+        },
+      }),
+    );
+    expect(
+      retargeted.geometry.containers.find((container) => container.id === "entry")
+        ?.kind.dependencies,
+    ).toEqual(["otherStep"]);
+  });
+
   it("creates a folded Standard Library call element", () => {
     const project = parseProjectJson(exampleJson);
     const called = addFunctionCall(

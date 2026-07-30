@@ -968,6 +968,24 @@ let () =
   let factorial_result = project_execution_result factorial_project in
   assert (member "status" factorial_result = `String "completed");
   assert (member "result" factorial_result = `String "Nat(120)");
+  let factorial_missing_dependency_project =
+    {
+      factorial_project with
+      containers =
+        List.map
+          (fun (container : P.container) ->
+            match container.kind with
+            | P.Entry entry when container.id = "entry" ->
+                { container with kind = P.Entry { entry with dependencies = [] } }
+            | _ -> container)
+          factorial_project.containers;
+    }
+  in
+  let factorial_missing_dependency_result =
+    project_execution_result factorial_missing_dependency_project
+  in
+  assert (member "status" factorial_missing_dependency_result = `String "completed");
+  assert (member "result" factorial_missing_dependency_result = `String "Nat(120)");
   let std_add_project =
     {json|
 {

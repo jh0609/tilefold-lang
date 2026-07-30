@@ -22,6 +22,7 @@ import {
   STANDARD_LIBRARY_VERSION,
   standardLibraryFunction,
 } from "./standardLibrary";
+import { recomputeContainerDependencies } from "./projectDependencies";
 
 export class StructureError extends Error {
   constructor(
@@ -1262,9 +1263,9 @@ export function parseProjectJson(text: string): ProjectDocument {
     integerAt(required(view, "cameraY", "$.view"), "$.view.cameraY");
     integerAt(required(view, "zoom", "$.view"), "$.view.zoom");
   }
-  return parsed as ProjectDocument;
+  return recomputeContainerDependencies(parsed as ProjectDocument);
 }
 
 export function exportProjectJson(document: ProjectDocument): string {
-  return `${JSON.stringify(document, null, 2)}\n`;
+  return `${JSON.stringify(recomputeContainerDependencies(document), null, 2)}\n`;
 }
