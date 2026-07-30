@@ -10,6 +10,8 @@ export type ExecutionResponse =
       result: string;
       rewriteCount: number;
       trace: ExecutionTraceEvent[];
+      mode?: ExecutionMode;
+      summary?: string;
     }
   | {
       status: "error";
@@ -111,6 +113,11 @@ export function parseExecutionResponse(value: string): ExecutionResponse {
     result: parsed.result,
     rewriteCount: parsed.rewriteCount as number,
     trace,
+    mode:
+      parsed.mode === "fast" || parsed.mode === "transparent"
+        ? parsed.mode
+        : undefined,
+    summary: typeof parsed.summary === "string" ? parsed.summary : undefined,
   };
 }
 

@@ -451,8 +451,12 @@ async function connectBoolCallToNatEntry(page: Page, callId: string) {
 
 async function runAndExpect(page: Page, expected: string) {
   await page.getByRole("button", { name: "Run" }).click();
-  await expect(page.getByText(/Result:/)).toContainText(expected);
+  await expect(page.getByText(/result:/i)).toContainText(expected);
   await expect(page.getByRole("region", { name: /Diagnostics/ })).toHaveCount(0);
+}
+
+async function setExecutionMode(page: Page, mode: "fast" | "transparent") {
+  await page.getByLabel("Execution mode").selectOption(mode);
 }
 
 async function boundaryLabels(page: Page, containerId: string) {
@@ -627,6 +631,15 @@ test("passes a flat multi-argument Surface function value to NatRec.step", async
     await setNatValue(page, countId, n);
     await runAndExpect(page, expected);
   }
+
+  await setExecutionMode(page, "fast");
+  await setNatValue(page, countId, 10);
+  await runAndExpect(page, "Nat(3628800)");
+  await expect(page.getByText(/Fast Run .* Result:/)).toContainText("Nat(3628800)");
+  await expect(
+    page.getByText(/without materializing Core rewrite events/i),
+  ).toBeVisible();
+  await setExecutionMode(page, "transparent");
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export JSON" }).click();

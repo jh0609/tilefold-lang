@@ -98,9 +98,13 @@ export function ExecutionPanel({
       {execution?.status === "completed" && (
         <>
           <p>
-            Result: <strong>{execution.result}</strong> ·{" "}
+            {execution.mode === "fast" ? "Fast Run" : "Trace Run"} · Result:{" "}
+            <strong>{execution.result}</strong> ·{" "}
             {execution.rewriteCount} rewrites
           </p>
+          {execution.summary && (
+            <p className="trace-empty">{execution.summary}</p>
+          )}
           {state.status === "completed" &&
           state.selectedTraceIndex !== null ? (
             <TraceInspector
