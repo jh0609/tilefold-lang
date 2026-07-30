@@ -1288,6 +1288,46 @@ let () =
         [ Nat_arg "5"; Nat_arg "3" ],
         "nat",
         "Nat(5)" );
+      ( "nat.divide",
+        "tilefold.std.nat.divide",
+        [ Nat_arg "13"; Nat_arg "5" ],
+        "nat",
+        "Nat(2)" );
+      ( "nat.divide",
+        "tilefold.std.nat.divide",
+        [ Nat_arg "12"; Nat_arg "3" ],
+        "nat",
+        "Nat(4)" );
+      ( "nat.divide",
+        "tilefold.std.nat.divide",
+        [ Nat_arg "3"; Nat_arg "5" ],
+        "nat",
+        "Nat(0)" );
+      ( "nat.divide",
+        "tilefold.std.nat.divide",
+        [ Nat_arg "5"; Nat_arg "0" ],
+        "nat",
+        "Nat(0)" );
+      ( "nat.modulo",
+        "tilefold.std.nat.modulo",
+        [ Nat_arg "13"; Nat_arg "5" ],
+        "nat",
+        "Nat(3)" );
+      ( "nat.modulo",
+        "tilefold.std.nat.modulo",
+        [ Nat_arg "12"; Nat_arg "3" ],
+        "nat",
+        "Nat(0)" );
+      ( "nat.modulo",
+        "tilefold.std.nat.modulo",
+        [ Nat_arg "3"; Nat_arg "5" ],
+        "nat",
+        "Nat(3)" );
+      ( "nat.modulo",
+        "tilefold.std.nat.modulo",
+        [ Nat_arg "5"; Nat_arg "0" ],
+        "nat",
+        "Nat(5)" );
     ]
   in
   List.iter
@@ -1319,6 +1359,57 @@ let () =
   expect_evaluator SL.Min [ "900719925474099312345"; "42" ] "42";
   expect_evaluator SL.Max [ "900719925474099312345"; "42" ]
     "900719925474099312345";
+  expect_evaluator SL.Divide [ "13"; "5" ] "2";
+  expect_evaluator SL.Divide [ "12"; "3" ] "4";
+  expect_evaluator SL.Divide [ "3"; "5" ] "0";
+  expect_evaluator SL.Divide [ "0"; "5" ] "0";
+  expect_evaluator SL.Divide [ "5"; "1" ] "5";
+  expect_evaluator SL.Divide [ "5"; "0" ] "0";
+  expect_evaluator SL.Divide [ "0"; "0" ] "0";
+  expect_evaluator SL.Modulo [ "13"; "5" ] "3";
+  expect_evaluator SL.Modulo [ "12"; "3" ] "0";
+  expect_evaluator SL.Modulo [ "3"; "5" ] "3";
+  expect_evaluator SL.Modulo [ "0"; "5" ] "0";
+  expect_evaluator SL.Modulo [ "5"; "1" ] "0";
+  expect_evaluator SL.Modulo [ "5"; "0" ] "5";
+  expect_evaluator SL.Modulo [ "0"; "0" ] "0";
+  List.iter
+    (fun (number, divisor) ->
+      if divisor <> 0 then (
+        let number_nat = nat (string_of_int number) in
+        let divisor_nat = nat (string_of_int divisor) in
+        let quotient =
+          match SL.evaluate_nat SL.Divide [ number_nat; divisor_nat ] with
+          | Ok value -> value
+          | Error message -> failwith message
+        in
+        let remainder =
+          match SL.evaluate_nat SL.Modulo [ number_nat; divisor_nat ] with
+          | Ok value -> value
+          | Error message -> failwith message
+        in
+        let recomposed =
+          Z.add
+            (Z.mul (Nat.to_z divisor_nat) (Nat.to_z quotient))
+            (Nat.to_z remainder)
+        in
+        assert (Z.equal recomposed (Nat.to_z number_nat));
+        assert (Z.lt (Nat.to_z remainder) (Nat.to_z divisor_nat))))
+    [
+      (0, 1);
+      (1, 1);
+      (3, 5);
+      (12, 3);
+      (13, 5);
+      (25, 7);
+      (99, 10);
+    ];
+  expect_evaluator SL.Divide
+    [ "123456789012345678901234567890"; "1000000000000000000000" ]
+    "123456789";
+  expect_evaluator SL.Modulo
+    [ "123456789012345678901234567890"; "1000000000000000000000" ]
+    "12345678901234567890";
   let expect_bool_evaluator id args expected =
     match SL.evaluate id (List.map (fun value -> RV.Nat (nat value)) args) with
     | Ok (RV.Bool actual) -> assert (Bool.equal actual expected)

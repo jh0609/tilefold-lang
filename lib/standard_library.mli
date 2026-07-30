@@ -20,6 +20,8 @@ type function_id =
   | LessOrEqual
   | Min
   | Max
+  | Divide
+  | Modulo
 
 type function_info = {
   id : function_id;

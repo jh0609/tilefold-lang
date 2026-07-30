@@ -27,6 +27,16 @@ describe("standard library presentation metadata", () => {
     ).toBe("×");
     expect(
       standardLibraryPresentation(
+        standardLibraryFunction("tilefold.std.nat.divide"),
+      )?.symbol,
+    ).toBe("÷");
+    expect(
+      standardLibraryPresentation(
+        standardLibraryFunction("tilefold.std.nat.modulo"),
+      )?.symbol,
+    ).toBe("%");
+    expect(
+      standardLibraryPresentation(
         standardLibraryFunction("tilefold.std.nat.square"),
       )?.symbol,
     ).toBe("x²");
@@ -80,6 +90,20 @@ describe("standard library presentation metadata", () => {
     expect(searchText).toContain("less than or equal");
     expect(searchText).toContain("≤");
     expect(searchText).toContain("<=");
+
+    const divide = standardLibraryFunction("tilefold.std.nat.divide")!;
+    expect(standardLibraryTooltip(divide)).toContain(
+      "If divisor is 0, the result is 0.",
+    );
+    expect(standardLibrarySearchText(divide)).toContain("quotient");
+    expect(standardLibrarySearchText(divide)).toContain("/");
+
+    const modulo = standardLibraryFunction("tilefold.std.nat.modulo")!;
+    expect(standardLibraryTooltip(modulo)).toContain(
+      "If divisor is 0, the result is number.",
+    );
+    expect(standardLibrarySearchText(modulo)).toContain("remainder");
+    expect(standardLibrarySearchText(modulo)).toContain("%");
   });
 
   it("does not leave duplicate Standard Library function IDs ambiguous", () => {

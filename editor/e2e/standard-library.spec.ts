@@ -677,6 +677,22 @@ test("shows mathematical symbols for folded Standard Library operations", async 
   await expect(
     page.getByRole("button", { name: "Add Standard Library lessOrEqual" }),
   ).toBeVisible();
+  await page.getByRole("searchbox", { name: "Search nodes" }).fill("/");
+  await expect(
+    page.getByRole("button", { name: "Add Standard Library divide" }),
+  ).toBeVisible();
+  await page.getByRole("searchbox", { name: "Search nodes" }).fill("quotient");
+  await expect(
+    page.getByRole("button", { name: "Add Standard Library divide" }),
+  ).toBeVisible();
+  await page.getByRole("searchbox", { name: "Search nodes" }).fill("%");
+  await expect(
+    page.getByRole("button", { name: "Add Standard Library modulo" }),
+  ).toBeVisible();
+  await page.getByRole("searchbox", { name: "Search nodes" }).fill("remainder");
+  await expect(
+    page.getByRole("button", { name: "Add Standard Library modulo" }),
+  ).toBeVisible();
   await page.getByRole("searchbox", { name: "Search nodes" }).fill("≤");
   await expect(
     page.getByRole("button", { name: "Add Standard Library lessOrEqual" }),
@@ -710,6 +726,28 @@ test("shows mathematical symbols for folded Standard Library operations", async 
   expect(multiplyId).not.toBeNull();
   await expect(page.getByTestId(`element-${multiplyId}-kind-label`)).toHaveText("×");
 
+  await page.getByRole("searchbox", { name: "Search nodes" }).fill("divide");
+  await page.getByRole("button", { name: "Add Standard Library divide" }).click();
+  const divide = page.locator(
+    'g.element-node[data-node-kind="library_call"][data-template-id="tilefold.std.nat.divide"]',
+  );
+  const divideId = await divide.getAttribute("data-node-id");
+  expect(divideId).not.toBeNull();
+  await expect(page.getByTestId(`element-${divideId}-kind-label`)).toHaveText("÷");
+  await expect(divide).toHaveAccessibleName("Standard Library call Divide");
+  await expect(page.getByTestId(`element-${divideId}-library-source`)).toContainText("Divide");
+
+  await page.getByRole("searchbox", { name: "Search nodes" }).fill("modulo");
+  await page.getByRole("button", { name: "Add Standard Library modulo" }).click();
+  const modulo = page.locator(
+    'g.element-node[data-node-kind="library_call"][data-template-id="tilefold.std.nat.modulo"]',
+  );
+  const moduloId = await modulo.getAttribute("data-node-id");
+  expect(moduloId).not.toBeNull();
+  await expect(page.getByTestId(`element-${moduloId}-kind-label`)).toHaveText("%");
+  await expect(modulo).toHaveAccessibleName("Standard Library call Modulo");
+  await expect(page.getByTestId(`element-${moduloId}-library-source`)).toContainText("Modulo");
+
   await page.getByRole("searchbox", { name: "Search nodes" }).fill("square");
   await page.getByRole("button", { name: "Add Standard Library square" }).click();
   const square = page.locator(
@@ -734,6 +772,7 @@ test("shows mathematical symbols for folded Standard Library operations", async 
 test("compares Standard Library transparent and fast execution for all exposed calls", async ({
   page,
 }, testInfo) => {
+  testInfo.setTimeout(120_000);
   const issues = watchBrowserIssues(page);
   const cases = [
     {
@@ -789,6 +828,42 @@ test("compares Standard Library transparent and fast execution for all exposed c
         args: ["3", "5"],
       }),
       expected: "Nat(0)",
+    },
+    {
+      name: "divide",
+      project: foldedStandardCallProject({
+        functionId: "nat.divide",
+        templateId: "tilefold.std.nat.divide",
+        args: ["13", "5"],
+      }),
+      expected: "Nat(2)",
+    },
+    {
+      name: "divide",
+      project: foldedStandardCallProject({
+        functionId: "nat.divide",
+        templateId: "tilefold.std.nat.divide",
+        args: ["5", "0"],
+      }),
+      expected: "Nat(0)",
+    },
+    {
+      name: "modulo",
+      project: foldedStandardCallProject({
+        functionId: "nat.modulo",
+        templateId: "tilefold.std.nat.modulo",
+        args: ["13", "5"],
+      }),
+      expected: "Nat(3)",
+    },
+    {
+      name: "modulo",
+      project: foldedStandardCallProject({
+        functionId: "nat.modulo",
+        templateId: "tilefold.std.nat.modulo",
+        args: ["5", "0"],
+      }),
+      expected: "Nat(5)",
     },
     {
       name: "isZero",
@@ -889,6 +964,8 @@ test("compares Standard Library transparent and fast execution for all exposed c
     const expectedLabel: Record<string, string> = {
       add: "+",
       multiply: "×",
+      divide: "÷",
+      modulo: "%",
       square: "x²",
       subtract: "−",
       not: "¬",
@@ -904,11 +981,17 @@ test("compares Standard Library transparent and fast execution for all exposed c
 
     await page.getByLabel("Execution mode").selectOption("transparent");
     await page.getByRole("button", { name: "Run" }).click();
-    await expect(page.getByText(/Result:/)).toContainText(`Result: ${scenario.expected}`);
+    await expect(page.getByText(/Result:/)).toContainText(
+      `Result: ${scenario.expected}`,
+      { timeout: 30_000 },
+    );
 
     await page.getByLabel("Execution mode").selectOption("fast");
     await page.getByRole("button", { name: "Run" }).click();
-    await expect(page.getByText(/Result:/)).toContainText(`Result: ${scenario.expected}`);
+    await expect(page.getByText(/Result:/)).toContainText(
+      `Result: ${scenario.expected}`,
+      { timeout: 30_000 },
+    );
     await expect(
       page.getByRole("button", {
         name: new RegExp(`FastCallCompleted\\(tilefold\\.std\\.(nat|bool)\\.${scenario.name}@v1\\)`),

@@ -15,6 +15,7 @@ interface ElementNodeProps {
   selected: boolean;
   traceHighlighted: boolean;
   ownerContainerId?: string;
+  projectCallDisplayName?: string;
   onSelect: () => void;
   onPointerDown: (
     event: ReactPointerEvent<SVGGElement>,
@@ -128,7 +129,10 @@ function nodeSignature(element: ProjectElement, ports: ConnectablePort[]) {
   }
 }
 
-function nodeDisplayLabel(element: ProjectElement): string {
+function nodeDisplayLabel(
+  element: ProjectElement,
+  projectCallDisplayName?: string,
+): string {
   if (element.kind === "nat_rec") {
     return `NatRec<${formatCoreType(element.properties.type)}>`;
   }
@@ -150,7 +154,7 @@ function nodeDisplayLabel(element: ProjectElement): string {
     );
   }
   if (element.kind === "project_call") {
-    return element.properties.templateId;
+    return projectCallDisplayName ?? element.properties.templateId;
   }
   return KIND_LABELS[element.kind];
 }
@@ -187,6 +191,7 @@ export function ElementNode({
   selected,
   traceHighlighted,
   ownerContainerId,
+  projectCallDisplayName,
   onSelect,
   onPointerDown,
   onResizePointerDown,
@@ -208,7 +213,7 @@ export function ElementNode({
           : "False"
         : undefined;
   const signature = nodeSignature(element, ports);
-  const displayLabel = nodeDisplayLabel(element);
+  const displayLabel = nodeDisplayLabel(element, projectCallDisplayName);
   const literal = isLiteralElement(element);
   const standardDefinition =
     element.kind === "function" || element.kind === "library_call"
@@ -218,6 +223,12 @@ export function ElementNode({
     element.kind === "library_call"
       ? standardLibraryPresentation(standardDefinition)
       : undefined;
+  const projectCallTitle =
+    element.kind === "project_call"
+      ? projectCallDisplayName
+        ? `${projectCallDisplayName} · ${signature}`
+        : `Missing function ${element.properties.templateId}`
+      : null;
   const portVisibleRadius = screenUnits(
     INTERACTION_CHROME.portVisibleRadiusPx,
     pixelsPerCanvasUnit,
@@ -263,6 +274,8 @@ export function ElementNode({
       aria-label={
         standardDefinition
           ? `Standard Library call ${standardPresentation?.accessibilityName ?? standardDefinition.displayName}`
+          : element.kind === "project_call"
+            ? `Function call ${displayLabel}`
           : `${displayLabel} element ${element.id}`
       }
       tabIndex={0}
@@ -279,6 +292,7 @@ export function ElementNode({
       onPointerDown={(event) => onPointerDown(event, element)}
     >
       {standardDefinition && <title>{standardLibraryTooltip(standardDefinition)}</title>}
+      {projectCallTitle && <title>{projectCallTitle}</title>}
       <rect
         className="element-body"
         x={x}

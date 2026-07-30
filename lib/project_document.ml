@@ -501,6 +501,8 @@ let decode_element_kind path json =
               | Standard_library.LessOrEqual -> "nat.lessOrEqual"
               | Standard_library.Min -> "nat.min"
               | Standard_library.Max -> "nat.max"
+              | Standard_library.Divide -> "nat.divide"
+              | Standard_library.Modulo -> "nat.modulo"
             in
             if not (String.equal info.Standard_library.stable_id template_id) then
               error (path ^ ".templateId")
@@ -1744,7 +1746,7 @@ let sort_parameters_by_port_key parameters =
          C.Port_key.compare (port_key_or_fail left.name) (port_key_or_fail right.name))
 
 let generated_curried_surface_scene document =
-  let make_for_function function_info =
+  let make_for_function function_index function_info =
     match function_info.parameters with
     | [] | [ _ ] -> ([], [], [], [])
     | parameters ->
@@ -1755,7 +1757,7 @@ let generated_curried_surface_scene document =
         let wires = ref [] in
         let base_x =
           50_000
-          + (List.length !containers * 2_000)
+          + (function_index * 10_000)
           + (String.length function_info.template_id * 10)
         in
         for index = 0 to last_index - 1 do
@@ -1906,7 +1908,7 @@ let generated_curried_surface_scene document =
         (!containers, !boundaries, !elements, !wires)
   in
   document.surface_functions
-  |> List.map make_for_function
+  |> List.mapi make_for_function
   |> List.fold_left
        (fun (containers, boundaries, elements, wires)
             (next_containers, next_boundaries, next_elements, next_wires) ->

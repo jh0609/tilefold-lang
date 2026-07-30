@@ -181,6 +181,101 @@ describe("Tilefold editor UI", () => {
     expect(screen.queryByTestId("element-node_function_1")).not.toBeInTheDocument();
   });
 
+  it("adds Result from the palette to the selected container and preserves it across undo, redo, and export", async () => {
+    const user = userEvent.setup();
+    let exportedBlob: Blob | undefined;
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn((blob: Blob) => {
+        exportedBlob = blob;
+        return "blob:selected-result";
+      }),
+      revokeObjectURL: vi.fn(),
+    });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Add Function" }));
+    await user.clear(screen.getByLabelText("Function name"));
+    await user.type(screen.getByLabelText("Function name"), "container_a");
+    await user.selectOptions(screen.getByLabelText("Argument 1 type"), "unit");
+    await user.selectOptions(screen.getByLabelText("Result type"), "bool");
+    await user.click(
+      screen.getByRole("button", { name: "Create total function" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Return to entry graph" }));
+
+    await user.click(screen.getByRole("button", { name: "Add Function" }));
+    await user.clear(screen.getByLabelText("Function name"));
+    await user.type(screen.getByLabelText("Function name"), "container_b");
+    await user.selectOptions(screen.getByLabelText("Argument 1 type"), "unit");
+    await user.selectOptions(screen.getByLabelText("Result type"), "nat");
+    await user.click(
+      screen.getByRole("button", { name: "Create total function" }),
+    );
+    const secondContainer = document.querySelector<SVGGElement>(
+      'g.container-shape[data-template-id="container_b"]',
+    );
+    expect(secondContainer).not.toBeNull();
+    const secondContainerId = secondContainer!.getAttribute("data-container-id")!;
+    const oldResult = document.querySelector<SVGCircleElement>(
+      `[data-port-kind="boundary"][data-container-id="${secondContainerId}"][data-port-name="result"][data-port-direction="input"]`,
+    );
+    expect(oldResult).not.toBeNull();
+    await user.click(oldResult!);
+    await user.click(screen.getByRole("button", { name: "Delete selected" }));
+    expect(
+      document.querySelector(
+        `[data-port-kind="boundary"][data-container-id="${secondContainerId}"][data-port-name="result"][data-port-direction="input"]`,
+      ),
+    ).toBeNull();
+
+    await user.click(
+      screen.getByRole("button", {
+        name: `template container ${secondContainerId}`,
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Add Result" }));
+    const newResultSelector = `[data-port-kind="boundary"][data-container-id="${secondContainerId}"][data-port-name="result"][data-port-direction="input"]`;
+    expect(document.querySelector(newResultSelector)).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Undo" })).toHaveAttribute(
+      "title",
+      "Undo Add Result",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(document.querySelector(newResultSelector)).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Redo" }));
+    expect(document.querySelector(newResultSelector)).not.toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Export JSON" }));
+    const exported = JSON.parse(await readBlobText(exportedBlob!));
+    const entry = exported.geometry.containers.find(
+      (container: { id: string }) => container.id === "entry",
+    );
+    const firstContainer = exported.geometry.containers.find(
+      (container: { kind: { templateId: string } }) =>
+        container.kind.templateId === "container_a",
+    );
+    const exportedSecondContainer = exported.geometry.containers.find(
+      (container: { id: string }) => container.id === secondContainerId,
+    );
+    expect(
+      entry.boundaryPorts.filter((port: { role: string }) => port.role === "result"),
+    ).toHaveLength(1);
+    expect(
+      firstContainer.boundaryPorts.filter(
+        (port: { role: string }) => port.role === "result",
+      ),
+    ).toHaveLength(1);
+    expect(
+      exportedSecondContainer.boundaryPorts.filter(
+        (port: { role: string; type: string }) =>
+          port.role === "result" && port.type === "nat",
+      ),
+    ).toHaveLength(1);
+    click.mockRestore();
+  });
+
   it("authors a complete call to an existing Function template", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -356,6 +451,94 @@ describe("Tilefold editor UI", () => {
     );
     expect(
       screen.getByText(/renamed\(ignored: Nat, value: Nat, extra: Unit\)/),
+    ).toBeInTheDocument();
+    click.mockRestore();
+  });
+
+  it("updates existing project Call labels when a Surface function is renamed", async () => {
+    const user = userEvent.setup();
+    let exportedBlob: Blob | undefined;
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn((blob: Blob) => {
+        exportedBlob = blob;
+        return "blob:call-rename";
+      }),
+      revokeObjectURL: vi.fn(),
+    });
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Add Function" }));
+    await user.clear(screen.getByLabelText("Function name"));
+    await user.type(screen.getByLabelText("Function name"), "foo");
+    await user.click(screen.getByRole("button", { name: "Add argument" }));
+    await user.clear(screen.getByLabelText("Argument 1 name"));
+    await user.type(screen.getByLabelText("Argument 1 name"), "left");
+    await user.selectOptions(screen.getByLabelText("Argument 1 type"), "nat");
+    await user.clear(screen.getByLabelText("Argument 2 name"));
+    await user.type(screen.getByLabelText("Argument 2 name"), "right");
+    await user.selectOptions(screen.getByLabelText("Argument 2 type"), "nat");
+    await user.selectOptions(screen.getByLabelText("Result type"), "nat");
+    await user.click(
+      screen.getByRole("button", { name: "Create total function" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Return to entry graph" }));
+    await user.click(screen.getByRole("button", { name: "Add Call" }));
+    await user.click(screen.getByRole("button", { name: "Create call" }));
+
+    const existingCall = screen.getByRole("button", {
+      name: "Function call foo",
+    });
+    expect(existingCall).toBeInTheDocument();
+    await user.click(existingCall);
+    expect(screen.getAllByText("foo").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText(/left: Nat/)).toBeInTheDocument();
+    expect(screen.getByText(/right: Nat/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Open function foo" }));
+    await user.click(screen.getByRole("button", { name: "Edit signature" }));
+    await user.clear(screen.getByLabelText("Function name"));
+    await user.type(screen.getByLabelText("Function name"), "bar");
+    await user.click(screen.getByRole("button", { name: "Apply signature" }));
+    await user.click(screen.getByRole("button", { name: "Return to entry graph" }));
+
+    expect(
+      screen.getByRole("button", { name: "Function call bar" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Function call foo" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByTitle("Undo Edit signature for foo"));
+    expect(
+      screen.getByRole("button", { name: "Function call foo" }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByTitle("Redo Edit signature for foo"));
+    expect(
+      screen.getByRole("button", { name: "Function call bar" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Export JSON" }));
+    const exported = JSON.parse(await readBlobText(exportedBlob!));
+    expect(exported.surfaceFunctions[0]).toMatchObject({
+      name: "bar",
+      templateId: "foo",
+    });
+    expect(
+      exported.geometry.elements.find(
+        (element: { kind: string; properties?: { templateId?: string } }) =>
+          element.kind === "project_call",
+      )?.properties,
+    ).toEqual({ templateId: "foo" });
+    await user.upload(
+      screen.getByLabelText("Open JSON file"),
+      new File([JSON.stringify(exported)], "call-rename.tilefold.json", {
+        type: "application/json",
+      }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Function call bar" }),
     ).toBeInTheDocument();
     click.mockRestore();
   });

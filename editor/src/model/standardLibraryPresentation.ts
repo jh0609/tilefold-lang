@@ -6,6 +6,7 @@ export interface StandardLibraryPresentation {
   shortName: string;
   accessibilityName: string;
   searchAliases: string[];
+  description?: string;
 }
 
 const PRESENTATION_BY_FUNCTION_ID: Record<string, StandardLibraryPresentation> = {
@@ -26,6 +27,21 @@ const PRESENTATION_BY_FUNCTION_ID: Record<string, StandardLibraryPresentation> =
     shortName: "Multiply",
     accessibilityName: "Multiply",
     searchAliases: ["times", "×", "x", "*"],
+  },
+  "nat.divide": {
+    symbol: "÷",
+    shortName: "Divide",
+    accessibilityName: "Divide",
+    searchAliases: ["division", "quotient", "÷", "/"],
+    description: "divide(number, divisor). If divisor is 0, the result is 0.",
+  },
+  "nat.modulo": {
+    symbol: "%",
+    shortName: "Modulo",
+    accessibilityName: "Modulo",
+    searchAliases: ["mod", "remainder", "%"],
+    description:
+      "modulo(number, divisor). If divisor is 0, the result is number.",
   },
   "nat.square": {
     symbol: "x²",
@@ -91,7 +107,9 @@ export function standardLibraryTooltip(
 ): string {
   const presentation = standardLibraryPresentation(definition);
   const name = presentation?.shortName ?? definition.displayName;
-  return `${name}\n${definition.displayName} : ${standardLibrarySignature(definition)}`;
+  return `${name}\n${definition.displayName} : ${standardLibrarySignature(definition)}${
+    presentation?.description ? `\n${presentation.description}` : ""
+  }`;
 }
 
 export function standardLibrarySearchText(
@@ -110,6 +128,7 @@ export function standardLibrarySearchText(
     ...(presentation?.searchAliases ?? []),
     presentation?.shortName ?? "",
     presentation?.accessibilityName ?? "",
+    presentation?.description ?? "",
   ]
     .join(" ")
     .toLowerCase();

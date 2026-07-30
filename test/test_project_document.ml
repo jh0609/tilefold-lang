@@ -52,6 +52,141 @@ let expect_validation predicate document =
         ^ String.concat "|" (List.map P.Validation_error.to_string errors))
   | Ok _ -> failwith "expected validation error"
 
+let bounds x y width height : P.bounds = { x; y; width; height }
+let point x y : P.point = { x; y }
+
+let boundary id role typ x y : P.boundary_port =
+  { id; role; typ; anchor = point x y }
+
+let element id kind bounds port_anchors : P.element =
+  { id; kind; bounds; port_anchors }
+
+let wire id points source_hint target_hint : P.wire =
+  {
+    id;
+    points;
+    source_hint = Some source_hint;
+    target_hint = Some target_hint;
+  }
+
+let element_port element_id port : P.endpoint_hint =
+  Element_port { element_id; port }
+
+let boundary_port container_id boundary_id : P.endpoint_hint =
+  Boundary_port { container_id; boundary_id }
+
+let two_argument_identity_function name template_id body_container_id y =
+  let nat = Tilefold.Core_type.Nat in
+  let function_info : P.surface_function =
+    {
+      name;
+      template_id;
+      body_container_id;
+      parameters = [ { name = "index"; typ = nat }; { name = "previous"; typ = nat } ];
+      result_name = "result";
+      result_type = nat;
+    }
+  in
+  let container : P.container =
+    {
+      id = body_container_id;
+      bounds = bounds 0 y 460 220;
+      kind =
+        Template
+          {
+            template_id;
+            parameter_type = nat;
+            result_type = Tilefold.Core_type.Arrow (nat, nat);
+            dependencies = [];
+          };
+      boundary_ports =
+        [
+          boundary (body_container_id ^ "-index") P.Parameter nat 0 80;
+          boundary (body_container_id ^ "-previous") P.Parameter nat 0 140;
+          boundary (body_container_id ^ "-result") P.Result nat 460 112;
+        ];
+    }
+  in
+  let drop =
+    element (body_container_id ^ "-index-drop") (P.Drop nat)
+      (bounds 96 (y + 52) 88 56)
+      [ { P.port = "input"; at = point 96 (y + 80) } ]
+  in
+  let wires =
+    [
+      wire (body_container_id ^ "-drop-wire")
+        [ point 0 (y + 80); point 96 (y + 80) ]
+        (boundary_port body_container_id (body_container_id ^ "-index"))
+        (element_port drop.id "input");
+      wire (body_container_id ^ "-result-wire")
+        [ point 0 (y + 140); point 460 (y + 112) ]
+        (boundary_port body_container_id (body_container_id ^ "-previous"))
+        (boundary_port body_container_id (body_container_id ^ "-result"));
+    ]
+  in
+  (function_info, container, [ drop ], wires)
+
+let assert_multiple_generated_flat_functions_do_not_overlap () =
+  let nat = Tilefold.Core_type.Nat in
+  let first_info, first_container, first_elements, first_wires =
+    two_argument_identity_function "first" "firstStep" "first-body" 500
+  in
+  let second_info, second_container, second_elements, second_wires =
+    two_argument_identity_function "second" "otherStep" "second-body" 780
+  in
+  let project : P.t =
+    {
+      format = "tilefold-project";
+      version = 2;
+      snap_tolerance = 8;
+      view = None;
+      junctions = [];
+      surface_functions = [ first_info; second_info ];
+      surface_project_calls = [];
+      containers =
+        [
+          {
+            id = "entry";
+            bounds = bounds 0 0 460 240;
+            kind =
+              Entry
+                {
+                  template_id = "entry-template";
+                  result_type = nat;
+                  dependencies = [ "firstStep"; "otherStep" ];
+                };
+            boundary_ports =
+              [
+                boundary "entry-unit" P.Parameter Tilefold.Core_type.Unit 0 80;
+                boundary "entry-result" P.Result nat 460 120;
+              ];
+          };
+          first_container;
+          second_container;
+        ];
+      elements =
+        [
+          element "entry-unit-drop" (P.Drop Tilefold.Core_type.Unit)
+            (bounds 92 52 88 56)
+            [ { P.port = "input"; at = point 92 80 } ];
+          element "entry-zero" (P.Nat_literal "0") (bounds 220 92 72 56)
+            [ { P.port = "value"; at = point 292 120 } ];
+        ]
+        @ first_elements @ second_elements;
+      wires =
+        [
+          wire "entry-unit-drop-wire" [ point 0 80; point 92 80 ]
+            (boundary_port "entry" "entry-unit")
+            (element_port "entry-unit-drop" "input");
+          wire "entry-result-wire" [ point 292 120; point 460 120 ]
+            (element_port "entry-zero" "value")
+            (boundary_port "entry" "entry-result");
+        ]
+        @ first_wires @ second_wires;
+    }
+  in
+  ignore (symbolic project)
+
 let () =
   let text = read_file fixture in
   let project = decode text in
@@ -456,6 +591,8 @@ let () =
            errors ->
       ()
   | _ -> failwith "expected ambiguous endpoint with project wire ID")
+
+let () = assert_multiple_generated_flat_functions_do_not_overlap ()
 
 let () =
   let project = decode (read_file fixture) in

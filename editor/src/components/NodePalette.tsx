@@ -184,6 +184,7 @@ const PALETTE_GROUPS: PaletteGroup[] = [
 export function NodePalette({
   onAddElement,
   onAddResult,
+  canAddResult = true,
   suggestedFunctionTemplateId,
   functionHostLabel,
   onAddFunction,
@@ -192,6 +193,7 @@ export function NodePalette({
 }: {
   onAddElement: (kind: AddableElementKind) => void;
   onAddResult: () => void;
+  canAddResult?: boolean;
   suggestedFunctionTemplateId: string;
   functionHostLabel: string;
   onAddFunction: (draft: FunctionTemplateDraft) => boolean;
@@ -256,7 +258,7 @@ export function NodePalette({
 
   function runAction(action: PaletteAction) {
     if (action.kind === "element") onAddElement(action.elementKind);
-    if (action.kind === "result") onAddResult();
+    if (action.kind === "result" && canAddResult) onAddResult();
     if (action.kind === "function") {
       setTemplateId(suggestedFunctionTemplateId);
       nextParameterDraftId.current = 2;
@@ -318,16 +320,20 @@ export function NodePalette({
                 const callUnavailable =
                   item.action.kind === "call" &&
                   callableTemplates.length === 0;
+                const resultUnavailable =
+                  item.action.kind === "result" && !canAddResult;
                 return (
                   <div key={item.name}>
                     <button
                       type="button"
                       className={`palette-item tone-${item.tone}`}
-                      disabled={callUnavailable}
+                      disabled={callUnavailable || resultUnavailable}
                       aria-label={`Add ${item.name}`}
                       title={
                         callUnavailable
                           ? "Create a compatible function template first."
+                          : resultUnavailable
+                            ? "Select an entry or function container before adding a Result boundary."
                           : `Add ${item.name}`
                       }
                       aria-expanded={

@@ -207,6 +207,36 @@ describe("NodePalette", () => {
           resultType: "bool",
           captures: [],
         },
+        {
+          templateId: "tilefold.std.nat.divide",
+          displayName: "divide",
+          source: "standard-library",
+          libraryFunctionId: "nat.divide",
+          libraryVersion: "v1",
+          parameters: [
+            { name: "number", type: "nat" },
+            { name: "divisor", type: "nat" },
+          ],
+          resultName: "quotient",
+          parameterType: "nat",
+          resultType: "nat",
+          captures: [],
+        },
+        {
+          templateId: "tilefold.std.nat.modulo",
+          displayName: "modulo",
+          source: "standard-library",
+          libraryFunctionId: "nat.modulo",
+          libraryVersion: "v1",
+          parameters: [
+            { name: "number", type: "nat" },
+            { name: "divisor", type: "nat" },
+          ],
+          resultName: "remainder",
+          parameterType: "nat",
+          resultType: "nat",
+          captures: [],
+        },
       ],
       onAddCall,
     });
@@ -230,5 +260,19 @@ describe("NodePalette", () => {
     expect(
       screen.getByRole("button", { name: "Add Standard Library lessOrEqual" }),
     ).toBeVisible();
+
+    await user.clear(screen.getByRole("searchbox", { name: "Search nodes" }));
+    await user.type(screen.getByRole("searchbox", { name: "Search nodes" }), "/");
+    expect(
+      screen.getByRole("button", { name: "Add Standard Library divide" }),
+    ).toBeVisible();
+    expect(screen.getByText("÷")).toBeInTheDocument();
+
+    await user.clear(screen.getByRole("searchbox", { name: "Search nodes" }));
+    await user.type(screen.getByRole("searchbox", { name: "Search nodes" }), "remainder");
+    expect(
+      screen.getByRole("button", { name: "Add Standard Library modulo" }),
+    ).toBeVisible();
+    expect(screen.getByText("%")).toBeInTheDocument();
   });
 });

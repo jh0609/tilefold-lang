@@ -230,6 +230,36 @@ export const STANDARD_LIBRARY_FUNCTIONS: StandardLibraryFunction[] = [
     templateResultType: natToNat,
     resultType: "nat",
   },
+  {
+    library: STANDARD_LIBRARY_NAMESPACE,
+    functionId: "nat.divide",
+    templateId: "tilefold.std.nat.divide",
+    displayName: "divide",
+    version: STANDARD_LIBRARY_VERSION,
+    parameters: [
+      { name: "number", type: "nat" },
+      { name: "divisor", type: "nat" },
+    ],
+    resultName: "quotient",
+    parameterType: "nat",
+    templateResultType: natToNat,
+    resultType: "nat",
+  },
+  {
+    library: STANDARD_LIBRARY_NAMESPACE,
+    functionId: "nat.modulo",
+    templateId: "tilefold.std.nat.modulo",
+    displayName: "modulo",
+    version: STANDARD_LIBRARY_VERSION,
+    parameters: [
+      { name: "number", type: "nat" },
+      { name: "divisor", type: "nat" },
+    ],
+    resultName: "remainder",
+    parameterType: "nat",
+    templateResultType: natToNat,
+    resultType: "nat",
+  },
 ];
 
 export function standardLibraryFunction(

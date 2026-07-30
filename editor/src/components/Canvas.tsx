@@ -1474,6 +1474,14 @@ export function Canvas({
             ownerContainerId={
               findElementOwnerContainer(renderedDocument, element)?.id
             }
+            projectCallDisplayName={
+              element.kind === "project_call"
+                ? renderedDocument.surfaceFunctions?.find(
+                    (functionInfo) =>
+                      functionInfo.templateId === element.properties.templateId,
+                  )?.name
+                : undefined
+            }
             onSelect={() => {
               selectUnlessSuppressed({ type: "element", id: element.id });
             }}

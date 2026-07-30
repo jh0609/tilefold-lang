@@ -4,13 +4,18 @@ import type { ConnectablePort } from "../model/portConnections";
 import type { ProjectElement } from "../model/project";
 import { ElementNode } from "./ElementNode";
 
-function renderElement(element: ProjectElement, ports: ConnectablePort[]) {
+function renderElement(
+  element: ProjectElement,
+  ports: ConnectablePort[],
+  projectCallDisplayName?: string,
+) {
   render(
     <svg>
       <ElementNode
         element={element}
         selected={false}
         traceHighlighted={false}
+        projectCallDisplayName={projectCallDisplayName}
         ports={ports}
         connectionTargetKey={null}
         compatiblePortKeys={new Set()}
@@ -186,6 +191,79 @@ describe("ElementNode Standard Library symbols", () => {
     expect(screen.getByTestId("element-pred-kind-label")).toHaveTextContent("pred");
   });
 
+  it("renders total division and modulo calls with symbols and natural-language names", () => {
+    render(
+      <svg>
+        <ElementNode
+          element={{
+            id: "divide",
+            kind: "library_call",
+            bounds: { x: 10, y: 20, width: 156, height: 82 },
+            portAnchors: [],
+            properties: {
+              library: "tilefold.std",
+              functionId: "nat.divide",
+              templateId: "tilefold.std.nat.divide",
+              version: "v1",
+            },
+          }}
+          selected={false}
+          traceHighlighted={false}
+          ports={[]}
+          connectionTargetKey={null}
+          compatiblePortKeys={new Set()}
+          rejectedPortKeys={new Set()}
+          pixelsPerCanvasUnit={1}
+          onSelect={vi.fn()}
+          onPointerDown={vi.fn()}
+          onResizePointerDown={vi.fn()}
+          onPortPointerDown={vi.fn()}
+        />
+        <ElementNode
+          element={{
+            id: "modulo",
+            kind: "library_call",
+            bounds: { x: 10, y: 120, width: 156, height: 82 },
+            portAnchors: [],
+            properties: {
+              library: "tilefold.std",
+              functionId: "nat.modulo",
+              templateId: "tilefold.std.nat.modulo",
+              version: "v1",
+            },
+          }}
+          selected={false}
+          traceHighlighted={false}
+          ports={[]}
+          connectionTargetKey={null}
+          compatiblePortKeys={new Set()}
+          rejectedPortKeys={new Set()}
+          pixelsPerCanvasUnit={1}
+          onSelect={vi.fn()}
+          onPointerDown={vi.fn()}
+          onResizePointerDown={vi.fn()}
+          onPortPointerDown={vi.fn()}
+        />
+      </svg>,
+    );
+
+    expect(screen.getByTestId("element-divide-kind-label")).toHaveTextContent("÷");
+    expect(screen.getByTestId("element-divide-library-source")).toHaveTextContent(
+      "Divide · Standard Library",
+    );
+    expect(screen.getByRole("button", { name: "Standard Library call Divide" })).toBeInTheDocument();
+    expect(screen.getByText(/divide : Nat → Nat → Nat/)).toBeInTheDocument();
+    expect(screen.getByText(/If divisor is 0, the result is 0/)).toBeInTheDocument();
+
+    expect(screen.getByTestId("element-modulo-kind-label")).toHaveTextContent("%");
+    expect(screen.getByTestId("element-modulo-library-source")).toHaveTextContent(
+      "Modulo · Standard Library",
+    );
+    expect(screen.getByRole("button", { name: "Standard Library call Modulo" })).toBeInTheDocument();
+    expect(screen.getByText(/modulo : Nat → Nat → Nat/)).toBeInTheDocument();
+    expect(screen.getByText(/If divisor is 0, the result is number/)).toBeInTheDocument();
+  });
+
   it("does not symbolize user-defined calls with matching names", () => {
     const element: ProjectElement = {
       id: "user-call",
@@ -199,5 +277,24 @@ describe("ElementNode Standard Library symbols", () => {
     expect(screen.getByTestId("element-user-call-kind-label")).toHaveTextContent(
       "multiply",
     );
+  });
+
+  it("renders project call names from current function metadata", () => {
+    const element: ProjectElement = {
+      id: "user-call",
+      kind: "project_call",
+      bounds: { x: 10, y: 20, width: 156, height: 82 },
+      portAnchors: [],
+      properties: { templateId: "stable-template-id" },
+    };
+    renderElement(element, [], "bar");
+
+    expect(screen.getByTestId("element-user-call-kind-label")).toHaveTextContent(
+      "bar",
+    );
+    expect(
+      screen.getByRole("button", { name: "Function call bar" }),
+    ).toBeInTheDocument();
+    expect(document.querySelector("title")?.textContent).toContain("bar");
   });
 });

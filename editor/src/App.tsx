@@ -193,6 +193,20 @@ export function App() {
         : [],
     [document, functionHost],
   );
+  const resultTargetContainer = useMemo(() => {
+    if (selection?.type === "container") {
+      const selected = document.geometry.containers.find(
+        (container) => container.id === selection.id,
+      );
+      if (selected) return selected;
+    }
+    return (
+      functionHost ??
+      document.geometry.containers.find(
+        (container) => container.id === document.currentContainerId,
+      )
+    );
+  }, [document, functionHost, selection]);
 
   function resetDocument(next: ProjectDocument) {
     invalidateExecution();
@@ -430,12 +444,31 @@ export function App() {
   }
 
   function addResult() {
-    const nextDocument = runCommand({ type: "add_result_boundary" });
-    if (!nextDocument) return;
-    const container = nextDocument.geometry.containers[0];
-    const boundary = container?.boundaryPorts.find(
-      (candidate) => candidate.role === "result",
+    const targetContainer = resultTargetContainer;
+    if (!targetContainer) {
+      setInspectorError(
+        "Select an entry or function container before adding a Result boundary.",
+      );
+      return;
+    }
+    const previousResultIds = new Set(
+      targetContainer.boundaryPorts
+        .filter((candidate) => candidate.role === "result")
+        .map((candidate) => candidate.id),
     );
+    const nextDocument = runCommand({
+      type: "add_result_boundary",
+      containerId: targetContainer.id,
+    });
+    if (!nextDocument) return;
+    const container = nextDocument.geometry.containers.find(
+      (candidate) => candidate.id === targetContainer.id,
+    );
+    const boundary =
+      container?.boundaryPorts.find(
+        (candidate) =>
+          candidate.role === "result" && !previousResultIds.has(candidate.id),
+      ) ?? container?.boundaryPorts.find((candidate) => candidate.role === "result");
     if (container && boundary) {
       setSelection({
         type: "boundary",
@@ -774,6 +807,7 @@ export function App() {
         <NodePalette
           onAddElement={add}
           onAddResult={addResult}
+          canAddResult={Boolean(resultTargetContainer)}
           suggestedFunctionTemplateId={nextFunctionTemplateId(document)}
           functionHostLabel={functionHost?.id ?? "No container"}
           onAddFunction={addFunction}

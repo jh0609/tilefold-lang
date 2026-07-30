@@ -827,6 +827,36 @@ function ElementInspector({
           )}
         </section>
       )}
+      {element.kind === "project_call" && (
+        <section className="readout">
+          <h3>Function call</h3>
+          <code>{surfaceFunction?.name ?? element.properties.templateId}</code>
+          {surfaceFunction ? (
+            <span>
+              {surfaceFunction.parameters
+                .map(
+                  (parameter) =>
+                    `${parameter.name}: ${formatCoreType(parameter.type)}`,
+                )
+                .join(", ")}{" "}
+              {"->"} {surfaceFunction.result.name}:{" "}
+              {formatCoreType(surfaceFunction.result.type)}
+            </span>
+          ) : (
+            <span className="limitation">
+              The referenced function template is missing.
+            </span>
+          )}
+          {surfaceFunction && (
+            <button
+              type="button"
+              onClick={() => onFocusTemplate(element.properties.templateId)}
+            >
+              Open function {surfaceFunction.name}
+            </button>
+          )}
+        </section>
+      )}
       <section className="readout">
         <h3>Port anchors</h3>
         {element.portAnchors.map((anchor) => (
@@ -943,7 +973,7 @@ export function Inspector({
           element={element}
           connectedWires={connectedWires}
           surfaceFunction={
-            element.kind === "function"
+            element.kind === "function" || element.kind === "project_call"
               ? document.surfaceFunctions?.find(
                   (candidate) =>
                     candidate.templateId === element.properties.templateId,

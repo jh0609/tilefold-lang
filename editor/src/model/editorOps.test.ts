@@ -6,6 +6,7 @@ import {
   addFunctionReferenceToPort,
   addFunctionTemplate,
   addFunctionTemplateAndReferenceToPort,
+  addResultBoundary,
   addWire,
   compatibleFunctionReferenceCandidates,
   deleteSelection,
@@ -76,6 +77,68 @@ describe("editor operations", () => {
     expect(result.element.id).toBe("node_nat_1");
     expect(result.element.properties).toEqual({ value: "0" });
     expect(result.element.bounds.x).toBe(452);
+  });
+
+  it("adds Result boundaries to the requested container using its result type", () => {
+    let project = parseProjectJson(exampleJson);
+    const created = addFunctionTemplate(project, "entry", {
+      templateId: "returns_bool",
+      parameterType: "unit",
+      resultType: "bool",
+    });
+    if ("error" in created) throw new Error(created.error);
+    project = deleteSelection(created.document, {
+      type: "boundary",
+      containerId: created.container.id,
+      id: created.container.boundaryPorts.find((port) => port.role === "result")!
+        .id,
+    }).document;
+
+    const added = addResultBoundary(project, created.container.id);
+    if ("error" in added) throw new Error(added.error);
+    const template = added.document.geometry.containers.find(
+      (container) => container.id === created.container.id,
+    )!;
+    const entry = added.document.geometry.containers.find(
+      (container) => container.id === "entry",
+    )!;
+
+    expect(added.boundary.type).toBe("bool");
+    expect(template.boundaryPorts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: added.boundary.id,
+          role: "result",
+          type: "bool",
+        }),
+      ]),
+    );
+    expect(entry.boundaryPorts.map((port) => port.id)).toContain("entry_result");
+    expect(parseProjectJson(exportProjectJson(added.document))).toMatchObject({
+      geometry: {
+        containers: expect.arrayContaining([
+          expect.objectContaining({
+            id: created.container.id,
+            boundaryPorts: expect.arrayContaining([
+              expect.objectContaining({
+                id: added.boundary.id,
+                role: "result",
+                type: "bool",
+              }),
+            ]),
+          }),
+        ]),
+      },
+    });
+  });
+
+  it("preserves the one Result boundary per container policy", () => {
+    const project = parseProjectJson(exampleJson);
+    const duplicate = addResultBoundary(project, "entry");
+    expect("error" in duplicate ? duplicate.error : undefined).toBe(
+      "Container entry already has a Result boundary.",
+    );
+    expect("document" in duplicate ? duplicate.document : project).toBe(project);
   });
 
   it("creates a complete identity template, closure dependency, and safe Drop", () => {

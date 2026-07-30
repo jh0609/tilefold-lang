@@ -776,6 +776,38 @@ fixtures.set(
     args: ["3", "5"],
   }),
 );
+fixtures.set(
+  "standard-library-divide-folded",
+  foldedStandardCallProject({
+    functionId: "nat.divide",
+    templateId: "tilefold.std.nat.divide",
+    args: ["3", "2"],
+  }),
+);
+fixtures.set(
+  "standard-library-divide-zero-folded",
+  foldedStandardCallProject({
+    functionId: "nat.divide",
+    templateId: "tilefold.std.nat.divide",
+    args: ["5", "0"],
+  }),
+);
+fixtures.set(
+  "standard-library-modulo-folded",
+  foldedStandardCallProject({
+    functionId: "nat.modulo",
+    templateId: "tilefold.std.nat.modulo",
+    args: ["3", "2"],
+  }),
+);
+fixtures.set(
+  "standard-library-modulo-zero-folded",
+  foldedStandardCallProject({
+    functionId: "nat.modulo",
+    templateId: "tilefold.std.nat.modulo",
+    args: ["5", "0"],
+  }),
+);
 fixtures.set("standard-library-equal-min-nested", nestedEqualMinProject());
 fixtures.set("standard-library-equal-big-fast", {
   mode: "fast",
@@ -812,6 +844,22 @@ fixtures.set("standard-library-max-big-fast", {
     functionId: "nat.max",
     templateId: "tilefold.std.nat.max",
     args: ["900719925474099312345", "42"],
+  }),
+});
+fixtures.set("standard-library-divide-big-fast", {
+  mode: "fast",
+  projectJson: foldedStandardCallProject({
+    functionId: "nat.divide",
+    templateId: "tilefold.std.nat.divide",
+    args: ["123456789012345678901234567890", "1000000000000000000000"],
+  }),
+});
+fixtures.set("standard-library-modulo-big-fast", {
+  mode: "fast",
+  projectJson: foldedStandardCallProject({
+    functionId: "nat.modulo",
+    templateId: "tilefold.std.nat.modulo",
+    args: ["123456789012345678901234567890", "1000000000000000000000"],
   }),
 });
 const naturalNumberExpectations = new Map([

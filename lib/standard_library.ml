@@ -18,6 +18,8 @@ type function_id =
   | LessOrEqual
   | Min
   | Max
+  | Divide
+  | Modulo
 
 type function_info = {
   id : function_id;
@@ -52,6 +54,8 @@ let stable_id = function
   | LessOrEqual -> "tilefold.std.nat.lessOrEqual"
   | Min -> "tilefold.std.nat.min"
   | Max -> "tilefold.std.nat.max"
+  | Divide -> "tilefold.std.nat.divide"
+  | Modulo -> "tilefold.std.nat.modulo"
 
 let display_name = function
   | Add -> "add"
@@ -69,6 +73,8 @@ let display_name = function
   | LessOrEqual -> "lessOrEqual"
   | Min -> "min"
   | Max -> "max"
+  | Divide -> "divide"
+  | Modulo -> "modulo"
 
 let function_template_id id =
   match CG.Function_template_id.of_string (stable_id id) with
@@ -86,7 +92,7 @@ let info id =
     | Not -> (bool, bool)
     | And | Or -> (bool, bool_to_bool)
     | Equal | LessThan | LessOrEqual -> (nat, nat_to_bool)
-    | Min | Max -> (nat, nat_to_nat)
+    | Min | Max | Divide | Modulo -> (nat, nat_to_nat)
   in
   { id; stable_id = stable_id id; display_name = display_name id; version; parameter_type; result_type }
 
@@ -108,6 +114,8 @@ let functions =
       LessOrEqual;
       Min;
       Max;
+      Divide;
+      Modulo;
     ]
 let find_function stable_id = List.find_opt (fun item -> String.equal item.stable_id stable_id) functions
 
@@ -120,7 +128,9 @@ let id_of_template_id template_id =
     functions
 
 let arity = function
-  | Add | Multiply | Subtract | And | Or | Equal | LessThan | LessOrEqual | Min | Max -> 2
+  | Add | Multiply | Subtract | And | Or | Equal | LessThan | LessOrEqual | Min | Max
+  | Divide | Modulo ->
+      2
   | Double | Square | Pred | IsZero | Not -> 1
 
 let add_nat left right =
@@ -152,6 +162,12 @@ let evaluate_nat id args =
       if Z.leq (Nat.to_z left) (Nat.to_z right) then Ok left else Ok right
   | Max, [ left; right ] ->
       if Z.leq (Nat.to_z left) (Nat.to_z right) then Ok right else Ok left
+  | Divide, [ number; divisor ] ->
+      if Nat.equal divisor Nat.zero then Ok Nat.zero
+      else nat_result (Z.div (Nat.to_z number) (Nat.to_z divisor) |> Nat.of_z)
+  | Modulo, [ number; divisor ] ->
+      if Nat.equal divisor Nat.zero then Ok number
+      else nat_result (Z.rem (Nat.to_z number) (Nat.to_z divisor) |> Nat.of_z)
   | _ -> Error "Standard Library evaluator received the wrong arity"
 
 let expect_nat = function
@@ -172,7 +188,7 @@ let collect_inputs expect args =
 
 let evaluate id args =
   match id with
-  | Add | Multiply | Double | Square | Pred | Subtract | Min | Max -> (
+  | Add | Multiply | Double | Square | Pred | Subtract | Min | Max | Divide | Modulo -> (
       match collect_inputs expect_nat args with
       | Error _ as error -> error
       | Ok nat_args -> Result.map (fun value -> Runtime_value.Nat value) (evaluate_nat id nat_args))
@@ -1126,6 +1142,206 @@ let minmax_inner_template id less_or_equal =
     ~id:(internal_id inner_id) ~parameter_type:nat ~result_type:nat
     ~captures:[ left_capture ] ~body ()
 
+let divide_step_inner_template multiply less_than =
+  let divisor_capture = { CG.key = port_key "divisor"; typ = nat } in
+  let index_capture = { CG.key = port_key "index"; typ = nat } in
+  let multiply_nodes, multiply_edges, multiply_result =
+    binary_std_call "multiply" multiply (pref "divisor" "value")
+      (pref "copy-next" "left") nat nat_to_nat nat
+  in
+  let less_nodes, less_edges, less_result =
+    binary_std_call "less-than" less_than (pref "succ-index" "result")
+      multiply_result nat nat_to_bool bool
+  in
+  let nodes =
+    [
+      node "previous" (CG.Parameter nat);
+      node "index" (CG.Capture index_capture);
+      node "divisor" (CG.Capture divisor_capture);
+      node "copy-previous" (CG.Copy nat);
+      node "succ-index" CG.Succ;
+      node "succ" CG.Succ;
+      node "copy-next" (CG.Copy nat);
+      node "boolrec" (CG.BoolRec nat);
+      node "result" (CG.Result nat);
+    ]
+    @ multiply_nodes @ less_nodes
+  in
+  let edges =
+    [
+      edge "e-index-succ" (pref "index" "value") (pref "succ-index" "input");
+      edge "e-previous-copy" (pref "previous" "value") (pref "copy-previous" "input");
+      edge "e-previous-succ" (pref "copy-previous" "left") (pref "succ" "input");
+      edge "e-succ-copy" (pref "succ" "result") (pref "copy-next" "input");
+    ]
+    @ multiply_edges @ less_edges
+    @ [
+        edge "e-condition" less_result { CG.node_id = node_id "boolrec"; port_key = CG.Port_key.condition };
+        edge "e-false-case" (pref "copy-next" "right") { CG.node_id = node_id "boolrec"; port_key = CG.Port_key.false_case };
+        edge "e-true-case" (pref "copy-previous" "right") { CG.node_id = node_id "boolrec"; port_key = CG.Port_key.true_case };
+        edge "e-result" { CG.node_id = node_id "boolrec"; port_key = CG.Port_key.result } (pref "result" "value");
+      ]
+  in
+  let body =
+    CG.Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:
+        [
+          node_id "succ-index";
+          node_id "copy-previous";
+          node_id "succ";
+          node_id "copy-next";
+          node_id "multiply-function";
+          node_id "multiply-apply-left";
+          node_id "multiply-apply-right";
+          node_id "less-than-function";
+          node_id "less-than-apply-left";
+          node_id "less-than-apply-right";
+          node_id "boolrec";
+        ]
+    |> validate_graph_with_templates_or_fail [ multiply; less_than ]
+  in
+  CG.Function_template.create
+    ~dependencies:[ CG.Function_template.id multiply; CG.Function_template.id less_than ]
+    ~id:(internal_id "divide-step-inner") ~parameter_type:nat
+    ~result_type:nat ~captures:[ index_capture; divisor_capture ] ~body ()
+
+let divide_step_outer_template inner =
+  let divisor_capture = { CG.key = port_key "divisor"; typ = nat } in
+  let index_capture = { CG.key = port_key "index"; typ = nat } in
+  let nodes =
+    [
+      node "index" (CG.Parameter nat);
+      node "divisor" (CG.Capture divisor_capture);
+      node "inner-function"
+        (CG.Function (function_signature inner [ index_capture; divisor_capture ]));
+      node "result" (CG.Result nat_to_nat);
+    ]
+  in
+  let edges =
+    [
+      edge "e-divisor-capture" (pref "divisor" "value") { CG.node_id = node_id "inner-function"; port_key = divisor_capture.key };
+      edge "e-index-capture" (pref "index" "value") { CG.node_id = node_id "inner-function"; port_key = index_capture.key };
+      edge "e-inner-result" (pref "inner-function" "value") (pref "result" "value");
+    ]
+  in
+  let body =
+    CG.Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:[ node_id "inner-function" ]
+    |> validate_graph_with_templates_or_fail [ inner ]
+  in
+  CG.Function_template.create ~dependencies:[ CG.Function_template.id inner ]
+    ~id:(internal_id "divide-step") ~parameter_type:nat
+    ~result_type:nat_to_nat ~captures:[ divisor_capture ] ~body ()
+
+let divide_inner_template step iszero =
+  let number_capture = { CG.key = port_key "a"; typ = nat } in
+  let iszero_nodes, iszero_edges, iszero_result =
+    unary_std_call "iszero" iszero (pref "copy-divisor" "left") nat bool
+  in
+  let nodes =
+    [
+      node "b" (CG.Parameter nat);
+      node "a" (CG.Capture number_capture);
+      node "copy-divisor" (CG.Copy nat);
+      node "zero-base" (CG.Nat_literal (nat_literal "0"));
+      node "zero-divide-by-zero" (CG.Nat_literal (nat_literal "0"));
+      node "step-function" (CG.Function (function_signature step [ { CG.key = port_key "divisor"; typ = nat } ]));
+      node "natrec" (CG.NatRec nat);
+      node "boolrec" (CG.BoolRec nat);
+      node "result" (CG.Result nat);
+    ]
+    @ iszero_nodes
+  in
+  let edges =
+    [
+      edge "e-divisor-copy" (pref "b" "value") (pref "copy-divisor" "input");
+      edge "e-zero-base" (pref "zero-base" "value") { CG.node_id = node_id "natrec"; port_key = CG.Port_key.base };
+      edge "e-divisor-step" (pref "copy-divisor" "right") { CG.node_id = node_id "step-function"; port_key = port_key "divisor" };
+      edge "e-step-natrec" (pref "step-function" "value") { CG.node_id = node_id "natrec"; port_key = CG.Port_key.step };
+      edge "e-number-count" (pref "a" "value") { CG.node_id = node_id "natrec"; port_key = CG.Port_key.count };
+    ]
+    @ iszero_edges
+    @ [
+        edge "e-condition" iszero_result { CG.node_id = node_id "boolrec"; port_key = CG.Port_key.condition };
+        edge "e-false-case" { CG.node_id = node_id "natrec"; port_key = CG.Port_key.result } { CG.node_id = node_id "boolrec"; port_key = CG.Port_key.false_case };
+        edge "e-true-case" (pref "zero-divide-by-zero" "value") { CG.node_id = node_id "boolrec"; port_key = CG.Port_key.true_case };
+        edge "e-result" { CG.node_id = node_id "boolrec"; port_key = CG.Port_key.result } (pref "result" "value");
+      ]
+  in
+  let body =
+    CG.Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:
+        [
+          node_id "copy-divisor";
+          node_id "step-function";
+          node_id "natrec";
+          node_id "iszero-function";
+          node_id "iszero-apply";
+          node_id "boolrec";
+        ]
+    |> validate_graph_with_templates_or_fail [ step; iszero ]
+  in
+  CG.Function_template.create
+    ~dependencies:[ CG.Function_template.id step; CG.Function_template.id iszero ]
+    ~id:(internal_id "divide-inner") ~parameter_type:nat
+    ~result_type:nat ~captures:[ number_capture ] ~body ()
+
+let modulo_inner_template divide multiply subtract =
+  let number_capture = { CG.key = port_key "a"; typ = nat } in
+  let divide_nodes, divide_edges, divide_result =
+    binary_std_call "divide" divide (pref "copy-number" "left")
+      (pref "copy-divisor" "left") nat nat_to_nat nat
+  in
+  let multiply_nodes, multiply_edges, multiply_result =
+    binary_std_call "multiply" multiply (pref "copy-divisor" "right")
+      divide_result nat nat_to_nat nat
+  in
+  let subtract_nodes, subtract_edges, subtract_result =
+    binary_std_call "subtract" subtract (pref "copy-number" "right")
+      multiply_result nat nat_to_nat nat
+  in
+  let nodes =
+    [
+      node "b" (CG.Parameter nat);
+      node "a" (CG.Capture number_capture);
+      node "copy-number" (CG.Copy nat);
+      node "copy-divisor" (CG.Copy nat);
+      node "result" (CG.Result nat);
+    ]
+    @ divide_nodes @ multiply_nodes @ subtract_nodes
+  in
+  let edges =
+    [
+      edge "e-number-copy" (pref "a" "value") (pref "copy-number" "input");
+      edge "e-divisor-copy" (pref "b" "value") (pref "copy-divisor" "input");
+    ]
+    @ divide_edges @ multiply_edges @ subtract_edges
+    @ [ edge "e-subtract-result" subtract_result (pref "result" "value") ]
+  in
+  let body =
+    CG.Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:
+        [
+          node_id "copy-number";
+          node_id "copy-divisor";
+          node_id "divide-function";
+          node_id "divide-apply-left";
+          node_id "divide-apply-right";
+          node_id "multiply-function";
+          node_id "multiply-apply-left";
+          node_id "multiply-apply-right";
+          node_id "subtract-function";
+          node_id "subtract-apply-left";
+          node_id "subtract-apply-right";
+        ]
+    |> validate_graph_with_templates_or_fail [ divide; multiply; subtract ]
+  in
+  CG.Function_template.create
+    ~dependencies:
+      [ CG.Function_template.id divide; CG.Function_template.id multiply; CG.Function_template.id subtract ]
+    ~id:(internal_id "modulo-inner") ~parameter_type:nat
+    ~result_type:nat ~captures:[ number_capture ] ~body ()
+
 let all_templates =
   let succ_inner = succ_inner_template () in
   let succ_outer = succ_outer_template succ_inner in
@@ -1160,6 +1376,12 @@ let all_templates =
   let min = binary_nat_outer_template Min min_inner nat in
   let max_inner = minmax_inner_template Max less_or_equal in
   let max = binary_nat_outer_template Max max_inner nat in
+  let divide_step_inner = divide_step_inner_template multiply less_than in
+  let divide_step = divide_step_outer_template divide_step_inner in
+  let divide_inner = divide_inner_template divide_step iszero in
+  let divide = binary_nat_outer_template Divide divide_inner nat in
+  let modulo_inner = modulo_inner_template divide multiply subtract in
+  let modulo = binary_nat_outer_template Modulo modulo_inner nat in
   [
     succ_inner;
     succ_outer;
@@ -1196,6 +1418,12 @@ let all_templates =
     min;
     max_inner;
     max;
+    divide_step_inner;
+    divide_step;
+    divide_inner;
+    divide;
+    modulo_inner;
+    modulo;
   ]
 
 let exposed_templates =

@@ -59,6 +59,8 @@ protocols keep the stable function names and identifiers.
 | `nat.add` | `+` | `add`, `plus`, `+` |
 | `nat.subtract` | `−` | `subtract`, `minus`, `-`, `−` |
 | `nat.multiply` | `×` | `multiply`, `times`, `*`, `×` |
+| `nat.divide` | `÷` | `divide`, `division`, `quotient`, `/`, `÷` |
+| `nat.modulo` | `%` | `modulo`, `mod`, `remainder`, `%` |
 | `nat.square` | `x²` | `square`, `squared`, `x²`, `^2` |
 | `nat.equal` | `=` | `equal`, `equals`, `=` |
 | `nat.lessThan` | `<` | `lessThan`, `less than`, `<` |
@@ -70,6 +72,12 @@ protocols keep the stable function names and identifiers.
 Standard Library functions without a dedicated mathematical symbol continue to
 show their English name. User-defined functions are never symbolized just
 because their name matches a Standard Library function.
+
+`divide(number, divisor)` and `modulo(number, divisor)` use total natural-number
+division. When `divisor` is nonzero, `number = divisor × quotient + remainder`
+and `remainder < divisor`. When `divisor` is zero, Tilefold defines
+`n ÷ 0 = 0` and `n % 0 = n` so both operations always return a `Nat` instead of
+raising a runtime error.
 
 The editor's **Example** picker includes executable natural-number projects for
 `Succ(2) = 3`, `2 + 3 = 5`, and `3 × 4 = 12`. Addition and multiplication are

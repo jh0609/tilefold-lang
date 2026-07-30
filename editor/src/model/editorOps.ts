@@ -4121,8 +4121,11 @@ export function addElement(
 
 export function addResultBoundary(
   document: ProjectDocument,
+  containerId = document.currentContainerId,
 ): { document: ProjectDocument; boundary: BoundaryPort } | { error: string } {
-  const container = document.geometry.containers[0];
+  const container = document.geometry.containers.find(
+    (candidate) => candidate.id === containerId,
+  );
   if (!container) {
     return { error: "Result boundary requires a container." };
   }
@@ -4134,7 +4137,7 @@ export function addResultBoundary(
   const boundary: BoundaryPort = {
     id: nextStableId(document, "boundary_result_"),
     role: "result",
-    type: "nat",
+    type: container.kind.resultType,
     anchor: {
       x: container.bounds.width,
       y: Math.round(container.bounds.height / 2),
@@ -4146,8 +4149,8 @@ export function addResultBoundary(
       ...document,
       geometry: {
         ...document.geometry,
-        containers: document.geometry.containers.map((candidate, index) =>
-          index === 0
+        containers: document.geometry.containers.map((candidate) =>
+          candidate.id === container.id
             ? {
                 ...candidate,
                 boundaryPorts: [...candidate.boundaryPorts, boundary],

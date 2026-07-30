@@ -75,7 +75,7 @@ export type EditorCommand =
       type: "edit_template_captures";
       edit: TemplateCapturesEdit;
     }
-  | { type: "add_result_boundary" }
+  | { type: "add_result_boundary"; containerId?: string }
   | { type: "add_wire"; source: ConnectablePort; target: ConnectablePort }
   | {
       type: "reconnect_wire_endpoint";
@@ -233,7 +233,7 @@ export function applyEditorCommand(
       }
     }
     case "add_result_boundary": {
-      const result = addResultBoundary(document);
+      const result = addResultBoundary(document, command.containerId);
       return "error" in result
         ? { document, error: result.error }
         : { document: result.document };
