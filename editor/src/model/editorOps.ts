@@ -4164,6 +4164,9 @@ export function addWire(
   source: ConnectablePort,
   target: ConnectablePort,
 ): { document: ProjectDocument; wire: ProjectWire } | { error: string } {
+  const inferred = inferRecTypeForFirstConnection(document, source, target);
+  if ("error" in inferred) return inferred;
+  document = inferred.document;
   if (
     managedCaptureSourcePort(document, source) ||
     resourceFlowSourceIds(document).has(source.key)
@@ -4982,6 +4985,104 @@ function removeSurfaceLibraryCallsForDeletedElements(
         call.applyElementIds.every((id) => !deletedElementIds.has(id)),
     ),
   };
+}
+
+function recValuePorts(element: ProjectElement): ReadonlySet<string> {
+  if (element.kind === "nat_rec") {
+    return new Set(["base", "step", "result"]);
+  }
+  if (element.kind === "bool_rec") {
+    return new Set(["false_case", "true_case", "result"]);
+  }
+  return new Set();
+}
+
+export function inferRecTypeForFirstConnection(
+  document: ProjectDocument,
+  source: ConnectablePort,
+  target: ConnectablePort,
+): { document: ProjectDocument } | { error: string } {
+  const targetHint = target.hint;
+  if (targetHint.kind !== "element_port") return { document };
+  const element = document.geometry.elements.find(
+    (candidate) => candidate.id === targetHint.elementId,
+  );
+  if (!element || (element.kind !== "nat_rec" && element.kind !== "bool_rec")) {
+    return { document };
+  }
+  if (!recValuePorts(element).has(targetHint.port)) return { document };
+  const inferredType = inferRecAccumulatorTypeFromPort(
+    element,
+    targetHint.port,
+    source.type,
+  );
+  if (!inferredType) return { document };
+  if (coreTypeEqual(inferredType, element.properties.type)) return { document };
+
+  const fixedType = inferredType;
+  const candidate =
+    element.kind === "nat_rec"
+      ? { ...element, properties: { type: fixedType } }
+      : { ...element, properties: { type: fixedType } };
+  const changedDocument: ProjectDocument = {
+    ...document,
+    geometry: {
+      ...document.geometry,
+      elements: document.geometry.elements.map((entry) =>
+        entry.id === element.id ? candidate : entry,
+      ),
+    },
+  };
+
+  const valuePorts = recValuePorts(element);
+  const conflictingWire = document.geometry.wires.find((wire) => {
+    const hint =
+      wire.sourceHint?.kind === "element_port" &&
+      wire.sourceHint.elementId === element.id &&
+      valuePorts.has(wire.sourceHint.port)
+        ? wire.sourceHint
+        : wire.targetHint?.kind === "element_port" &&
+            wire.targetHint.elementId === element.id &&
+            valuePorts.has(wire.targetHint.port)
+          ? wire.targetHint
+          : null;
+    if (!hint) return false;
+    const port = resolveEndpointHint(changedDocument, hint);
+    const other =
+      endpointHintEqual(wire.sourceHint, hint)
+        ? resolveEndpointHint(document, wire.targetHint)
+        : resolveEndpointHint(document, wire.sourceHint);
+    return Boolean(port && other && !coreTypeEqual(port.type, other.type));
+  });
+  if (conflictingWire) {
+    return {
+      error: `Type mismatch: ${element.kind === "nat_rec" ? "NatRec" : "BoolRec"} already has a ${conflictingWire.id} connection that fixes its accumulator / result type. Change the type in the Inspector after disconnecting conflicting wires.`,
+    };
+  }
+
+  return { document: changedDocument };
+}
+
+function inferRecAccumulatorTypeFromPort(
+  element: Extract<ProjectElement, { kind: "nat_rec" | "bool_rec" }>,
+  port: string,
+  sourceType: CoreType,
+): CoreType | null {
+  if (element.kind === "nat_rec" && port === "step") {
+    if (typeof sourceType === "string") return null;
+    const [first, rest] = sourceType.arrow;
+    if (!coreTypeEqual(first, "nat") || typeof rest === "string") return null;
+    const [accumulator, result] = rest.arrow;
+    return coreTypeEqual(accumulator, result) ? accumulator : null;
+  }
+  if (
+    (element.kind === "nat_rec" && (port === "base" || port === "result")) ||
+    (element.kind === "bool_rec" &&
+      (port === "false_case" || port === "true_case" || port === "result"))
+  ) {
+    return sourceType;
+  }
+  return null;
 }
 
 function removeSurfaceProjectCallsForDeletedElements(

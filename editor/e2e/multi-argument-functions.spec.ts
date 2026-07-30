@@ -126,7 +126,13 @@ async function setNatValue(page: Page, nodeId: string, value: number) {
 async function setValueType(page: Page, nodeId: string, type: string) {
   await element(page, nodeId).focus();
   await page.keyboard.press("Enter");
-  await page.getByLabel("Value type").selectOption(type);
+  const valueType = page.getByLabel("Value type");
+  const recType = page.getByLabel("Accumulator / result type");
+  if ((await valueType.count()) > 0) {
+    await valueType.selectOption(type);
+  } else {
+    await recType.selectOption(type);
+  }
 }
 
 async function removeInitialEntryGraph(page: Page) {

@@ -547,7 +547,7 @@ test("authors NatRec with an Arrow accumulator and applies the result", async ({
 
   const natRecId = await addNodeAndGetId(page, "Add NatRec", "nat_rec");
   await element(page, natRecId).click();
-  await setNatArrowNat(page, "Value type");
+  await setNatArrowNat(page, "Accumulator / result type");
   const applyId = await addNodeAndGetId(page, "Add Apply", "apply");
   const countId = await addNodeAndGetId(page, "Add Nat", "nat_literal");
   await element(page, countId).click();

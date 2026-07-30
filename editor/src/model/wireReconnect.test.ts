@@ -147,7 +147,7 @@ describe("wire endpoint reconnection", () => {
       (port) => port.key === "element:drop_unit:input",
     )!;
     expect(validateConnection(document, source, unitInput)).toMatchObject({
-      error: "The port types are not compatible.",
+      error: "Type mismatch: Nat \u2192 Unit.",
     });
     expect(
       validateConnection(document, { ...source, ownerId: "missing" }, target),
@@ -185,7 +185,7 @@ describe("wire endpoint reconnection", () => {
       (port) => port.key === "element:node_succ:input",
     )!;
     expect(validateConnection(document, boolSource, natTarget)).toMatchObject({
-      error: "The port types are not compatible.",
+      error: "Type mismatch: Bool \u2192 Nat.",
     });
   });
 

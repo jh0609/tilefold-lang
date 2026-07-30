@@ -564,10 +564,7 @@ describe("editor operations", () => {
       (port) => port.key === `element:${created.element.id}:value`,
     )!;
     const target = ports.find(
-      (port) =>
-        port.hint.kind === "element_port" &&
-        port.hint.elementId === "node_nat_rec_1" &&
-        port.hint.port === "base",
+      (port) => port.key === "element:node_succ:input",
     )!;
 
     const result = addWire(project, source, target);
@@ -2277,5 +2274,93 @@ describe("container geometry editing", () => {
         (functionInfo) => functionInfo.templateId === "delete_me",
       ),
     ).toBe(false);
+  });
+});
+
+describe("Rec node value type UX", () => {
+  it("infers a default NatRec accumulator/result type from the first safe value connection", () => {
+    let project = parseProjectJson(exampleJson);
+    project = addElement(project, "bool_literal", { x: 460, y: 160 }).document;
+    project = addElement(project, "nat_rec", { x: 620, y: 160 }).document;
+    let ports = collectConnectablePorts(project);
+    const source = ports.find(
+      (port) => port.ownerId === "node_bool_1" && port.name === "value",
+    )!;
+    const target = ports.find(
+      (port) => port.ownerId === "node_nat_rec_1" && port.name === "base",
+    )!;
+
+    const connected = addWire(project, source, target);
+    if ("error" in connected) throw new Error(connected.error);
+    project = connected.document;
+
+    const rec = project.geometry.elements.find(
+      (element): element is Extract<ProjectElement, { kind: "nat_rec" }> =>
+        element.id === "node_nat_rec_1" && element.kind === "nat_rec",
+    )!;
+    expect(rec.properties.type).toBe("bool");
+    ports = collectConnectablePorts(project);
+    expect(
+      ports.find(
+        (port) => port.ownerId === rec.id && port.name === "result",
+      )?.type,
+    ).toBe("bool");
+    expect(parseProjectJson(exportProjectJson(project))).toMatchObject({
+      version: 2,
+    });
+  });
+
+  it("infers a default BoolRec branch/result type from the first safe branch connection", () => {
+    let project = parseProjectJson(exampleJson);
+    project = addElement(project, "bool_literal", { x: 460, y: 160 }).document;
+    project = addElement(project, "bool_rec", { x: 620, y: 160 }).document;
+    const ports = collectConnectablePorts(project);
+    const source = ports.find(
+      (port) => port.ownerId === "node_bool_1" && port.name === "value",
+    )!;
+    const target = ports.find(
+      (port) => port.ownerId === "node_bool_rec_1" && port.name === "true_case",
+    )!;
+
+    const connected = addWire(project, source, target);
+    if ("error" in connected) throw new Error(connected.error);
+
+    const rec = connected.document.geometry.elements.find(
+      (element): element is Extract<ProjectElement, { kind: "bool_rec" }> =>
+        element.id === "node_bool_rec_1" && element.kind === "bool_rec",
+    )!;
+    expect(rec.properties.type).toBe("bool");
+  });
+
+  it("keeps a Rec type fixed when existing value connections would conflict", () => {
+    let project = parseProjectJson(exampleJson);
+    const addedNatResult = addElement(project, "nat_literal", {
+      x: 420,
+      y: 150,
+    });
+    project = addedNatResult.document;
+    project = addElement(project, "bool_literal", { x: 420, y: 240 }).document;
+    project = addElement(project, "nat_rec", { x: 620, y: 180 }).document;
+    let ports = collectConnectablePorts(project);
+    const natSource = ports.find(
+      (port) => port.ownerId === addedNatResult.element.id && port.name === "value",
+    )!;
+    const base = ports.find(
+      (port) => port.ownerId === "node_nat_rec_1" && port.name === "base",
+    )!;
+    const first = addWire(project, natSource, base);
+    if ("error" in first) throw new Error(first.error);
+    project = first.document;
+
+    ports = collectConnectablePorts(project);
+    const boolSource = ports.find(
+      (port) => port.ownerId === "node_bool_1" && port.name === "value",
+    )!;
+    const result = ports.find(
+      (port) => port.ownerId === "node_nat_rec_1" && port.name === "result",
+    )!;
+    expect(addWire(project, boolSource, result)).toMatchObject({
+      error: expect.stringContaining("already has a"),
+    });
   });
 });

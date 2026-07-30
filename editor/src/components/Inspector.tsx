@@ -671,16 +671,35 @@ function ElementInspector({
           </select>
         </label>
       )}
-      {(element.kind === "drop" ||
-        element.kind === "copy" ||
-        element.kind === "bool_rec" ||
-        element.kind === "nat_rec") && (
+      {(element.kind === "drop" || element.kind === "copy") && (
         <CoreTypeField
           label="Value type"
           value={element.properties.type}
           disabled={connectedWires.length > 0}
           onChange={(type) => onElementTypeChange(element.id, type)}
         />
+      )}
+      {(element.kind === "bool_rec" || element.kind === "nat_rec") && (
+        <>
+          <CoreTypeField
+            label="Accumulator / result type"
+            value={element.properties.type}
+            disabled={connectedWires.length > 0}
+            onChange={(type) => onElementTypeChange(element.id, type)}
+          />
+          <p className="limitation">
+            {element.kind === "nat_rec"
+              ? "The type accumulated during iteration and returned as the final result. The count input is always Nat."
+              : "The type used by both branches and returned as the final result. The condition input is always Bool."}
+          </p>
+          {connectedWires.length > 0 && (
+            <p className="limitation">
+              Disconnect related wires before changing this type manually. A new
+              default Rec can infer this type from the first compatible branch,
+              base, step, or result connection.
+            </p>
+          )}
+        </>
       )}
       {element.kind === "apply" && (
         <>

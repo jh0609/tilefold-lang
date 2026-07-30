@@ -360,7 +360,7 @@ async function buildPredEntry(page: Page, n: number) {
   const natRecId = await addNodeAndGetId(page, "Add NatRec", "nat_rec");
   await setElementPosition(page, natRecId, 110, 130);
   await element(page, natRecId).click();
-  await page.getByLabel("Value type").selectOption("nat");
+  await page.getByLabel("Accumulator / result type").selectOption("nat");
   const baseId = await addNodeAndGetId(page, "Add Nat", "nat_literal");
   await setElementPosition(page, baseId, 15, 80);
   const countId = await addNodeAndGetId(page, "Add Nat", "nat_literal");

@@ -9,7 +9,7 @@ import type {
   BoundaryPort,
 } from "./project";
 export { coreTypeEqual } from "./coreTypes";
-import { coreTypeEqual } from "./coreTypes";
+import { coreTypeEqual, formatCoreType } from "./coreTypes";
 import { standardLibraryFunction } from "./standardLibrary";
 
 export type PortDirection = "input" | "output";
@@ -307,6 +307,33 @@ export type ConnectionValidation =
   | { source: ConnectablePort; target: ConnectablePort }
   | { error: string };
 
+function recValuePort(element: ProjectElement | undefined, port: string): boolean {
+  if (!element) return false;
+  if (element.kind === "nat_rec") {
+    return port === "base" || port === "step" || port === "result";
+  }
+  if (element.kind === "bool_rec") {
+    return port === "false_case" || port === "true_case" || port === "result";
+  }
+  return false;
+}
+
+function recMismatchHint(
+  document: ProjectDocument,
+  source: ConnectablePort,
+  target: ConnectablePort,
+): string {
+  const base = `Type mismatch: ${formatCoreType(source.type)} \u2192 ${formatCoreType(target.type)}.`;
+  const targetHint = target.hint;
+  if (targetHint.kind !== "element_port") return base;
+  const element = document.geometry.elements.find(
+    (candidate) => candidate.id === targetHint.elementId,
+  );
+  if (!recValuePort(element, targetHint.port)) return base;
+  const label = element?.kind === "nat_rec" ? "NatRec" : "BoolRec";
+  return `${base} ${label} currently uses ${formatCoreType(target.type)} as its accumulator / result type. Change its accumulator / result type to ${formatCoreType(source.type)} if this ${target.label ?? target.name} port should consume ${formatCoreType(source.type)}.`;
+}
+
 function canonicalPort(
   document: ProjectDocument,
   candidate: ConnectablePort,
@@ -343,7 +370,7 @@ export function validateConnection(
     return { error: "A port cannot be connected to itself." };
   }
   if (!coreTypeEqual(source.type, target.type)) {
-    return { error: "The port types are not compatible." };
+    return { error: recMismatchHint(document, source, target) };
   }
   if (pointEqual(source.anchor, target.anchor)) {
     return { error: "The two wire anchors must be different." };

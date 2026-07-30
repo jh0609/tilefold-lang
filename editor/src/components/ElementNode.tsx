@@ -89,11 +89,15 @@ function nodeSignature(element: ProjectElement, ports: ConnectablePort[]) {
     }
     case "nat_rec": {
       const result = output("result");
-      return result ? `Nat fold -> ${formatCoreType(result)}` : "";
+      return result
+        ? `base ${formatCoreType(result)} · step Nat -> ${formatCoreType(result)} -> ${formatCoreType(result)} · count Nat`
+        : "";
     }
     case "bool_rec": {
       const result = output("result");
-      return result ? `Bool branch -> ${formatCoreType(result)}` : "";
+      return result
+        ? `false ${formatCoreType(result)} · true ${formatCoreType(result)} · condition Bool`
+        : "";
     }
     case "function": {
       const value = output("value");
@@ -122,6 +126,12 @@ function nodeSignature(element: ProjectElement, ports: ConnectablePort[]) {
 }
 
 function nodeDisplayLabel(element: ProjectElement): string {
+  if (element.kind === "nat_rec") {
+    return `NatRec<${formatCoreType(element.properties.type)}>`;
+  }
+  if (element.kind === "bool_rec") {
+    return `BoolRec<${formatCoreType(element.properties.type)}>`;
+  }
   if (element.kind === "function") {
     return (
       standardLibraryFunction(element.properties.templateId)?.displayName ??
@@ -138,6 +148,11 @@ function nodeDisplayLabel(element: ProjectElement): string {
     return element.properties.templateId;
   }
   return KIND_LABELS[element.kind];
+}
+
+function portTooltip(port: ConnectablePort, fallback: string): string {
+  const label = port.label ?? fallback;
+  return `${label} · ${formatCoreType(port.type)} · ${port.direction}${port.direction === "output" ? " · drag to connect" : " · drop target"}`;
 }
 
 function isLiteralElement(element: ProjectElement): boolean {
@@ -387,9 +402,11 @@ export function ElementNode({
                 data-port-direction={port.direction}
                 role="button"
                 tabIndex={0}
-                aria-label={`${port.direction} port ${port.label ?? anchor.port} on ${element.id}${port.direction === "output" ? ", drag to connect" : ", connection target"}`}
+                aria-label={`${port.direction} port ${port.label ?? anchor.port} (${formatCoreType(port.type)}) on ${element.id}${port.direction === "output" ? ", drag to connect" : ", connection target"}`}
                 onPointerDown={(event) => onPortPointerDown(event, port)}
-              />
+              >
+                <title>{portTooltip(port, anchor.port)}</title>
+              </circle>
             )}
             <circle
               className="port-anchor"
@@ -399,7 +416,7 @@ export function ElementNode({
               r={portVisibleRadius}
               aria-hidden="true"
             >
-              <title>{`${port?.label ?? anchor.port} · ${output ? "output" : "input"}${output ? " · drag to connect" : " · drop target"}`}</title>
+              <title>{port ? portTooltip(port, anchor.port) : anchor.port}</title>
             </circle>
             {!compact && !literal && (
               <text
@@ -411,9 +428,6 @@ export function ElementNode({
               >
                 {port?.label ?? anchor.port}
               </text>
-            )}
-            {port && (
-              <title>{`${port.label ?? anchor.port} · ${port.direction} · ${formatCoreType(port.type)}`}</title>
             )}
           </g>
         );

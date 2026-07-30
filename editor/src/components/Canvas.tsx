@@ -16,6 +16,7 @@ import { formatCoreType } from "../model/coreTypes";
 import {
   findElementOwnerContainer,
   compatibleFunctionReferenceCandidates,
+  inferRecTypeForFirstConnection,
   moveContainer,
   moveElement,
   replaceableAutoDropWireId,
@@ -55,6 +56,19 @@ import type { ResizeHandle } from "./ElementNode";
 
 function isFunctionType(type: CoreType): boolean {
   return typeof type !== "string";
+}
+
+function validateConnectionWithSafeRecInference(
+  document: ProjectDocument,
+  source: ConnectablePort,
+  target: ConnectablePort,
+  options: Parameters<typeof validateConnection>[3],
+) {
+  const validation = validateConnection(document, source, target, options);
+  if (!("error" in validation)) return validation;
+  const inferred = inferRecTypeForFirstConnection(document, source, target);
+  if ("error" in inferred || inferred.document === document) return validation;
+  return validateConnection(inferred.document, source, target, options);
 }
 
 interface DragState {
@@ -474,7 +488,7 @@ export function Canvas({
         connection.kind === "reconnect" && connection.endpoint === "source"
           ? connection.fixed
           : candidate;
-      const validation = validateConnection(document, source, target, {
+      const validation = validateConnectionWithSafeRecInference(document, source, target, {
         excludeWireId:
           connection.kind === "reconnect"
             ? connection.wireId
@@ -550,6 +564,53 @@ export function Canvas({
     pan,
     resize,
   ]);
+
+  function connectionHoverAt(
+    activeConnection: ConnectionDrag,
+    point: Point,
+  ): { validHover: ConnectablePort | null; rejection: string | null } {
+    const hover =
+      ports
+        .map((port) => ({
+          port,
+          distance: Math.hypot(point.x - port.anchor.x, point.y - port.anchor.y),
+        }))
+        .filter((candidate) => candidate.distance <= 14)
+        .sort((left, right) => left.distance - right.distance)[0]?.port ?? null;
+    let validHover: ConnectablePort | null = null;
+    let rejection: string | null = null;
+    if (hover) {
+      const source =
+        activeConnection.kind === "new"
+          ? activeConnection.source
+          : activeConnection.endpoint === "source"
+            ? hover
+            : activeConnection.fixed;
+      const target =
+        activeConnection.kind === "reconnect" &&
+        activeConnection.endpoint === "source"
+          ? activeConnection.fixed
+          : hover;
+      const validation = validateConnectionWithSafeRecInference(
+        document,
+        source,
+        target,
+        {
+          excludeWireId:
+            activeConnection.kind === "reconnect"
+              ? activeConnection.wireId
+              : replaceableAutoDropWireId(document, source),
+          allowSourceFanOut:
+            activeConnection.kind === "new" &&
+            (managedCaptureSourcePort(document, source) ||
+              resourceFlowSourceIds(document).has(source.key)),
+        },
+      );
+      if ("error" in validation) rejection = validation.error;
+      else validHover = hover;
+    }
+    return { validHover, rejection };
+  }
 
   useEffect(() => {
     const canvas = svgRef.current;
@@ -864,44 +925,7 @@ export function Canvas({
         return;
       }
       const point = { x: Math.round(current.x), y: Math.round(current.y) };
-      const hover =
-        ports
-          .map((port) => ({
-            port,
-            distance: Math.hypot(
-              point.x - port.anchor.x,
-              point.y - port.anchor.y,
-            ),
-          }))
-          .filter((candidate) => candidate.distance <= 14)
-          .sort((left, right) => left.distance - right.distance)[0]?.port ??
-        null;
-      let validHover: ConnectablePort | null = null;
-      let rejection: string | null = null;
-      if (hover) {
-        const source =
-          connection.kind === "new"
-            ? connection.source
-            : connection.endpoint === "source"
-              ? hover
-              : connection.fixed;
-        const target =
-          connection.kind === "reconnect" && connection.endpoint === "source"
-            ? connection.fixed
-            : hover;
-        const validation = validateConnection(document, source, target, {
-          excludeWireId:
-            connection.kind === "reconnect"
-              ? connection.wireId
-              : replaceableAutoDropWireId(document, source),
-          allowSourceFanOut:
-            connection.kind === "new" &&
-            (managedCaptureSourcePort(document, source) ||
-              resourceFlowSourceIds(document).has(source.key)),
-        });
-        if ("error" in validation) rejection = validation.error;
-        else validHover = hover;
-      }
+      const { validHover, rejection } = connectionHoverAt(connection, point);
       setConnection({ ...connection, current: point, validHover, rejection });
       return;
     }
@@ -997,17 +1021,31 @@ export function Canvas({
     if (connection?.pointerId === event.pointerId) {
       completedPointerRef.current = event.pointerId;
       suppressNextSelectionRef.current = true;
-      if (connection.validHover) {
+      let finalConnection = connection;
+      if (
+        svgRef.current &&
+        Number.isFinite(event.clientX) &&
+        Number.isFinite(event.clientY) &&
+        (event.clientX !== 0 || event.clientY !== 0)
+      ) {
+        const current = clientToProject(svgRef.current, event.clientX, event.clientY);
+        if (current) {
+          const point = { x: Math.round(current.x), y: Math.round(current.y) };
+          const hover = connectionHoverAt(connection, point);
+          finalConnection = { ...connection, current: point, ...hover };
+        }
+      }
+      if (finalConnection.validHover) {
         if (connection.kind === "new") {
-          onAddWire(connection.source, connection.validHover);
+          onAddWire(connection.source, finalConnection.validHover);
         } else {
           const source =
             connection.endpoint === "source"
-              ? connection.validHover
+              ? finalConnection.validHover
               : connection.fixed;
           const target =
             connection.endpoint === "target"
-              ? connection.validHover
+              ? finalConnection.validHover
               : connection.fixed;
           onReconnectWire(
             connection.wireId,
@@ -1018,7 +1056,7 @@ export function Canvas({
         }
       } else {
         onConnectionMessage(
-          connection.rejection ??
+          finalConnection.rejection ??
             `Connect to an available ${connection.kind === "reconnect" && connection.endpoint === "source" ? "output" : "input"} port.`,
         );
       }
