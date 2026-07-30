@@ -3992,6 +3992,8 @@ export function addElement(
 ): { document: ProjectDocument; element: ProjectElement } {
   const bounds = newElementBounds(kind, center);
   const { x, y, width, height } = bounds;
+  const anchorY = (numerator: number, denominator: number) =>
+    Math.round(y + (height * numerator) / denominator);
   const prefixes: Record<AddableElementKind, string> = {
     unit_literal: "node_unit_",
     bool_literal: "node_bool_",
@@ -4014,7 +4016,7 @@ export function addElement(
         kind,
         bounds,
         properties: {},
-        portAnchors: [{ port: "value", x: x + width, y: y + height / 2 }],
+        portAnchors: [{ port: "value", x: x + width, y: anchorY(1, 2) }],
       };
       break;
     case "bool_literal":
@@ -4023,7 +4025,7 @@ export function addElement(
         kind,
         bounds,
         properties: { value: false },
-        portAnchors: [{ port: "value", x: x + width, y: y + height / 2 }],
+        portAnchors: [{ port: "value", x: x + width, y: anchorY(1, 2) }],
       };
       break;
     case "nat_literal":
@@ -4032,7 +4034,7 @@ export function addElement(
         kind,
         bounds,
         properties: { value: "0" },
-        portAnchors: [{ port: "value", x: x + width, y: y + height / 2 }],
+        portAnchors: [{ port: "value", x: x + width, y: anchorY(1, 2) }],
       };
       break;
     case "succ":
@@ -4042,8 +4044,8 @@ export function addElement(
         bounds,
         properties: {},
         portAnchors: [
-          { port: "input", x, y: y + height / 2 },
-          { port: "result", x: x + width, y: y + height / 2 },
+          { port: "input", x, y: anchorY(1, 2) },
+          { port: "result", x: x + width, y: anchorY(1, 2) },
         ],
       };
       break;
@@ -4053,7 +4055,7 @@ export function addElement(
         kind,
         bounds,
         properties: { type: "nat" },
-        portAnchors: [{ port: "input", x, y: y + height / 2 }],
+        portAnchors: [{ port: "input", x, y: anchorY(1, 2) }],
       };
       break;
     case "copy":
@@ -4063,9 +4065,9 @@ export function addElement(
         bounds,
         properties: { type: "nat" },
         portAnchors: [
-          { port: "input", x, y: y + height / 2 },
-          { port: "left", x: x + width, y: y + height / 3 },
-          { port: "right", x: x + width, y: y + (height * 2) / 3 },
+          { port: "input", x, y: anchorY(1, 2) },
+          { port: "left", x: x + width, y: anchorY(1, 3) },
+          { port: "right", x: x + width, y: anchorY(2, 3) },
         ],
       };
       break;
@@ -4076,9 +4078,9 @@ export function addElement(
         bounds,
         properties: { parameterType: "nat", resultType: "nat" },
         portAnchors: [
-          { port: "function", x, y: y + height / 3 },
-          { port: "argument", x, y: y + (height * 2) / 3 },
-          { port: "result", x: x + width, y: y + height / 2 },
+          { port: "function", x, y: anchorY(1, 3) },
+          { port: "argument", x, y: anchorY(2, 3) },
+          { port: "result", x: x + width, y: anchorY(1, 2) },
         ],
       };
       break;
@@ -4089,9 +4091,9 @@ export function addElement(
         bounds,
         properties: { leftType: "nat", rightType: "bool" },
         portAnchors: [
-          { port: "left", x, y: y + height / 3 },
-          { port: "right", x, y: y + (height * 2) / 3 },
-          { port: "value", x: x + width, y: y + height / 2 },
+          { port: "left", x, y: anchorY(1, 3) },
+          { port: "right", x, y: anchorY(2, 3) },
+          { port: "value", x: x + width, y: anchorY(1, 2) },
         ],
       };
       break;
@@ -4102,9 +4104,9 @@ export function addElement(
         bounds,
         properties: { leftType: "nat", rightType: "bool" },
         portAnchors: [
-          { port: "value", x, y: y + height / 2 },
-          { port: "left", x: x + width, y: y + height / 3 },
-          { port: "right", x: x + width, y: y + (height * 2) / 3 },
+          { port: "value", x, y: anchorY(1, 2) },
+          { port: "left", x: x + width, y: anchorY(1, 3) },
+          { port: "right", x: x + width, y: anchorY(2, 3) },
         ],
       };
       break;
@@ -4115,10 +4117,10 @@ export function addElement(
         bounds,
         properties: { type: "bool" },
         portAnchors: [
-          { port: "condition", x, y: y + height / 4 },
-          { port: "false_case", x, y: y + height / 2 },
-          { port: "true_case", x, y: y + (height * 3) / 4 },
-          { port: "result", x: x + width, y: y + height / 2 },
+          { port: "condition", x, y: anchorY(1, 4) },
+          { port: "false_case", x, y: anchorY(1, 2) },
+          { port: "true_case", x, y: anchorY(3, 4) },
+          { port: "result", x: x + width, y: anchorY(1, 2) },
         ],
       };
       break;
@@ -4129,10 +4131,10 @@ export function addElement(
         bounds,
         properties: { type: "nat" },
         portAnchors: [
-          { port: "base", x, y: y + height / 4 },
-          { port: "step", x, y: y + height / 2 },
-          { port: "count", x, y: y + (height * 3) / 4 },
-          { port: "result", x: x + width, y: y + height / 2 },
+          { port: "base", x, y: anchorY(1, 4) },
+          { port: "step", x, y: anchorY(1, 2) },
+          { port: "count", x, y: anchorY(3, 4) },
+          { port: "result", x: x + width, y: anchorY(1, 2) },
         ],
       };
       break;
