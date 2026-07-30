@@ -36,6 +36,16 @@ async function dragConnect(
   await page.mouse.down();
   await page.mouse.move(to.x, to.y, { steps: 16 });
   await page.mouse.up();
+  try {
+    await expect
+      .poll(() => page.locator('polyline[data-testid^="wire-"]').count(), {
+        timeout: 1200,
+      })
+      .toBe(before + expectedWireDelta);
+    return;
+  } catch {
+    await source.dragTo(target, { force: true });
+  }
   await expect
     .poll(() => page.locator('polyline[data-testid^="wire-"]').count())
     .toBe(before + expectedWireDelta);
@@ -156,6 +166,35 @@ async function createNat3Function(page: Page, name: string, resultType = "nat") 
   return containerId!;
 }
 
+async function createNat2Function(
+  page: Page,
+  name: string,
+  firstName: string,
+  secondName: string,
+  resultType = "nat",
+) {
+  await page.getByRole("button", { name: "Add Function" }).click();
+  await page.getByLabel("Function name").fill(name);
+  await page.getByLabel("Argument 1 name").fill(firstName);
+  await page.getByLabel("Argument 1 type").selectOption("nat");
+  await page.getByRole("button", { name: "Add argument" }).click();
+  await page.getByLabel("Argument 2 name").fill(secondName);
+  await page.getByLabel("Argument 2 type").selectOption("nat");
+  await page.getByLabel("Result name").fill("result");
+  await page.getByLabel("Result type").selectOption(resultType);
+  await page.getByRole("button", { name: "Create total function" }).click();
+  await expect(page.getByText(new RegExp(`Created ${name}`))).toBeVisible();
+  const container = page.locator(`g.container-shape[data-template-id="${name}"]`);
+  await expect(container).toBeVisible();
+  const containerId = await container.getAttribute("data-container-id");
+  expect(containerId).not.toBeNull();
+  await expect(boundaryPort(page, containerId!, "parameter", "output")).toHaveCount(2);
+  await expect(
+    page.locator(`g.container-shape[data-template-id="${name}_curried_1"]`),
+  ).toHaveCount(0);
+  return containerId!;
+}
+
 async function addStandardCall(page: Page, name: string, templateId: string) {
   const before = await page
     .locator('g.element-node[data-node-kind="library_call"]')
@@ -269,6 +308,43 @@ async function buildBetween(page: Page) {
   await returnToEntry(page, containerId);
 }
 
+async function buildFactorialStep(page: Page) {
+  const containerId = await createNat2Function(
+    page,
+    "factorialStep",
+    "index",
+    "previous",
+  );
+  await openContainer(page, containerId);
+  const params = boundaryPort(page, containerId, "parameter", "output");
+  await clearFunctionResultLiteral(page, containerId);
+  await openContainer(page, containerId);
+  await page.locator(`g.container-shape[data-container-id="${containerId}"]`).click({ force: true });
+  const succId = await addNodeAndGetId(page, "Add Succ", "succ");
+  await setElementPosition(page, succId, 460, 104);
+  await page.locator(`g.container-shape[data-container-id="${containerId}"]`).click({ force: true });
+  const multiplyId = await addStandardCall(
+    page,
+    "multiply",
+    "tilefold.std.nat.multiply",
+  );
+  await clearAutoInputsAndResultDrop(page, multiplyId, 2);
+  await dragConnect(page, params.nth(0), port(page, succId, "input", "input"), 0);
+  await dragConnect(page, params.nth(1), port(page, multiplyId, "arg_0", "input"), 0);
+  await dragConnect(
+    page,
+    port(page, succId, "result", "output"),
+    port(page, multiplyId, "arg_1", "input"),
+  );
+  await dragConnect(
+    page,
+    port(page, multiplyId, "result", "output"),
+    boundaryPort(page, containerId, "result", "input"),
+  );
+  await returnToEntry(page, containerId);
+  return containerId;
+}
+
 async function addProjectCall(page: Page, templateId: string) {
   const before = await page
     .locator(`g.element-node[data-node-kind="project_call"][data-template-id="${templateId}"]`)
@@ -298,6 +374,14 @@ async function connectCallToEntry(page: Page, callId: string) {
   expect(dropId).not.toBeNull();
   await selectAndDelete(page, element(page, dropId!));
   await dragConnect(page, port(page, callId, "result", "output"), boundaryPort(page, "entry", "result", "input"));
+}
+
+async function disconnectEntryResult(page: Page) {
+  const wire = page
+    .locator('polyline[data-target-container-id="entry"][data-target-boundary-role="result"]')
+    .first();
+  await expect(wire).toBeVisible();
+  await selectAndDelete(page, wire);
 }
 
 async function callArgumentSources(page: Page, callId: string, arity = 3) {
@@ -419,6 +503,109 @@ test("authors flat multi-argument between with explicit Copy", async ({
   await page.getByLabel("Open JSON file").setInputFiles(savedPath);
   await expect(page.getByText("flat-between.tilefold.json")).toBeVisible();
   await runAndExpect(page, "Nat(0)");
+  await expectNoBrowserIssues(issues);
+});
+
+test("passes a flat multi-argument Surface function value to NatRec.step", async ({
+  page,
+}, testInfo) => {
+  const issues = watchBrowserIssues(page);
+  await page.goto("/");
+  await buildFactorialStep(page);
+  await enlargeEntryForMultiArgumentCall(page);
+  await removeInitialEntryGraph(page);
+
+  const directCallId = await addProjectCall(page, "factorialStep");
+  await setElementPosition(page, directCallId, 72, 252);
+  const [indexId, previousId] = await callArgumentSources(page, directCallId, 2);
+  await setNatValue(page, indexId, 2);
+  await setNatValue(page, previousId, 3);
+  await connectCallToEntry(page, directCallId);
+  await runAndExpect(page, "Nat(9)");
+
+  await disconnectEntryResult(page);
+  const directDropId = await addNodeAndGetId(page, "Add Drop", "drop");
+  await setElementPosition(page, directDropId, 0, 376);
+  await dragConnect(
+    page,
+    port(page, directCallId, "result", "output"),
+    port(page, directDropId, "input", "input"),
+  );
+
+  const functionNode = page
+    .locator('g.element-node[data-node-kind="function"][data-template-id="factorialStep"]')
+    .first();
+  await expect(functionNode).toBeVisible();
+  const functionNodeId = await functionNode.getAttribute("data-node-id");
+  expect(functionNodeId).not.toBeNull();
+  await setElementPosition(page, functionNodeId!, 24, 314);
+  const starterDropWire = page
+    .locator(`polyline[data-source-node-id="${functionNodeId}"][data-source-port-name="value"]`)
+    .first();
+  if ((await starterDropWire.count()) > 0) {
+    const starterDropId = await starterDropWire.getAttribute("data-target-node-id");
+    if (starterDropId) {
+      await selectAndDelete(page, element(page, starterDropId));
+    }
+  }
+
+  const natRecId = await addNodeAndGetId(page, "Add NatRec", "nat_rec");
+  await setElementPosition(page, natRecId, 108, 128);
+  const baseId = await addNodeAndGetId(page, "Add Nat", "nat_literal");
+  await setElementPosition(page, baseId, 0, 96);
+  await setNatValue(page, baseId, 1);
+  const countId = await addNodeAndGetId(page, "Add Nat", "nat_literal");
+  await setElementPosition(page, countId, 0, 212);
+  await dragConnect(
+    page,
+    port(page, baseId, "value", "output"),
+    port(page, natRecId, "base", "input"),
+  );
+  await dragConnect(
+    page,
+    port(page, functionNodeId!, "value", "output"),
+    port(page, natRecId, "step", "input"),
+  );
+  await expect(
+    page.locator(
+      `polyline[data-source-node-id="${functionNodeId}"][data-source-port-name="value"][data-target-node-id="${natRecId}"][data-target-port-name="step"]`,
+    ),
+  ).toHaveCount(1);
+  await dragConnect(
+    page,
+    port(page, countId, "value", "output"),
+    port(page, natRecId, "count", "input"),
+  );
+  await dragConnect(
+    page,
+    port(page, natRecId, "result", "output"),
+    boundaryPort(page, "entry", "result", "input"),
+  );
+  await expect(page.getByText(/missing function template/i)).toHaveCount(0);
+
+  for (const [n, expected] of [
+    [0, "Nat(1)"],
+    [1, "Nat(1)"],
+    [2, "Nat(2)"],
+    [3, "Nat(6)"],
+    [4, "Nat(24)"],
+    [5, "Nat(120)"],
+  ] as const) {
+    await setNatValue(page, countId, n);
+    await runAndExpect(page, expected);
+  }
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export JSON" }).click();
+  const download = await downloadPromise;
+  const savedPath = testInfo.outputPath("factorial-function-value.tilefold.json");
+  await download.saveAs(savedPath);
+  await page.reload();
+  await page.getByLabel("Open JSON file").setInputFiles(savedPath);
+  await expect(page.getByText("factorial-function-value.tilefold.json")).toBeVisible();
+  await setNatValue(page, countId, 5);
+  await runAndExpect(page, "Nat(120)");
+  await expect(page.getByText(/missing function template/i)).toHaveCount(0);
   await expectNoBrowserIssues(issues);
 });
 

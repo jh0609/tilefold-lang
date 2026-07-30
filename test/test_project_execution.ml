@@ -1,4 +1,5 @@
 module E = Tilefold.Project_execution
+module P = Tilefold.Project_document
 module SL = Tilefold.Standard_library
 module Nat = Tilefold.Nat
 module RV = Tilefold.Runtime_value
@@ -10,6 +11,25 @@ let read_file path =
     (fun () -> really_input_string channel (in_channel_length channel))
 
 let member name json = Yojson.Safe.Util.member name json
+
+let pt x y : P.point = { x; y }
+let bounds x y width height : P.bounds = { x; y; width; height }
+let anchor port x y : P.port_anchor = { port; at = pt x y }
+
+let element id kind bounds port_anchors : P.element =
+  { id; kind; bounds; port_anchors }
+
+let boundary id role typ x y : P.boundary_port =
+  { id; role; typ; anchor = pt x y }
+
+let wire id source target points : P.wire =
+  { id; source_hint = Some source; target_hint = Some target; points }
+
+let element_port element_id port = P.Element_port { element_id; port }
+let boundary_port container_id boundary_id = P.Boundary_port { container_id; boundary_id }
+
+let project_execution_result project =
+  E.run_json (P.encode_json project) |> Yojson.Safe.from_string
 
 let json_type = function
   | "nat" -> {json|"nat"|json}
@@ -774,6 +794,180 @@ let () =
   in
   assert (member "status" capture_result = `String "completed");
   assert (member "result" capture_result = `String "Nat(5)");
+  let factorial_project : P.t =
+    {
+      format = "tilefold-project";
+      version = 2;
+      snap_tolerance = 8;
+      view = None;
+      junctions = [];
+      surface_functions =
+        [
+          {
+            name = "factorialStep";
+            template_id = "factorialStep";
+            body_container_id = "factorialStep-body";
+            parameters =
+              [
+                { name = "index"; typ = Tilefold.Core_type.Nat };
+                { name = "previous"; typ = Tilefold.Core_type.Nat };
+              ];
+            result_name = "result";
+            result_type = Tilefold.Core_type.Nat;
+          };
+        ];
+      surface_project_calls =
+        [
+          {
+            id = "project-call-factorial-step";
+            template_id = "factorialStep";
+            function_element_id = "factorialStep-direct-call";
+          };
+        ];
+      containers =
+        [
+          {
+            id = "entry";
+            bounds = bounds 0 0 760 420;
+            kind =
+              P.Entry
+                {
+                  template_id = "entry-template";
+                  result_type = Tilefold.Core_type.Nat;
+                  dependencies = [ "factorialStep" ];
+                };
+            boundary_ports =
+              [
+                boundary "entry-parameter" P.Parameter Tilefold.Core_type.Unit 0 108;
+                boundary "entry-result" P.Result Tilefold.Core_type.Nat 760 186;
+              ];
+          };
+          {
+            id = "factorialStep-body";
+            bounds = bounds 840 0 560 260;
+            kind =
+              P.Template
+                {
+                  template_id = "factorialStep";
+                  parameter_type = Tilefold.Core_type.Nat;
+                  result_type =
+                    Tilefold.Core_type.Arrow
+                      (Tilefold.Core_type.Nat, Tilefold.Core_type.Nat);
+                  dependencies = [ "tilefold.std.nat.multiply" ];
+                };
+            boundary_ports =
+              [
+                boundary "factorialStep-index" P.Parameter Tilefold.Core_type.Nat 0 80;
+                boundary "factorialStep-previous" P.Parameter Tilefold.Core_type.Nat 0 140;
+                boundary "factorialStep-result" P.Result Tilefold.Core_type.Nat 560 120;
+              ];
+          };
+        ];
+      elements =
+        [
+          element "entry-unit-drop" (P.Drop Tilefold.Core_type.Unit)
+            (bounds 80 80 88 56) [ anchor "input" 80 108 ];
+          element "factorialStep-function"
+            (P.Function
+               {
+                 template_id = "factorialStep";
+                 parameter_type = Tilefold.Core_type.Nat;
+                 result_type =
+                   Tilefold.Core_type.Arrow
+                     (Tilefold.Core_type.Nat, Tilefold.Core_type.Nat);
+                 captures = [];
+               })
+            (bounds 40 330 128 72) [ anchor "value" 168 366 ];
+          element "factorial-base" (P.Nat_literal "1") (bounds 20 120 96 56)
+            [ anchor "value" 116 148 ];
+          element "factorial-count" (P.Nat_literal "5") (bounds 20 240 96 56)
+            [ anchor "value" 116 268 ];
+          element "factorial-rec" (P.NatRec Tilefold.Core_type.Nat)
+            (bounds 160 130 128 112)
+            [
+              anchor "base" 160 158;
+              anchor "step" 160 186;
+              anchor "count" 160 214;
+              anchor "result" 288 186;
+            ];
+          element "direct-left" (P.Nat_literal "2") (bounds 280 255 96 56)
+            [ anchor "value" 376 283 ];
+          element "direct-right" (P.Nat_literal "3") (bounds 280 335 96 56)
+            [ anchor "value" 376 363 ];
+          element "factorialStep-direct-call" (P.Project_call { template_id = "factorialStep" })
+            (bounds 420 260 188 106)
+            [ anchor "arg_0" 420 295; anchor "arg_1" 420 330; anchor "result" 608 313 ];
+          element "direct-result-drop" (P.Drop Tilefold.Core_type.Nat)
+            (bounds 656 285 88 56) [ anchor "input" 656 313 ];
+          element "factorialStep-index-succ" P.Succ (bounds 970 50 96 56)
+            [ anchor "input" 970 78; anchor "result" 1066 78 ];
+          element "factorialStep-multiply"
+            (P.Library_call
+               {
+                 library = "tilefold.std";
+                 function_id = "nat.multiply";
+                 template_id = "tilefold.std.nat.multiply";
+                 version = "v1";
+               })
+            (bounds 1140 82 188 106)
+            [ anchor "arg_0" 1140 117; anchor "arg_1" 1140 152; anchor "result" 1328 135 ];
+        ];
+      wires =
+        [
+          wire "w-entry-unit-drop"
+            (boundary_port "entry" "entry-parameter")
+            (element_port "entry-unit-drop" "input")
+            [ pt 0 108; pt 80 108 ];
+          wire "w-factorial-base"
+            (element_port "factorial-base" "value")
+            (element_port "factorial-rec" "base")
+            [ pt 116 148; pt 160 158 ];
+          wire "w-factorial-step"
+            (element_port "factorialStep-function" "value")
+            (element_port "factorial-rec" "step")
+            [ pt 168 366; pt 160 186 ];
+          wire "w-factorial-count"
+            (element_port "factorial-count" "value")
+            (element_port "factorial-rec" "count")
+            [ pt 116 268; pt 160 214 ];
+          wire "w-factorial-result"
+            (element_port "factorial-rec" "result")
+            (boundary_port "entry" "entry-result")
+            [ pt 288 186; pt 760 186 ];
+          wire "w-direct-left"
+            (element_port "direct-left" "value")
+            (element_port "factorialStep-direct-call" "arg_0")
+            [ pt 376 283; pt 420 295 ];
+          wire "w-direct-right"
+            (element_port "direct-right" "value")
+            (element_port "factorialStep-direct-call" "arg_1")
+            [ pt 376 363; pt 420 330 ];
+          wire "w-direct-result-drop"
+            (element_port "factorialStep-direct-call" "result")
+            (element_port "direct-result-drop" "input")
+            [ pt 608 313; pt 656 313 ];
+          wire "w-step-index-succ"
+            (boundary_port "factorialStep-body" "factorialStep-index")
+            (element_port "factorialStep-index-succ" "input")
+            [ pt 840 80; pt 970 78 ];
+          wire "w-step-previous-multiply"
+            (boundary_port "factorialStep-body" "factorialStep-previous")
+            (element_port "factorialStep-multiply" "arg_0")
+            [ pt 840 140; pt 1140 117 ];
+          wire "w-step-succ-multiply"
+            (element_port "factorialStep-index-succ" "result")
+            (element_port "factorialStep-multiply" "arg_1")
+            [ pt 1066 78; pt 1140 152 ];
+          wire "w-step-result"
+            (element_port "factorialStep-multiply" "result")
+            (boundary_port "factorialStep-body" "factorialStep-result")
+            [ pt 1328 135; pt 1400 120 ];
+        ];
+    }
+  in
+  let factorial_result = project_execution_result factorial_project in
+  assert (member "status" factorial_result = `String "completed");
+  assert (member "result" factorial_result = `String "Nat(120)");
   let std_add_project =
     {json|
 {
