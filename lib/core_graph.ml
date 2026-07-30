@@ -84,6 +84,8 @@ type node_kind =
   | Succ
   | Drop of Core_type.t
   | Copy of Core_type.t
+  | Pair of pair_signature
+  | Unpair of pair_signature
   | Function of function_signature
   | Apply of apply_signature
   | NatRec of Core_type.t
@@ -92,6 +94,11 @@ type node_kind =
 and capture = {
   key : Port_key.t;
   typ : Core_type.t;
+}
+
+and pair_signature = {
+  left_type : Core_type.t;
+  right_type : Core_type.t;
 }
 
 and function_signature = {
@@ -149,6 +156,20 @@ let ports_of_node_kind = function
         port Port_key.left Output typ;
         port Port_key.right Output typ;
       ]
+  | Pair signature ->
+      [
+        port Port_key.left Input signature.left_type;
+        port Port_key.right Input signature.right_type;
+        port Port_key.value Output
+          (Core_type.Product (signature.left_type, signature.right_type));
+      ]
+  | Unpair signature ->
+      [
+        port Port_key.value Input
+          (Core_type.Product (signature.left_type, signature.right_type));
+        port Port_key.left Output signature.left_type;
+        port Port_key.right Output signature.right_type;
+      ]
   | Function signature ->
       List.map
         (fun (capture : capture) -> port capture.key Input capture.typ)
@@ -183,7 +204,9 @@ let ports_of_node_kind = function
       ]
 
 let is_executable_node_kind = function
-  | Succ | Drop _ | Copy _ | Function _ | Apply _ | NatRec _ | BoolRec _ -> true
+  | Succ | Drop _ | Copy _ | Pair _ | Unpair _ | Function _ | Apply _ | NatRec _
+  | BoolRec _ ->
+      true
   | Unit_literal | Bool_literal _ | Nat_literal _ | Parameter _ | Capture _ | Result _ -> false
 
 module Raw_graph = struct

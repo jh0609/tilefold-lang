@@ -335,6 +335,21 @@ let is_ready instance node_id =
         match binding_for instance.bindings node_id CG.Port_key.input with
         | Some value -> Core_type.equal (Runtime_value.typ value) expected
         | None -> false)
+    | Some { kind = CG.Pair signature; _ } -> (
+        match
+          ( binding_for instance.bindings node_id CG.Port_key.left,
+            binding_for instance.bindings node_id CG.Port_key.right )
+        with
+        | Some left, Some right ->
+            Core_type.equal (Runtime_value.typ left) signature.left_type
+            && Core_type.equal (Runtime_value.typ right) signature.right_type
+        | _ -> false)
+    | Some { kind = CG.Unpair signature; _ } -> (
+        match binding_for instance.bindings node_id CG.Port_key.value with
+        | Some value ->
+            Core_type.equal (Runtime_value.typ value)
+              (Core_type.Product (signature.left_type, signature.right_type))
+        | None -> false)
     | Some { kind = CG.Function signature; _ } ->
         List.for_all
           (fun (capture : CG.capture) ->
@@ -556,7 +571,7 @@ let materialize_input graph input =
   let expected = CG.Validated_graph.parameter_type graph in
   match expected with
   | Core_type.Arrow _ -> Error (Unsupported_runtime_input_type expected)
-  | Core_type.Unit | Core_type.Bool | Core_type.Nat ->
+  | Core_type.Unit | Core_type.Bool | Core_type.Nat | Core_type.Product _ ->
       if payload_matches_type input expected then
         Ok
           (Runtime_value.create ~id:Runtime_value.execution_input_id ~payload:input
@@ -708,7 +723,9 @@ let rewrite_succ machine instance candidate =
           | Ok instance ->
               let instance = refresh_after_event instance machine.Machine.next_event_index in
               Rewritten { machine = update_instance machine instance; event })
-      | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Closure _ -> Stuck (stuck_reason instance))
+      | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Product _
+      | Runtime_value.Closure _ ->
+          Stuck (stuck_reason instance))
   | None -> Stuck (stuck_reason instance)
 
 let copy_payload candidate expected input_value =
@@ -716,6 +733,10 @@ let copy_payload candidate expected input_value =
   | Core_type.Unit, Runtime_value.Unit -> Ok Runtime_value.Unit
   | Core_type.Bool, Runtime_value.Bool value -> Ok (Runtime_value.Bool value)
   | Core_type.Nat, Runtime_value.Nat nat -> Ok (Runtime_value.Nat nat)
+  | Core_type.Product (expected_left, expected_right), Runtime_value.Product (left, right)
+    when Core_type.equal (Runtime_value.payload_type left) expected_left
+         && Core_type.equal (Runtime_value.payload_type right) expected_right ->
+      Ok (Runtime_value.Product (left, right))
   | Core_type.Arrow _, Runtime_value.Closure closure
     when Core_type.equal (Core_type.Arrow (closure.parameter_type, closure.result_type)) expected ->
       Ok (Runtime_value.Closure closure)
@@ -728,6 +749,90 @@ let copy_payload candidate expected input_value =
         (Runtime_invariant_violation
            ("Copy input payload does not match declared type at "
           ^ CG.Node_id.to_string candidate.node_id))
+
+let rewrite_pair machine instance candidate signature =
+  match
+    ( binding_for instance.bindings candidate.node_id CG.Port_key.left,
+      binding_for instance.bindings candidate.node_id CG.Port_key.right )
+  with
+  | Some left, Some right
+    when Core_type.equal (Runtime_value.typ left) signature.CG.left_type
+         && Core_type.equal (Runtime_value.typ right) signature.right_type ->
+      let event_index = machine.Machine.next_event_index in
+      let created =
+        Runtime_value.create
+          ~id:(rewrite_output_id instance event_index candidate.node_id CG.Port_key.value)
+          ~payload:
+            (Runtime_value.Product
+               (Runtime_value.payload left, Runtime_value.payload right))
+          ~origin:(rewrite_output_origin instance event_index candidate.node_id CG.Port_key.value)
+      in
+      let event =
+        make_event machine instance candidate Rewrite_event.Pair
+          [ Runtime_value.id left; Runtime_value.id right ] [ created ] ()
+      in
+      let instance =
+        remove_ready instance candidate.node_id |> fun i ->
+        mark_completed i candidate.node_id
+      in
+      let machine = append_event (update_instance machine instance) event in
+      let instance = Machine.instance_by_id machine instance.id |> Option.get in
+      (match deliver_output instance.graph instance candidate.node_id CG.Port_key.value created with
+      | Error message -> Runtime_error (Runtime_invariant_violation message)
+      | Ok instance ->
+          let instance = refresh_after_event instance machine.Machine.next_event_index in
+          Rewritten { machine = update_instance machine instance; event })
+  | Some _, Some _ ->
+      Runtime_error
+        (Runtime_invariant_violation
+           ("Pair input payload does not match declared type at "
+          ^ CG.Node_id.to_string candidate.node_id))
+  | _ -> Stuck (stuck_reason instance)
+
+let rewrite_unpair machine instance candidate signature =
+  match binding_for instance.bindings candidate.node_id CG.Port_key.value with
+  | Some product_value -> (
+      match Runtime_value.payload product_value with
+      | Runtime_value.Product (left_payload, right_payload)
+        when Core_type.equal (Runtime_value.payload_type left_payload) signature.CG.left_type
+             && Core_type.equal (Runtime_value.payload_type right_payload) signature.right_type ->
+          let event_index = machine.Machine.next_event_index in
+          let left =
+            Runtime_value.create
+              ~id:(rewrite_output_id instance event_index candidate.node_id CG.Port_key.left)
+              ~payload:left_payload
+              ~origin:(rewrite_output_origin instance event_index candidate.node_id CG.Port_key.left)
+          in
+          let right =
+            Runtime_value.create
+              ~id:(rewrite_output_id instance event_index candidate.node_id CG.Port_key.right)
+              ~payload:right_payload
+              ~origin:(rewrite_output_origin instance event_index candidate.node_id CG.Port_key.right)
+          in
+          let event =
+            make_event machine instance candidate Rewrite_event.Unpair
+              [ Runtime_value.id product_value ] [ left; right ] ()
+          in
+          let instance =
+            remove_ready instance candidate.node_id |> fun i ->
+            mark_completed i candidate.node_id
+          in
+          let machine = append_event (update_instance machine instance) event in
+          let instance = Machine.instance_by_id machine instance.id |> Option.get in
+          (match deliver_output instance.graph instance candidate.node_id CG.Port_key.left left with
+          | Error message -> Runtime_error (Runtime_invariant_violation message)
+          | Ok instance -> (
+              match deliver_output instance.graph instance candidate.node_id CG.Port_key.right right with
+              | Error message -> Runtime_error (Runtime_invariant_violation message)
+              | Ok instance ->
+                  let instance = refresh_after_event instance machine.Machine.next_event_index in
+                  Rewritten { machine = update_instance machine instance; event }))
+      | _ ->
+          Runtime_error
+            (Runtime_invariant_violation
+               ("Unpair input payload does not match declared type at "
+              ^ CG.Node_id.to_string candidate.node_id)))
+  | None -> Stuck (stuck_reason instance)
 
 let copy_created_value instance event_index node_id port_key payload =
   Runtime_value.create
@@ -858,7 +963,8 @@ let rewrite_drop machine instance candidate =
         | Core_type.Arrow _, Runtime_value.Closure _
         | Core_type.Bool, Runtime_value.Bool _
         | Core_type.Unit, Runtime_value.Unit
-        | Core_type.Nat, Runtime_value.Nat _ ->
+        | Core_type.Nat, Runtime_value.Nat _
+        | Core_type.Product _, Runtime_value.Product _ ->
             let event =
               make_event machine instance candidate Rewrite_event.Drop
                 [ Runtime_value.id input_value ] [] ()
@@ -978,7 +1084,8 @@ let rewrite_apply_enter machine caller candidate signature =
                   }
                 in
                 Rewritten { machine = append_event machine event; event })
-      | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Nat _ ->
+      | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Nat _
+      | Runtime_value.Product _ ->
           Runtime_error
             (Invalid_apply_runtime_payload
                {
@@ -1159,7 +1266,8 @@ let rewrite_natrec_initial machine instance candidate result_type =
             if Nat.equal total_count Nat.zero then
               rewrite_natrec_zero machine instance candidate base step count
             else rewrite_natrec_start machine instance candidate result_type base step count total_count
-        | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Closure _ ->
+        | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Product _
+        | Runtime_value.Closure _ ->
             Runtime_error
               (Invalid_natrec_runtime_payload
                  { node_id = candidate.node_id; expected = Core_type.Nat; actual = Runtime_value.typ count }))
@@ -1222,7 +1330,8 @@ let rewrite_boolrec machine instance candidate result_type =
             | Ok instance ->
                 let instance = refresh_after_event instance machine.Machine.next_event_index in
                 Rewritten { machine = update_instance machine instance; event })
-        | Runtime_value.Unit | Runtime_value.Nat _ | Runtime_value.Closure _ ->
+        | Runtime_value.Unit | Runtime_value.Nat _ | Runtime_value.Product _
+        | Runtime_value.Closure _ ->
             Runtime_error
               (Invalid_boolrec_runtime_payload
                  { node_id = candidate.node_id; expected = Core_type.Bool; actual = Runtime_value.typ condition }))
@@ -1261,7 +1370,8 @@ let closure_payload node_id expected value =
       Error
         (Invalid_natrec_runtime_payload
            { node_id; expected; actual = Runtime_value.typ value })
-  | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Nat _ ->
+  | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Nat _
+  | Runtime_value.Product _ ->
       Error
         (Invalid_natrec_runtime_payload
            { node_id; expected; actual = Runtime_value.typ value })
@@ -1584,6 +1694,10 @@ let step machine =
           | Some { kind = CG.Succ; _ } -> rewrite_succ machine active candidate
           | Some { kind = CG.Drop _; _ } -> rewrite_drop machine active candidate
           | Some { kind = CG.Copy expected; _ } -> rewrite_copy machine active candidate expected
+          | Some { kind = CG.Pair signature; _ } ->
+              rewrite_pair machine active candidate signature
+          | Some { kind = CG.Unpair signature; _ } ->
+              rewrite_unpair machine active candidate signature
           | Some { kind = CG.Function signature; _ } ->
               rewrite_function machine active candidate signature
           | Some { kind = CG.Apply signature; _ } ->

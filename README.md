@@ -47,6 +47,26 @@ Trace Run records the transparent Core rewrite trace; Fast Run shares the same
 decode, validation, and lowering preflight, then computes supported programs
 without materializing every raw rewrite event.
 
+### Product Values
+
+Tilefold Core supports binary Product values written in the editor as product
+types such as `Nat × Bool` and nested product types such as
+`Nat × (Bool × Unit)`. Surface text that uses `*` is right-associative:
+`Nat * Bool * Unit` means `Nat × (Bool × Unit)`, and Product binds more tightly
+than function arrow.
+
+Use `Pair` to combine two linear values into one Product value and `Unpair` to
+split a Product value back into its two components. There are no implicit
+component drops: after `Unpair`, any unused component must be connected to an
+ordinary `Drop`. Existing `Copy` and `Drop` nodes also work on Product values,
+including nested Products.
+
+Project JSON v2 stores Product types structurally, for example
+`{ "product": ["nat", "bool"] }`; it does not store display strings as type
+meaning. Product is a value-bundling feature only. It does not provide Repeat
+early termination, hidden control flow, multiple function results, or an
+execution shortcut.
+
 ### Standard Library Canvas Symbols
 
 Folded Standard Library calls use familiar mathematical symbols on the canvas

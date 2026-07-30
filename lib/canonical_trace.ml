@@ -27,6 +27,8 @@ let rec render_payload = function
   | Runtime_value.Unit -> "Unit"
   | Bool value -> if value then "Bool(True)" else "Bool(False)"
   | Nat nat -> "Nat(" ^ Nat.to_string nat ^ ")"
+  | Product (left, right) ->
+      "Product(" ^ render_payload left ^ ", " ^ render_payload right ^ ")"
   | Closure closure ->
       "Closure(template=" ^ render_template_id closure.template_id
       ^ ",parameter=" ^ render_type closure.parameter_type

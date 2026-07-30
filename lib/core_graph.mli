@@ -70,6 +70,8 @@ type node_kind =
   | Succ
   | Drop of Core_type.t
   | Copy of Core_type.t
+  | Pair of pair_signature
+  | Unpair of pair_signature
   | Function of function_signature
   | Apply of apply_signature
   | NatRec of Core_type.t
@@ -78,6 +80,11 @@ type node_kind =
 and capture = {
   key : Port_key.t;
   typ : Core_type.t;
+}
+
+and pair_signature = {
+  left_type : Core_type.t;
+  right_type : Core_type.t;
 }
 
 and function_signature = {

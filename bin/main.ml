@@ -2,15 +2,20 @@ let usage () =
   prerr_endline
     "usage:\n  tilefold example add [--trace]\n  tilefold example multiply [--trace]\n  tilefold example higher-order-function [--trace]\n  tilefold example higher-order-apply [--trace]"
 
-let payload_to_string value =
-  match Tilefold.Runtime_value.payload value with
-  | Unit -> "Unit"
+let rec payload_to_string_payload = function
+  | Tilefold.Runtime_value.Unit -> "Unit"
   | Bool value -> if value then "Bool(True)" else "Bool(False)"
   | Nat nat -> "Nat(" ^ Tilefold.Nat.to_string nat ^ ")"
+  | Product (left, right) ->
+      "Product(" ^ payload_to_string_payload left ^ ", "
+      ^ payload_to_string_payload right ^ ")"
   | Closure closure ->
       "Closure("
       ^ Tilefold.Core_graph.Function_template_id.to_string closure.template_id
       ^ ", captures=" ^ string_of_int (List.length closure.captures) ^ ")"
+
+let payload_to_string value =
+  payload_to_string_payload (Tilefold.Runtime_value.payload value)
 
 let example_package = function
   | "add" -> Some (Tilefold.Program_package.Examples.add ())

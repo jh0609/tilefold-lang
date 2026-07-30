@@ -96,12 +96,27 @@ function idAt(object: Record<string, unknown>, path: string): string {
 function coreTypeAt(value: unknown, path: string): void {
   if (value === "unit" || value === "bool" || value === "nat") return;
   const type = objectAt(value, path);
-  const arrow = arrayAt(required(type, "arrow", path), `${path}.arrow`);
-  if (arrow.length !== 2) {
-    throw new StructureError(`${path}.arrow`, "expected two type entries");
+  if ("arrow" in type) {
+    if (Object.keys(type).some((key) => key !== "arrow")) {
+      throw new StructureError(path, "unknown type field");
+    }
+    const arrow = arrayAt(required(type, "arrow", path), `${path}.arrow`);
+    if (arrow.length !== 2) {
+      throw new StructureError(`${path}.arrow`, "expected two type entries");
+    }
+    coreTypeAt(arrow[0], `${path}.arrow[0]`);
+    coreTypeAt(arrow[1], `${path}.arrow[1]`);
+    return;
   }
-  coreTypeAt(arrow[0], `${path}.arrow[0]`);
-  coreTypeAt(arrow[1], `${path}.arrow[1]`);
+  if (Object.keys(type).some((key) => key !== "product")) {
+    throw new StructureError(path, "unknown type field");
+  }
+  const product = arrayAt(required(type, "product", path), `${path}.product`);
+  if (product.length !== 2) {
+    throw new StructureError(`${path}.product`, "expected two type entries");
+  }
+  coreTypeAt(product[0], `${path}.product[0]`);
+  coreTypeAt(product[1], `${path}.product[1]`);
 }
 
 function elementAt(value: unknown, path: string): ProjectElement {
@@ -199,6 +214,17 @@ function elementAt(value: unknown, path: string): ProjectElement {
           `${path}.properties.provenance.connectionId`,
         );
       }
+      break;
+    case "pair":
+    case "unpair":
+      coreTypeAt(
+        required(properties, "leftType", `${path}.properties`),
+        `${path}.properties.leftType`,
+      );
+      coreTypeAt(
+        required(properties, "rightType", `${path}.properties`),
+        `${path}.properties.rightType`,
+      );
       break;
     case "nat_rec":
     case "bool_rec":

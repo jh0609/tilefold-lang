@@ -147,6 +147,8 @@ const NEW_ELEMENT_SIZE: Record<
   succ: { width: 88, height: 56 },
   drop: { width: 88, height: 56 },
   copy: { width: 104, height: 72 },
+  pair: { width: 112, height: 80 },
+  unpair: { width: 112, height: 80 },
   apply: { width: 120, height: 90 },
   bool_rec: { width: 136, height: 112 },
   nat_rec: { width: 128, height: 112 },
@@ -1765,7 +1767,7 @@ export function addFunctionTemplate(
         port: "input",
       },
     });
-    if (typeof templateResultType !== "string") {
+    if (typeof templateResultType !== "string" && "arrow" in templateResultType) {
       const nestedTemplateId = allocate(`${templateId}_curried_`);
       const nestedContainerId = allocate("container_template_");
       const nestedParameterBoundaryId = allocate("boundary_parameter_");
@@ -1909,7 +1911,7 @@ export function addFunctionTemplate(
             boundaryId: nestedResultBoundaryId,
           },
         });
-      } else {
+      } else if (typeof nestedResultType !== "string" && "arrow" in nestedResultType) {
         const deeperTemplateId = allocate(`${nestedTemplateId}_curried_`);
         const deeperContainerId = allocate("container_template_");
         const deeperParameterBoundaryId = allocate("boundary_parameter_");
@@ -3997,6 +3999,8 @@ export function addElement(
     succ: "node_succ_",
     drop: "node_drop_",
     copy: "node_copy_",
+    pair: "node_pair_",
+    unpair: "node_unpair_",
     apply: "node_apply_",
     bool_rec: "node_bool_rec_",
     nat_rec: "node_nat_rec_",
@@ -4075,6 +4079,32 @@ export function addElement(
           { port: "function", x, y: y + height / 3 },
           { port: "argument", x, y: y + (height * 2) / 3 },
           { port: "result", x: x + width, y: y + height / 2 },
+        ],
+      };
+      break;
+    case "pair":
+      element = {
+        id,
+        kind,
+        bounds,
+        properties: { leftType: "nat", rightType: "bool" },
+        portAnchors: [
+          { port: "left", x, y: y + height / 3 },
+          { port: "right", x, y: y + (height * 2) / 3 },
+          { port: "value", x: x + width, y: y + height / 2 },
+        ],
+      };
+      break;
+    case "unpair":
+      element = {
+        id,
+        kind,
+        bounds,
+        properties: { leftType: "nat", rightType: "bool" },
+        portAnchors: [
+          { port: "value", x, y: y + height / 2 },
+          { port: "left", x: x + width, y: y + height / 3 },
+          { port: "right", x: x + width, y: y + (height * 2) / 3 },
         ],
       };
       break;
@@ -4975,6 +5005,45 @@ function hintReferencesElement(
   return hint?.kind === "element_port" && hint.elementId === id;
 }
 
+export function updatePairTypes(
+  document: ProjectDocument,
+  id: string,
+  leftType: CoreType,
+  rightType: CoreType,
+): { document: ProjectDocument; error?: string } {
+  const element = document.geometry.elements.find(
+    (candidate) => candidate.id === id,
+  );
+  if (!element) return { document, error: `Element ${id} does not exist.` };
+  if (element.kind !== "pair" && element.kind !== "unpair") {
+    return { document, error: `${element.kind} is not a Pair or Unpair element.` };
+  }
+  const references = elementReferences(document, id);
+  if (references.length > 0) {
+    return {
+      document,
+      error: `Disconnect wire(s) before changing ${id} product types: ${references.join(", ")}`,
+    };
+  }
+  return {
+    document: {
+      ...document,
+      geometry: {
+        ...document.geometry,
+        elements: document.geometry.elements.map((candidate) =>
+          candidate.id === id &&
+          (candidate.kind === "pair" || candidate.kind === "unpair")
+            ? {
+                ...candidate,
+                properties: { leftType, rightType },
+              }
+            : candidate,
+        ),
+      },
+    },
+  };
+}
+
 function removeSurfaceLibraryCallsForDeletedElements(
   document: ProjectDocument,
   deletedElementIds: ReadonlySet<string>,
@@ -5072,9 +5141,9 @@ function inferRecAccumulatorTypeFromPort(
   sourceType: CoreType,
 ): CoreType | null {
   if (element.kind === "nat_rec" && port === "step") {
-    if (typeof sourceType === "string") return null;
+    if (typeof sourceType === "string" || !("arrow" in sourceType)) return null;
     const [first, rest] = sourceType.arrow;
-    if (!coreTypeEqual(first, "nat") || typeof rest === "string") return null;
+    if (!coreTypeEqual(first, "nat") || typeof rest === "string" || !("arrow" in rest)) return null;
     const [accumulator, result] = rest.arrow;
     return coreTypeEqual(accumulator, result) ? accumulator : null;
   }

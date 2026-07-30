@@ -389,6 +389,220 @@ let expect_mode_result_value project mode expected =
       ^ Yojson.Safe.to_string response);
   response
 
+let product_pair_project =
+  {json|{
+  "format": "tilefold-project",
+  "version": 2,
+  "geometry": {
+    "snapTolerance": 8,
+    "elements": [
+      {
+        "id": "unit-drop",
+        "kind": "drop",
+        "bounds": { "x": 80, "y": 80, "width": 88, "height": 56 },
+        "properties": { "type": "unit" },
+        "portAnchors": [{ "port": "input", "x": 80, "y": 108 }]
+      },
+      {
+        "id": "nat-three",
+        "kind": "nat_literal",
+        "bounds": { "x": 80, "y": 180, "width": 96, "height": 56 },
+        "properties": { "value": "3" },
+        "portAnchors": [{ "port": "value", "x": 176, "y": 208 }]
+      },
+      {
+        "id": "bool-true",
+        "kind": "bool_literal",
+        "bounds": { "x": 80, "y": 260, "width": 88, "height": 56 },
+        "properties": { "value": true },
+        "portAnchors": [{ "port": "value", "x": 168, "y": 288 }]
+      },
+      {
+        "id": "pair",
+        "kind": "pair",
+        "bounds": { "x": 260, "y": 205, "width": 112, "height": 80 },
+        "properties": { "leftType": "nat", "rightType": "bool" },
+        "portAnchors": [
+          { "port": "left", "x": 260, "y": 232 },
+          { "port": "right", "x": 260, "y": 258 },
+          { "port": "value", "x": 372, "y": 245 }
+        ]
+      }
+    ],
+    "containers": [
+      {
+        "id": "entry",
+        "kind": {
+          "kind": "entry",
+          "templateId": "entry_template",
+          "resultType": { "product": ["nat", "bool"] },
+          "dependencies": []
+        },
+        "bounds": { "x": 0, "y": 0, "width": 560, "height": 380 },
+        "boundaryPorts": [
+          { "id": "entry-parameter", "role": "parameter", "type": "unit", "anchor": { "x": 0, "y": 108 } },
+          { "id": "entry-result", "role": "result", "type": { "product": ["nat", "bool"] }, "anchor": { "x": 560, "y": 245 } }
+        ]
+      }
+    ],
+    "wires": [
+      {
+        "id": "w-unit-drop",
+        "points": [{ "x": 0, "y": 108 }, { "x": 80, "y": 108 }],
+        "sourceHint": { "kind": "boundary_port", "containerId": "entry", "boundaryId": "entry-parameter" },
+        "targetHint": { "kind": "element_port", "elementId": "unit-drop", "port": "input" }
+      },
+      {
+        "id": "w-nat-pair",
+        "points": [{ "x": 176, "y": 208 }, { "x": 260, "y": 232 }],
+        "sourceHint": { "kind": "element_port", "elementId": "nat-three", "port": "value" },
+        "targetHint": { "kind": "element_port", "elementId": "pair", "port": "left" }
+      },
+      {
+        "id": "w-bool-pair",
+        "points": [{ "x": 168, "y": 288 }, { "x": 260, "y": 258 }],
+        "sourceHint": { "kind": "element_port", "elementId": "bool-true", "port": "value" },
+        "targetHint": { "kind": "element_port", "elementId": "pair", "port": "right" }
+      },
+      {
+        "id": "w-result",
+        "points": [{ "x": 372, "y": 245 }, { "x": 560, "y": 245 }],
+        "sourceHint": { "kind": "element_port", "elementId": "pair", "port": "value" },
+        "targetHint": { "kind": "boundary_port", "containerId": "entry", "boundaryId": "entry-result" }
+      }
+    ],
+    "junctions": []
+  }
+}
+|json}
+
+let product_swap_project =
+  {json|{
+  "format": "tilefold-project",
+  "version": 2,
+  "geometry": {
+    "snapTolerance": 8,
+    "elements": [
+      {
+        "id": "unit-drop",
+        "kind": "drop",
+        "bounds": { "x": 80, "y": 80, "width": 88, "height": 56 },
+        "properties": { "type": "unit" },
+        "portAnchors": [{ "port": "input", "x": 80, "y": 108 }]
+      },
+      {
+        "id": "nat-three",
+        "kind": "nat_literal",
+        "bounds": { "x": 80, "y": 180, "width": 96, "height": 56 },
+        "properties": { "value": "3" },
+        "portAnchors": [{ "port": "value", "x": 176, "y": 208 }]
+      },
+      {
+        "id": "bool-true",
+        "kind": "bool_literal",
+        "bounds": { "x": 80, "y": 260, "width": 88, "height": 56 },
+        "properties": { "value": true },
+        "portAnchors": [{ "port": "value", "x": 168, "y": 288 }]
+      },
+      {
+        "id": "pair-in",
+        "kind": "pair",
+        "bounds": { "x": 260, "y": 205, "width": 112, "height": 80 },
+        "properties": { "leftType": "nat", "rightType": "bool" },
+        "portAnchors": [
+          { "port": "left", "x": 260, "y": 232 },
+          { "port": "right", "x": 260, "y": 258 },
+          { "port": "value", "x": 372, "y": 245 }
+        ]
+      },
+      {
+        "id": "unpair",
+        "kind": "unpair",
+        "bounds": { "x": 430, "y": 205, "width": 112, "height": 80 },
+        "properties": { "leftType": "nat", "rightType": "bool" },
+        "portAnchors": [
+          { "port": "value", "x": 430, "y": 245 },
+          { "port": "left", "x": 542, "y": 232 },
+          { "port": "right", "x": 542, "y": 258 }
+        ]
+      },
+      {
+        "id": "pair-out",
+        "kind": "pair",
+        "bounds": { "x": 600, "y": 205, "width": 112, "height": 80 },
+        "properties": { "leftType": "bool", "rightType": "nat" },
+        "portAnchors": [
+          { "port": "left", "x": 600, "y": 232 },
+          { "port": "right", "x": 600, "y": 258 },
+          { "port": "value", "x": 712, "y": 245 }
+        ]
+      }
+    ],
+    "containers": [
+      {
+        "id": "entry",
+        "kind": {
+          "kind": "entry",
+          "templateId": "entry_template",
+          "resultType": { "product": ["bool", "nat"] },
+          "dependencies": []
+        },
+        "bounds": { "x": 0, "y": 0, "width": 880, "height": 380 },
+        "boundaryPorts": [
+          { "id": "entry-parameter", "role": "parameter", "type": "unit", "anchor": { "x": 0, "y": 108 } },
+          { "id": "entry-result", "role": "result", "type": { "product": ["bool", "nat"] }, "anchor": { "x": 880, "y": 245 } }
+        ]
+      }
+    ],
+    "wires": [
+      {
+        "id": "w-unit-drop",
+        "points": [{ "x": 0, "y": 108 }, { "x": 80, "y": 108 }],
+        "sourceHint": { "kind": "boundary_port", "containerId": "entry", "boundaryId": "entry-parameter" },
+        "targetHint": { "kind": "element_port", "elementId": "unit-drop", "port": "input" }
+      },
+      {
+        "id": "w-nat-pair",
+        "points": [{ "x": 176, "y": 208 }, { "x": 260, "y": 232 }],
+        "sourceHint": { "kind": "element_port", "elementId": "nat-three", "port": "value" },
+        "targetHint": { "kind": "element_port", "elementId": "pair-in", "port": "left" }
+      },
+      {
+        "id": "w-bool-pair",
+        "points": [{ "x": 168, "y": 288 }, { "x": 260, "y": 258 }],
+        "sourceHint": { "kind": "element_port", "elementId": "bool-true", "port": "value" },
+        "targetHint": { "kind": "element_port", "elementId": "pair-in", "port": "right" }
+      },
+      {
+        "id": "w-pair-unpair",
+        "points": [{ "x": 372, "y": 245 }, { "x": 430, "y": 245 }],
+        "sourceHint": { "kind": "element_port", "elementId": "pair-in", "port": "value" },
+        "targetHint": { "kind": "element_port", "elementId": "unpair", "port": "value" }
+      },
+      {
+        "id": "w-unpair-right-pair",
+        "points": [{ "x": 542, "y": 258 }, { "x": 600, "y": 232 }],
+        "sourceHint": { "kind": "element_port", "elementId": "unpair", "port": "right" },
+        "targetHint": { "kind": "element_port", "elementId": "pair-out", "port": "left" }
+      },
+      {
+        "id": "w-unpair-left-pair",
+        "points": [{ "x": 542, "y": 232 }, { "x": 600, "y": 258 }],
+        "sourceHint": { "kind": "element_port", "elementId": "unpair", "port": "left" },
+        "targetHint": { "kind": "element_port", "elementId": "pair-out", "port": "right" }
+      },
+      {
+        "id": "w-result",
+        "points": [{ "x": 712, "y": 245 }, { "x": 880, "y": 245 }],
+        "sourceHint": { "kind": "element_port", "elementId": "pair-out", "port": "value" },
+        "targetHint": { "kind": "boundary_port", "containerId": "entry", "boundaryId": "entry-result" }
+      }
+    ],
+    "junctions": []
+  }
+}
+|json}
+
 let folded_standard_call_project ~function_id ~template_id ~arguments =
   let arity = List.length arguments in
   let call_height = max 82 (58 + (arity * 24)) in
@@ -520,6 +734,24 @@ let () =
   let malformed = E.run_json "{" |> Yojson.Safe.from_string in
   assert (member "status" malformed = `String "error");
   assert (member "stage" malformed = `String "decode");
+  let product_pair_transparent =
+    expect_mode_result_value product_pair_project "transparent"
+      "Product(Nat(3), Bool(True))"
+  in
+  let product_pair_fast =
+    expect_mode_result_value product_pair_project "fast"
+      "Product(Nat(3), Bool(True))"
+  in
+  assert (member "result" product_pair_transparent = member "result" product_pair_fast);
+  let product_swap_transparent =
+    expect_mode_result_value product_swap_project "transparent"
+      "Product(Bool(True), Nat(3))"
+  in
+  let product_swap_fast =
+    expect_mode_result_value product_swap_project "fast"
+      "Product(Bool(True), Nat(3))"
+  in
+  assert (member "result" product_swap_transparent = member "result" product_swap_fast);
   let boolrec_project =
     {json|{
   "format": "tilefold-project",

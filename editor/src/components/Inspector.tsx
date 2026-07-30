@@ -35,6 +35,11 @@ interface InspectorProps {
     parameterType: CoreType,
     resultType: CoreType,
   ) => void;
+  onPairTypesChange: (
+    id: string,
+    leftType: CoreType,
+    rightType: CoreType,
+  ) => void;
   canDelete: boolean;
   onDelete: () => void;
   onFocusTemplate: (templateId: string) => void;
@@ -584,6 +589,7 @@ function ElementInspector({
   onBoolValueChange,
   onElementTypeChange,
   onApplyTypesChange,
+  onPairTypesChange,
   onFocusTemplate,
   onOpenStandardLibraryDefinition,
   onError,
@@ -599,6 +605,11 @@ function ElementInspector({
     id: string,
     parameterType: CoreType,
     resultType: CoreType,
+  ) => void;
+  onPairTypesChange: (
+    id: string,
+    leftType: CoreType,
+    rightType: CoreType,
   ) => void;
   onFocusTemplate: (templateId: string) => void;
   onOpenStandardLibraryDefinition: (definition: StandardLibraryFunction) => void;
@@ -727,6 +738,38 @@ function ElementInspector({
               )
             }
           />
+        </>
+      )}
+      {(element.kind === "pair" || element.kind === "unpair") && (
+        <>
+          <CoreTypeField
+            label="Left type"
+            value={element.properties.leftType}
+            disabled={connectedWires.length > 0}
+            onChange={(leftType) =>
+              onPairTypesChange(
+                element.id,
+                leftType,
+                element.properties.rightType,
+              )
+            }
+          />
+          <CoreTypeField
+            label="Right type"
+            value={element.properties.rightType}
+            disabled={connectedWires.length > 0}
+            onChange={(rightType) =>
+              onPairTypesChange(
+                element.id,
+                element.properties.leftType,
+                rightType,
+              )
+            }
+          />
+          <p className="limitation">
+            Product nodes preserve both components explicitly. Use Unpair and
+            Drop any component that is not needed.
+          </p>
         </>
       )}
       {element.kind === "function" && (
@@ -894,6 +937,7 @@ export function Inspector({
   onBoolValueChange,
   onElementTypeChange,
   onApplyTypesChange,
+  onPairTypesChange,
   canDelete,
   onDelete,
   onFocusTemplate,
@@ -985,6 +1029,7 @@ export function Inspector({
           onBoolValueChange={onBoolValueChange}
           onElementTypeChange={onElementTypeChange}
           onApplyTypesChange={onApplyTypesChange}
+          onPairTypesChange={onPairTypesChange}
           onFocusTemplate={onFocusTemplate}
           onOpenStandardLibraryDefinition={onOpenStandardLibraryDefinition}
           onError={onError}

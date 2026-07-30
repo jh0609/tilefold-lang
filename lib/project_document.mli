@@ -13,6 +13,14 @@ type element_kind =
   | Succ
   | Drop of Core_type.t
   | Copy of Core_type.t
+  | Pair of {
+      left_type : Core_type.t;
+      right_type : Core_type.t;
+    }
+  | Unpair of {
+      left_type : Core_type.t;
+      right_type : Core_type.t;
+    }
   | Function of {
       template_id : string;
       parameter_type : Core_type.t;

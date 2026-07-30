@@ -13,6 +13,8 @@ type element_kind =
   | Succ
   | Drop of Core_type.t
   | Copy of Core_type.t
+  | Pair of { left_type : Core_type.t; right_type : Core_type.t }
+  | Unpair of { left_type : Core_type.t; right_type : Core_type.t }
   | Function of {
       template_id : string;
       parameter_type : Core_type.t;
@@ -290,15 +292,27 @@ let rec decode_type path = function
   | `String "bool" -> Ok Core_type.Bool
   | `String "nat" -> Ok Core_type.Nat
   | `Assoc fields ->
-      let* () = reject_unknown path [ "arrow" ] fields in
-      let* arrow = field path "arrow" fields in
-      let* values = array_at (path ^ ".arrow") arrow in
-      (match values with
-      | [ left; right ] ->
-          let* left = decode_type (path ^ ".arrow[0]") left in
-          let* right = decode_type (path ^ ".arrow[1]") right in
-          Ok (Core_type.Arrow (left, right))
-      | _ -> error (path ^ ".arrow") (Invalid_value "arrow requires two types"))
+      if List.exists (fun (name, _) -> String.equal name "arrow") fields then (
+        let* () = reject_unknown path [ "arrow" ] fields in
+        let* arrow = field path "arrow" fields in
+        let* values = array_at (path ^ ".arrow") arrow in
+        match values with
+        | [ left; right ] ->
+            let* left = decode_type (path ^ ".arrow[0]") left in
+            let* right = decode_type (path ^ ".arrow[1]") right in
+            Ok (Core_type.Arrow (left, right))
+        | _ -> error (path ^ ".arrow") (Invalid_value "arrow requires two types"))
+      else (
+        let* () = reject_unknown path [ "product" ] fields in
+        let* product = field path "product" fields in
+        let* values = array_at (path ^ ".product") product in
+        match values with
+        | [ left; right ] ->
+            let* left = decode_type (path ^ ".product[0]") left in
+            let* right = decode_type (path ^ ".product[1]") right in
+            Ok (Core_type.Product (left, right))
+        | _ ->
+            error (path ^ ".product") (Invalid_value "product requires two types"))
   | _ -> error path (Wrong_type "type")
 
 let decode_string_array path json =
@@ -436,6 +450,16 @@ let decode_element_kind path json =
       let* () = decode_copy_provenance path fields in
       let* typ = type_field "type" in
       Ok (Copy typ)
+  | "pair" ->
+      let* () = reject_unknown path [ "kind"; "leftType"; "rightType" ] fields in
+      let* left_type = type_field "leftType" in
+      let* right_type = type_field "rightType" in
+      Ok (Pair { left_type; right_type })
+  | "unpair" ->
+      let* () = reject_unknown path [ "kind"; "leftType"; "rightType" ] fields in
+      let* left_type = type_field "leftType" in
+      let* right_type = type_field "rightType" in
+      Ok (Unpair { left_type; right_type })
   | "nat_rec" ->
       let* () = reject_unknown path [ "kind"; "type" ] fields in
       let* typ = type_field "type" in
@@ -908,6 +932,8 @@ let rec json_type = function
   | Core_type.Unit -> `String "unit"
   | Core_type.Bool -> `String "bool"
   | Core_type.Nat -> `String "nat"
+  | Core_type.Product (left, right) ->
+      `Assoc [ ("product", `List [ json_type left; json_type right ]) ]
   | Core_type.Arrow (left, right) -> `Assoc [ ("arrow", `List [ json_type left; json_type right ]) ]
 
 let json_captures captures =
@@ -923,6 +949,20 @@ let json_element_kind = function
   | Succ -> ("succ", `Assoc [])
   | Drop typ -> ("drop", `Assoc [ ("type", json_type typ) ])
   | Copy typ -> ("copy", `Assoc [ ("type", json_type typ) ])
+  | Pair { left_type; right_type } ->
+      ( "pair",
+        `Assoc
+          [
+            ("leftType", json_type left_type);
+            ("rightType", json_type right_type);
+          ] )
+  | Unpair { left_type; right_type } ->
+      ( "unpair",
+        `Assoc
+          [
+            ("leftType", json_type left_type);
+            ("rightType", json_type right_type);
+          ] )
   | NatRec typ -> ("nat_rec", `Assoc [ ("type", json_type typ) ])
   | BoolRec typ -> ("bool_rec", `Assoc [ ("type", json_type typ) ])
   | Apply { parameter_type; result_type } ->
@@ -1211,6 +1251,8 @@ let core_kind = function
   | Succ -> Ok C.Succ
   | Drop typ -> Ok (C.Drop typ)
   | Copy typ -> Ok (C.Copy typ)
+  | Pair { left_type; right_type } -> Ok (C.Pair { left_type; right_type })
+  | Unpair { left_type; right_type } -> Ok (C.Unpair { left_type; right_type })
   | NatRec typ -> Ok (C.NatRec typ)
   | BoolRec typ -> Ok (C.BoolRec typ)
   | Apply { parameter_type; result_type } ->

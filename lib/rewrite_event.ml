@@ -2,6 +2,8 @@ type rule =
   | Succ
   | Drop
   | Copy
+  | Pair
+  | Unpair
   | Function
   | ApplyEnter
   | ApplyReturn
@@ -32,6 +34,8 @@ let rule_to_string = function
   | Succ -> "Succ"
   | Drop -> "Drop"
   | Copy -> "Copy"
+  | Pair -> "Pair"
+  | Unpair -> "Unpair"
   | Function -> "Function"
   | ApplyEnter -> "ApplyEnter"
   | ApplyReturn -> "ApplyReturn"

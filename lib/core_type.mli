@@ -2,6 +2,7 @@ type t =
   | Unit
   | Bool
   | Nat
+  | Product of t * t
   | Arrow of t * t
 
 val equal : t -> t -> bool

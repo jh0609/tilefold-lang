@@ -980,6 +980,23 @@ export function App() {
               after: { parameterType, resultType },
             });
           }}
+          onPairTypesChange={(id, leftType: CoreType, rightType: CoreType) => {
+            const element = document.geometry.elements.find(
+              (candidate) => candidate.id === id,
+            );
+            if (!element || (element.kind !== "pair" && element.kind !== "unpair")) {
+              return;
+            }
+            runCommand({
+              type: "set_pair_types",
+              id,
+              before: {
+                leftType: element.properties.leftType,
+                rightType: element.properties.rightType,
+              },
+              after: { leftType, rightType },
+            });
+          }}
           canDelete={selectionCanBeDeleted(selection)}
           onDelete={removeSelected}
           onFocusTemplate={focusTemplate}

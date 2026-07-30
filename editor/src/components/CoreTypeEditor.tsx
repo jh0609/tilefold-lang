@@ -6,15 +6,17 @@ import {
   normalizeCoreType,
 } from "../model/coreTypes";
 
-type TypeKind = "unit" | "bool" | "nat" | "function";
+type TypeKind = "unit" | "bool" | "nat" | "product" | "function";
 
 function typeKind(type: CoreType): TypeKind {
   if (type === "unit" || type === "bool" || type === "nat") return type;
+  if ("product" in type) return "product";
   return "function";
 }
 
 function defaultTypeForKind(kind: TypeKind): CoreType {
   if (kind === "unit" || kind === "bool" || kind === "nat") return kind;
+  if (kind === "product") return { product: ["nat", "bool"] };
   return { arrow: ["nat", "nat"] };
 }
 
@@ -34,7 +36,8 @@ export function CoreTypeEditor({
   showPresets?: boolean;
 }) {
   const normalized = normalizeCoreType(value);
-  const isArrow = typeof normalized !== "string";
+  const isArrow = typeof normalized !== "string" && "arrow" in normalized;
+  const isProduct = typeof normalized !== "string" && "product" in normalized;
   return (
     <fieldset
       className={`core-type-editor depth-${Math.min(level, 4)}`}
@@ -53,6 +56,7 @@ export function CoreTypeEditor({
           <option value="unit">Unit</option>
           <option value="bool">Bool</option>
           <option value="nat">Nat</option>
+          <option value="product">Product</option>
           <option value="function">Function</option>
         </select>
       </label>
@@ -88,6 +92,30 @@ export function CoreTypeEditor({
             disabled={disabled}
             onChange={(output) =>
               onChange({ arrow: [normalized.arrow[0], output] })
+            }
+            level={level + 1}
+            showPresets={false}
+          />
+        </div>
+      )}
+      {isProduct && (
+        <div className="core-type-children">
+          <CoreTypeEditor
+            label={`${label} left`}
+            value={normalized.product[0]}
+            disabled={disabled}
+            onChange={(left) =>
+              onChange({ product: [left, normalized.product[1]] })
+            }
+            level={level + 1}
+            showPresets={false}
+          />
+          <CoreTypeEditor
+            label={`${label} right`}
+            value={normalized.product[1]}
+            disabled={disabled}
+            onChange={(right) =>
+              onChange({ product: [normalized.product[0], right] })
             }
             level={level + 1}
             showPresets={false}

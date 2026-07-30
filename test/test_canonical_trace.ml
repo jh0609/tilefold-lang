@@ -222,13 +222,16 @@ let run_completed package =
   | Ok completed -> completed
   | Error _ -> assert false
 
-let payload_string value =
-  match Runtime_value.payload value with
-  | Unit -> "Unit"
+let rec payload_to_string = function
+  | Runtime_value.Unit -> "Unit"
   | Bool value -> if value then "Bool(True)" else "Bool(False)"
   | Nat nat -> "Nat(" ^ Nat.to_string nat ^ ")"
+  | Product (left, right) ->
+      "Product(" ^ payload_to_string left ^ ", " ^ payload_to_string right ^ ")"
   | Closure closure ->
       "Closure(" ^ Function_template_id.to_string closure.template_id ^ ")"
+
+let payload_string value = payload_to_string (Runtime_value.payload value)
 
 let rules trace = List.map (fun event -> Rewrite_event.rule_to_string event.Rewrite_event.rule) trace
 

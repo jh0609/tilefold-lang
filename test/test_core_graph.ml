@@ -69,6 +69,19 @@ let () =
   assert (Core_type.to_string Core_type.Unit = "Unit");
   assert (Core_type.to_string Core_type.Nat = "Nat");
   assert (
+    Core_type.to_string (Core_type.Product (Core_type.Nat, Core_type.Bool))
+    = "Nat * Bool");
+  assert (
+    Core_type.to_string
+      (Core_type.Arrow
+         (Core_type.Product (Core_type.Nat, Core_type.Bool), Core_type.Nat))
+    = "Nat * Bool -> Nat");
+  assert (
+    Core_type.to_string
+      (Core_type.Product
+         (Core_type.Nat, Core_type.Product (Core_type.Bool, Core_type.Unit)))
+    = "Nat * Bool * Unit");
+  assert (
     Core_type.to_string
       (Core_type.Arrow
          (Core_type.Arrow (Core_type.Unit, Core_type.Nat), Core_type.Nat))
@@ -96,6 +109,74 @@ let () =
         match Validated_graph.port_schema graph (node_id "succ") with
         | Some ports -> List.length ports = 2
         | None -> false)
+
+let () =
+  let pair_type = Core_type.Product (Core_type.Nat, Core_type.Bool) in
+  let graph =
+    raw
+      ~nodes:
+        [
+          node "param" (Parameter Core_type.Unit);
+          node "drop" (Drop Core_type.Unit);
+          node "left" (Nat_literal (nat "3"));
+          node "right" (Bool_literal true);
+          node "pair" (Pair { left_type = Core_type.Nat; right_type = Core_type.Bool });
+          node "result" (Result pair_type);
+        ]
+      ~edges:
+        [
+          edge "e-param-drop" (pref "param" "value") (pref "drop" "input");
+          edge "e-left-pair" (pref "left" "value") (pref "pair" "left");
+          edge "e-right-pair" (pref "right" "value") (pref "pair" "right");
+          edge "e-pair-result" (pref "pair" "value") (pref "result" "value");
+        ]
+      ~default_node_order:[ node_id "pair"; node_id "drop" ]
+      ()
+  in
+  match validate graph with
+  | Error errors ->
+      failwith
+        ("expected Product Pair graph to validate, got: "
+        ^ String.concat "; " (List.map validation_error_to_string errors))
+  | Ok graph -> (
+      match Validated_graph.port_schema graph (node_id "pair") with
+      | Some ports ->
+          assert (
+            List.exists
+              (fun port ->
+                Port_key.equal port.key Port_key.value
+                && Core_type.equal port.typ pair_type)
+              ports)
+      | None -> assert false)
+
+let () =
+  let errors =
+    validate_errors
+      (raw
+         ~nodes:
+           [
+             node "param" (Parameter Core_type.Unit);
+             node "drop" (Drop Core_type.Unit);
+             node "left" (Bool_literal true);
+             node "right" (Bool_literal false);
+             node "pair" (Pair { left_type = Core_type.Nat; right_type = Core_type.Bool });
+             node "result" (Result (Core_type.Product (Core_type.Nat, Core_type.Bool)));
+           ]
+         ~edges:
+           [
+             edge "e-param-drop" (pref "param" "value") (pref "drop" "input");
+             edge "e-left-pair" (pref "left" "value") (pref "pair" "left");
+             edge "e-right-pair" (pref "right" "value") (pref "pair" "right");
+             edge "e-pair-result" (pref "pair" "value") (pref "result" "value");
+           ]
+         ~default_node_order:[ node_id "pair"; node_id "drop" ]
+         ())
+  in
+  has_error
+    (function
+      | Type_mismatch { edge_id; _ } -> Edge_id.to_string edge_id = "e-left-pair"
+      | _ -> false)
+    errors
 
 let () =
   match
@@ -850,6 +931,8 @@ let function_graph ?(function_captures : capture list option) ?(template = fn_te
           | Core_type.Bool -> node ("capture-lit-" ^ string_of_int index) (Bool_literal true)
           | Core_type.Nat ->
               node ("capture-lit-" ^ string_of_int index) (Nat_literal (nat "1"))
+          | Core_type.Product _ ->
+              node ("capture-lit-" ^ string_of_int index) Unit_literal
           | Core_type.Arrow _ ->
               node ("capture-lit-" ^ string_of_int index) Unit_literal)
         function_captures

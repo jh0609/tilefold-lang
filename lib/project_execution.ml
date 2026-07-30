@@ -13,15 +13,19 @@ let error stage messages =
       ("messages", strings messages);
     ]
 
-let result_value value =
-  match Runtime_value.payload value with
-  | Unit -> "Unit"
-  | Bool bool -> if bool then "Bool(True)" else "Bool(False)"
-  | Nat nat -> "Nat(" ^ Nat.to_string nat ^ ")"
-  | Closure closure ->
+let rec result_payload_to_string = function
+  | Runtime_value.Unit -> "Unit"
+  | Runtime_value.Bool bool -> if bool then "Bool(True)" else "Bool(False)"
+  | Runtime_value.Nat nat -> "Nat(" ^ Nat.to_string nat ^ ")"
+  | Runtime_value.Product (left, right) ->
+      "Product(" ^ result_payload_to_string left ^ ", "
+      ^ result_payload_to_string right ^ ")"
+  | Runtime_value.Closure closure ->
       "Closure("
       ^ Core_graph.Function_template_id.to_string closure.template_id
       ^ ")"
+
+let result_value value = result_payload_to_string (Runtime_value.payload value)
 
 let trace_event (event : Rewrite_event.t) =
   `Assoc
@@ -44,6 +48,7 @@ module Fast = struct
     | Unit
     | Bool of bool
     | Nat of Nat.t
+    | Product of value * value
     | Project_closure of {
         template_id : string;
         args : value list;
@@ -93,18 +98,26 @@ module Fast = struct
                endpoint_equal wire.target_hint `Boundary container_id boundary_id)
     |> fun wire -> Option.bind wire (fun (wire : P.wire) -> wire.source_hint)
 
-  let runtime_payload = function
+  let rec runtime_payload = function
     | Unit -> Ok Runtime_value.Unit
     | Bool value -> Ok (Runtime_value.Bool value)
     | Nat value -> Ok (Runtime_value.Nat value)
+    | Product (left, right) ->
+        let* left = runtime_payload left in
+        let* right = runtime_payload right in
+        Ok (Runtime_value.Product (left, right))
     | Project_closure _ ->
         fail "Fast execution cannot pass a partially-applied Project function as a Standard Library argument yet."
     | Std_closure _ -> fail "Fast execution cannot pass a partially-applied function as a Standard Library argument yet."
 
-  let value_of_payload = function
+  let rec value_of_payload = function
     | Runtime_value.Unit -> Ok Unit
     | Runtime_value.Bool value -> Ok (Bool value)
     | Runtime_value.Nat value -> Ok (Nat value)
+    | Runtime_value.Product (left, right) ->
+        let* left = value_of_payload left in
+        let* right = value_of_payload right in
+        Ok (Product (left, right))
     | Runtime_value.Closure _ -> fail "Fast Standard Library evaluator produced a function value."
 
   let rec function_argument_types typ acc =
@@ -120,18 +133,22 @@ module Fast = struct
     in
     function_argument_types (Core_type.Arrow (info.parameter_type, info.result_type)) []
 
-  let type_matches typ value =
+  let rec type_matches typ value =
     match (typ, value) with
     | Core_type.Unit, Unit -> true
     | Core_type.Bool, Bool _ -> true
     | Core_type.Nat, Nat _ -> true
+    | Core_type.Product (left_type, right_type), Product (left, right) ->
+        type_matches left_type left && type_matches right_type right
     | Core_type.Arrow _, Std_closure _ | Core_type.Arrow _, Project_closure _ -> true
     | _ -> false
 
-  let value_to_string = function
+  let rec value_to_string = function
     | Unit -> "Unit"
     | Bool value -> if value then "Bool(True)" else "Bool(False)"
     | Nat value -> "Nat(" ^ Nat.to_string value ^ ")"
+    | Product (left, right) ->
+        "Product(" ^ value_to_string left ^ ", " ^ value_to_string right ^ ")"
     | Project_closure { template_id; _ } -> "Closure(" ^ template_id ^ ")"
     | Std_closure { function_id; _ } ->
         let info =
@@ -309,6 +326,23 @@ module Fast = struct
             match eval_input state document env element_id "input" with
             | Ok (Nat value) -> Ok (Nat (Nat.succ value))
             | Ok _ -> fail "Succ input must be Nat"
+            | Error _ as error -> error)
+        | P.Pair _, "value" -> (
+            match
+              ( eval_input state document env element_id "left",
+                eval_input state document env element_id "right" )
+            with
+            | Ok left, Ok right -> Ok (Product (left, right))
+            | Error message, _ | _, Error message -> fail message)
+        | P.Unpair _, "left" -> (
+            match eval_input state document env element_id "value" with
+            | Ok (Product (left, _right)) -> Ok left
+            | Ok _ -> fail "Unpair input must be Product"
+            | Error _ as error -> error)
+        | P.Unpair _, "right" -> (
+            match eval_input state document env element_id "value" with
+            | Ok (Product (_left, right)) -> Ok right
+            | Ok _ -> fail "Unpair input must be Product"
             | Error _ as error -> error)
         | P.Copy _, ("left" | "right") -> eval_input state document env element_id "input"
         | P.Function { template_id; captures; _ }, "value" -> (

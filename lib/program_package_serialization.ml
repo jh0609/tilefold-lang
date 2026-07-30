@@ -62,6 +62,8 @@ let rec render_type = function
   | Core_type.Unit -> tagged "Unit" []
   | Bool -> tagged "Bool" []
   | Nat -> tagged "Nat" []
+  | Product (left, right) ->
+      tagged "Product" [ render_type left; render_type right ]
   | Arrow (input, output) -> tagged "Arrow" [ render_type input; render_type output ]
 
 let render_capture (capture : CG.capture) =
@@ -101,6 +103,10 @@ let render_node_kind = function
   | Succ -> tagged "Succ" []
   | Drop typ -> tagged "Drop" [ render_type typ ]
   | Copy typ -> tagged "Copy" [ render_type typ ]
+  | Pair signature ->
+      tagged "Pair" [ render_type signature.left_type; render_type signature.right_type ]
+  | Unpair signature ->
+      tagged "Unpair" [ render_type signature.left_type; render_type signature.right_type ]
   | Function signature -> render_function_signature signature
   | Apply signature -> render_apply_signature signature
   | NatRec typ -> tagged "NatRec" [ render_type typ ]
@@ -117,10 +123,12 @@ let render_edge (edge : CG.edge) =
       tagged "target" [ render_port_ref edge.target ];
     ]
 
-let render_payload = function
+let rec render_payload = function
   | Runtime_value.Unit -> tagged "Unit" []
   | Bool value -> tagged "Bool" [ atom (if value then "true" else "false") ]
   | Nat nat -> tagged "Nat" [ atom (Nat.to_string nat) ]
+  | Product (left, right) ->
+      tagged "Product" [ render_payload left; render_payload right ]
   | Closure _ -> tagged "Closure" []
 
 let sorted_nodes graph =
@@ -303,6 +311,10 @@ let rec parse_type sexp =
   | List [ Atom "Unit" ] -> Ok Core_type.Unit
   | List [ Atom "Bool" ] -> Ok Core_type.Bool
   | List [ Atom "Nat" ] -> Ok Core_type.Nat
+  | List [ Atom "Product"; left; right ] ->
+      let* left = parse_type left in
+      let* right = parse_type right in
+      Ok (Core_type.Product (left, right))
   | List [ Atom "Arrow"; input; output ] ->
       let* input = parse_type input in
       let* output = parse_type output in
@@ -361,6 +373,14 @@ let parse_node_kind sexp =
   | List [ Atom "Copy"; typ ] ->
       let* typ = parse_type typ in
       Ok (CG.Copy typ)
+  | List [ Atom "Pair"; left_type; right_type ] ->
+      let* left_type = parse_type left_type in
+      let* right_type = parse_type right_type in
+      Ok (CG.Pair { left_type; right_type })
+  | List [ Atom "Unpair"; left_type; right_type ] ->
+      let* left_type = parse_type left_type in
+      let* right_type = parse_type right_type in
+      Ok (CG.Unpair { left_type; right_type })
   | List [ Atom "Function"; template_id; parameter_type; result_type; captures ] ->
       let* template_id = as_atom "template id" template_id >>= parse_template_id in
       let* parameter_type = parse_type parameter_type in
@@ -530,13 +550,17 @@ let parse_template sexp =
       Ok { id; parameter_type; result_type; captures; dependencies; graph }
   | [] -> Error (Missing_field "template id")
 
-let parse_payload = function
+let rec parse_payload = function
   | List [ Atom "Unit" ] -> Ok Runtime_value.Unit
   | List [ Atom "Bool"; Atom "true" ] -> Ok (Runtime_value.Bool true)
   | List [ Atom "Bool"; Atom "false" ] -> Ok (Runtime_value.Bool false)
   | List [ Atom "Nat"; Atom value ] ->
       let* nat = parse_nat value in
       Ok (Runtime_value.Nat nat)
+  | List [ Atom "Product"; left; right ] ->
+      let* left = parse_payload left in
+      let* right = parse_payload right in
+      Ok (Runtime_value.Product (left, right))
   | List [ Atom "Closure" ] -> Error Unsupported_program_literal_payload
   | _ -> Error Invalid_payload
 

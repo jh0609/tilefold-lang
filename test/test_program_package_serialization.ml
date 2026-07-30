@@ -139,6 +139,48 @@ let copy_drop_entry () =
   Function_template.create ~id:(template_id "serialization-copy-drop-entry")
     ~parameter_type:Core_type.Unit ~result_type:Core_type.Nat ~captures:[] ~body ()
 
+let product_swap_entry () =
+  let bool_nat = Core_type.Product (Core_type.Bool, Core_type.Nat) in
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop-param" (Drop Core_type.Unit);
+      node "nat" (Nat_literal (nat "3"));
+      node "bool" (Bool_literal true);
+      node "pair-in"
+        (Pair { left_type = Core_type.Nat; right_type = Core_type.Bool });
+      node "unpair"
+        (Unpair { left_type = Core_type.Nat; right_type = Core_type.Bool });
+      node "pair-out"
+        (Pair { left_type = Core_type.Bool; right_type = Core_type.Nat });
+      node "result" (Result bool_nat);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop-param" "input");
+      edge "e-nat-pair" (pref "nat" "value") (pref "pair-in" "left");
+      edge "e-bool-pair" (pref "bool" "value") (pref "pair-in" "right");
+      edge "e-pair-unpair" (pref "pair-in" "value") (pref "unpair" "value");
+      edge "e-unpair-right-pair" (pref "unpair" "right") (pref "pair-out" "left");
+      edge "e-unpair-left-pair" (pref "unpair" "left") (pref "pair-out" "right");
+      edge "e-pair-result" (pref "pair-out" "value") (pref "result" "value");
+    ]
+  in
+  let body =
+    Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:
+        [
+          node_id "pair-in";
+          node_id "unpair";
+          node_id "pair-out";
+          node_id "drop-param";
+        ]
+    |> validate_graph
+  in
+  Function_template.create ~id:(template_id "serialization-product-swap")
+    ~parameter_type:Core_type.Unit ~result_type:bool_nat ~captures:[] ~body ()
+
 let unit_to_nat_template () =
   let nodes =
     [
@@ -251,12 +293,15 @@ let captured_package () =
   package_of_entry ~literals:[ literal ] ~entry_captures:[ capture ] entry
     Core_type.Nat
 
-let payload_string value =
-  match Runtime_value.payload value with
-  | Unit -> "Unit"
+let rec payload_to_string = function
+  | Runtime_value.Unit -> "Unit"
   | Bool value -> if value then "Bool(True)" else "Bool(False)"
   | Nat nat -> "Nat(" ^ Nat.to_string nat ^ ")"
+  | Product (left, right) ->
+      "Product(" ^ payload_to_string left ^ ", " ^ payload_to_string right ^ ")"
   | Closure closure -> "Closure(" ^ Function_template_id.to_string closure.template_id ^ ")"
+
+let payload_string value = payload_to_string (Runtime_value.payload value)
 
 let run_completed package =
   match P.run_completed package with Ok completed -> completed | Error _ -> assert false
@@ -286,6 +331,10 @@ let assert_roundtrip name package =
 let () = assert_roundtrip "program-unit" (package_of_entry (unit_entry ()) Core_type.Unit)
 let () = assert_roundtrip "succ" (package_of_entry (succ_entry ()) Core_type.Nat)
 let () = assert_roundtrip "copy-drop" (package_of_entry (copy_drop_entry ()) Core_type.Nat)
+let () =
+  assert_roundtrip "product-swap"
+    (package_of_entry (product_swap_entry ())
+       (Core_type.Product (Core_type.Bool, Core_type.Nat)))
 
 let () =
   let target = unit_to_nat_template () in

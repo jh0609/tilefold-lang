@@ -487,6 +487,29 @@ let () =
     (fun error ->
       match error.P.Decode_error.kind with Wrong_type _ -> true | _ -> false)
     {|{"format":"tilefold-project","version": 2,"geometry":[]}|};
+  expect_decode
+    (fun error ->
+      String.equal error.P.Decode_error.path
+        "$.geometry.elements[0].properties.leftType.product")
+    {|{
+  "format": "tilefold-project",
+  "version": 2,
+  "geometry": {
+    "snapTolerance": 8,
+    "elements": [
+      {
+        "id": "bad_pair",
+        "kind": "pair",
+        "bounds": { "x": 0, "y": 0, "width": 100, "height": 80 },
+        "properties": { "leftType": { "product": ["nat"] }, "rightType": "bool" },
+        "portAnchors": []
+      }
+    ],
+    "containers": [],
+    "wires": [],
+    "junctions": []
+  }
+}|};
   let project = decode (read_file fixture) in
   let first = List.hd project.elements in
   expect_validation

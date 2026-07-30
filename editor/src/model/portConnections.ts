@@ -62,6 +62,38 @@ function elementPortType(
         : port === "left" || port === "right"
           ? { direction: "output", type: element.properties.type }
           : null;
+    case "pair":
+      if (port === "left")
+        return { direction: "input", type: element.properties.leftType };
+      if (port === "right")
+        return { direction: "input", type: element.properties.rightType };
+      return port === "value"
+        ? {
+            direction: "output",
+            type: {
+              product: [
+                element.properties.leftType,
+                element.properties.rightType,
+              ],
+            },
+          }
+        : null;
+    case "unpair":
+      if (port === "value")
+        return {
+          direction: "input",
+          type: {
+            product: [
+              element.properties.leftType,
+              element.properties.rightType,
+            ],
+          },
+        };
+      if (port === "left")
+        return { direction: "output", type: element.properties.leftType };
+      return port === "right"
+        ? { direction: "output", type: element.properties.rightType }
+        : null;
     case "apply":
       if (port === "function")
         return {

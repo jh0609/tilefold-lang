@@ -93,6 +93,8 @@ Conceptually:
 Type ::=
     Unit
   | Nat
+  | Bool
+  | Product(A, B)
   | A -> B
 ```
 
@@ -111,6 +113,12 @@ the public API. Canonical Nat text uses ASCII decimal digits only: no sign, no
 whitespace, no separators, no leading zeroes, and zero exactly as `0`.
 Non-canonical text is rejected rather than silently normalized. See
 `docs/decisions/0007-arbitrary-precision-nat.md`.
+
+`Product(A, B)` bundles two linear values into one immutable value. Products are
+binary and may be nested to represent tuple-like structures. Product does not
+add multiple function parameters, multiple function results, early termination,
+or hidden control flow. Components are constructed with `Pair(A, B)` and
+decomposed with `Unpair(A, B)`.
 
 Connections are graph edges between compatible ports. Type-invalid connections
 must be rejected before initialization of the abstract machine.
@@ -466,6 +474,10 @@ The first implemented validation subset fixes these node-derived schemas:
 - `Copy A`: `input` input of type `A`, `left` output of type `A`, `right`
   output of type `A`.
 - `Drop A`: `input` input of type `A`.
+- `Pair A B`: `left` input of type `A`, `right` input of type `B`, and
+  `value` output of type `Product(A, B)`.
+- `Unpair A B`: `value` input of type `Product(A, B)`, `left` output of type
+  `A`, and `right` output of type `B`.
 - `Function`: capture input ports derived from the referenced template's
   ordered capture declarations, plus `value` output of type `A -> B`.
 - `Capture`: function-template capture boundary with `value` output of the
@@ -482,8 +494,8 @@ port must have exactly one incoming edge and every output port must have
 exactly one outgoing edge, so implicit fan-out, unused outputs, duplicated
 input connections, and unconnected boundary inputs are validation errors.
 
-The current executable node kinds are `Succ`, `Copy _`, `Drop _`,
-`Function _`, `Apply _`, and `NatRec _`.
+The current executable node kinds are `Succ`, `Copy _`, `Drop _`, `Pair _`,
+`Unpair _`, `Function _`, `Apply _`, and `NatRec _`.
 `Unit_literal`, `Nat_literal _`, `Parameter _`, and `Result _` are
 non-executable. The validator requires `default_node_order` to include every
 executable node exactly once and to exclude non-executable nodes.
@@ -562,12 +574,14 @@ function instance activation.
 - later computation using one output must not affect the other output,
 - physical payload sharing is allowed only when it is unobservable.
 
-The current interpreter supports `Copy Unit`, `Copy Nat`, and `Copy (Arrow _)`
-when the Arrow runtime payload is a closure. Arrow Copy duplicates only the
-outer logical closure value: the two outputs have distinct logical value IDs
-and preserve the same immutable closure payload meaning and captured value
-identities. It does not recursively copy captures or emit hidden capture-level
-Copy events.
+The current interpreter supports `Copy Unit`, `Copy Nat`, `Copy Bool`,
+`Copy Product`, and `Copy (Arrow _)` when the Arrow runtime payload is a
+closure. Product Copy recursively copies Product payloads into two distinct
+logical output values without adding hidden component-level Copy events. Arrow
+Copy duplicates only the outer logical closure value: the two outputs have
+distinct logical value IDs and preserve the same immutable closure payload
+meaning and captured value identities. It does not recursively copy captures or
+emit hidden capture-level Copy events.
 
 `Drop` makes the discard of an otherwise unused value explicit in Core. It is
 the desugaring target for surface-level unused inputs. `Drop (Arrow _)`
@@ -578,7 +592,9 @@ In the first executable slice, `Succ` consumes a `Nat` runtime value and creates
 a new `Nat(Nat.succ n)` value with `Rewrite_output` origin. `Copy A` consumes
 one runtime value and creates two distinct logical output values in canonical
 port order `[left; right]`. `Drop A` consumes a runtime value of type `A` and
-creates no value. Each rule emits one `RewriteEvent`.
+creates no value. `Pair A B` consumes `left` then `right` and creates a Product
+value. `Unpair A B` consumes a Product value and creates both component values
+in canonical port order `[left; right]`. Each rule emits one `RewriteEvent`.
 
 The `transparent-v0` profile records these current choices:
 

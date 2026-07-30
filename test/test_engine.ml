@@ -49,7 +49,16 @@ let run_completed machine =
 let payload_nat_string value =
   match Runtime_value.payload value with
   | Runtime_value.Nat nat -> Nat.to_string nat
-  | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Closure _ -> assert false
+  | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Product _
+  | Runtime_value.Closure _ ->
+      assert false
+
+let payload_product_pair value =
+  match Runtime_value.payload value with
+  | Runtime_value.Product (left, right) -> (left, right)
+  | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Nat _
+  | Runtime_value.Closure _ ->
+      assert false
 
 let entry_unit_to_nat ?(order = [ "succ"; "drop" ]) ?(literal = "3") () =
   let nodes =
@@ -801,7 +810,16 @@ let stuck_copy_self_cycle_raw () =
     ~default_node_order:[ node_id "copy"; node_id "drop-unit" ]
 
 let assert_rules expected trace =
-  assert (List.map (fun event -> Rewrite_event.rule_to_string event.Rewrite_event.rule) trace = expected)
+  let actual =
+    List.map (fun event -> Rewrite_event.rule_to_string event.Rewrite_event.rule) trace
+  in
+  if actual <> expected then
+    failwith
+      ("expected rules ["
+      ^ String.concat "; " expected
+      ^ "], got ["
+      ^ String.concat "; " actual
+      ^ "]")
 
 let assert_subjects expected trace =
   assert (
@@ -1127,7 +1145,9 @@ let () =
       assert (
         Function_template_id.equal closure.template_id
           (Function_template.id base_template))
-  | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Nat _ -> assert false);
+  | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Nat _
+  | Runtime_value.Product _ ->
+      assert false);
   assert (
     trace
     |> List.filter (fun event -> event.Rewrite_event.rule = Rewrite_event.NatRecUnfold)
@@ -1334,9 +1354,110 @@ let () =
         | Runtime_value.Unit -> "Unit"
         | Runtime_value.Bool _ -> "Bool"
         | Runtime_value.Nat _ -> "Nat"
+        | Runtime_value.Product _ -> "Product"
         | Runtime_value.Closure _ -> "Closure")
       copy_event.Rewrite_event.created
     = [ "Unit"; "Unit" ])
+
+let product_pair_graph () =
+  let product_type = Core_type.Product (Core_type.Nat, Core_type.Bool) in
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop" (Drop Core_type.Unit);
+      node "nat" (Nat_literal (nat "3"));
+      node "bool" (Bool_literal true);
+      node "pair" (Pair { left_type = Core_type.Nat; right_type = Core_type.Bool });
+      node "result" (Result product_type);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop" "input");
+      edge "e-nat-pair" (pref "nat" "value") (pref "pair" "left");
+      edge "e-bool-pair" (pref "bool" "value") (pref "pair" "right");
+      edge "e-pair-result" (pref "pair" "value") (pref "result" "value");
+    ]
+  in
+  Raw_graph.of_lists ~nodes ~edges
+    ~default_node_order:(List.map node_id [ "pair"; "drop" ])
+  |> validate_ok
+
+let () =
+  let value, trace = run_completed (init_ok (product_pair_graph ()) Runtime_value.Unit) in
+  let left, right = payload_product_pair value in
+  assert (Runtime_value.payload_equal left (Runtime_value.Nat (nat "3")));
+  assert (Runtime_value.payload_equal right (Runtime_value.Bool true));
+  assert_rules [ "Pair"; "Drop" ] trace
+
+let product_swap_graph () =
+  let nat_bool = Core_type.Product (Core_type.Nat, Core_type.Bool) in
+  let bool_nat = Core_type.Product (Core_type.Bool, Core_type.Nat) in
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop" (Drop Core_type.Unit);
+      node "nat" (Nat_literal (nat "3"));
+      node "bool" (Bool_literal true);
+      node "pair-in" (Pair { left_type = Core_type.Nat; right_type = Core_type.Bool });
+      node "unpair" (Unpair { left_type = Core_type.Nat; right_type = Core_type.Bool });
+      node "pair-out" (Pair { left_type = Core_type.Bool; right_type = Core_type.Nat });
+      node "result" (Result bool_nat);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop" "input");
+      edge "e-nat-pair" (pref "nat" "value") (pref "pair-in" "left");
+      edge "e-bool-pair" (pref "bool" "value") (pref "pair-in" "right");
+      edge "e-pair-unpair" (pref "pair-in" "value") (pref "unpair" "value");
+      edge "e-unpair-right-pair" (pref "unpair" "right") (pref "pair-out" "left");
+      edge "e-unpair-left-pair" (pref "unpair" "left") (pref "pair-out" "right");
+      edge "e-pair-result" (pref "pair-out" "value") (pref "result" "value");
+    ]
+  in
+  ignore nat_bool;
+  Raw_graph.of_lists ~nodes ~edges
+    ~default_node_order:(List.map node_id [ "pair-in"; "unpair"; "pair-out"; "drop" ])
+  |> validate_ok
+
+let () =
+  let value, trace = run_completed (init_ok (product_swap_graph ()) Runtime_value.Unit) in
+  let left, right = payload_product_pair value in
+  assert (Runtime_value.payload_equal left (Runtime_value.Bool true));
+  assert (Runtime_value.payload_equal right (Runtime_value.Nat (nat "3")));
+  assert_rules [ "Pair"; "Drop"; "Unpair"; "Pair" ] trace
+
+let copy_product_graph () =
+  let product_type = Core_type.Product (Core_type.Nat, Core_type.Bool) in
+  let nodes =
+    [
+      node "param" (Parameter product_type);
+      node "copy" (Copy product_type);
+      node "drop" (Drop product_type);
+      node "result" (Result product_type);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-copy" (pref "param" "value") (pref "copy" "input");
+      edge "e-copy-left-result" (pref "copy" "left") (pref "result" "value");
+      edge "e-copy-right-drop" (pref "copy" "right") (pref "drop" "input");
+    ]
+  in
+  Raw_graph.of_lists ~nodes ~edges
+    ~default_node_order:(List.map node_id [ "copy"; "drop" ])
+  |> validate_ok
+
+let () =
+  let input =
+    Runtime_value.Product (Runtime_value.Nat (nat "99"), Runtime_value.Bool false)
+  in
+  let value, trace = run_completed (init_ok (copy_product_graph ()) input) in
+  let left, right = payload_product_pair value in
+  assert (Runtime_value.payload_equal left (Runtime_value.Nat (nat "99")));
+  assert (Runtime_value.payload_equal right (Runtime_value.Bool false));
+  assert_rules [ "Copy"; "Drop" ] trace
 
 let () =
   (match Engine.initialize (copy_arrow_graph ()) ~input:Runtime_value.Unit with
@@ -1558,7 +1679,9 @@ let () =
 let closure_of_value value =
   match Runtime_value.payload value with
   | Runtime_value.Closure closure -> closure
-  | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Nat _ -> assert false
+  | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Nat _
+  | Runtime_value.Product _ ->
+      assert false
 
 let () =
   let template, graph = function_no_capture_graph () in

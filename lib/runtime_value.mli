@@ -54,6 +54,7 @@ type payload =
   | Unit
   | Bool of bool
   | Nat of Nat.t
+  | Product of payload * payload
   | Closure of closure
 
 type origin =

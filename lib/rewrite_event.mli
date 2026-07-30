@@ -2,6 +2,8 @@ type rule =
   | Succ
   | Drop
   | Copy
+  | Pair
+  | Unpair
   | Function
   | ApplyEnter
   | ApplyReturn

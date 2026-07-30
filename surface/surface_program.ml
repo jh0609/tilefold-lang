@@ -375,6 +375,8 @@ let rec render_type = function
   | Core_type.Unit -> tagged "Unit" []
   | Core_type.Bool -> tagged "Bool" []
   | Core_type.Nat -> tagged "Nat" []
+  | Core_type.Product (left, right) ->
+      tagged "Product" [ render_type left; render_type right ]
   | Core_type.Arrow (input, output) ->
       tagged "Arrow" [ render_type input; render_type output ]
 
@@ -529,7 +531,7 @@ let output node_id = port_ref node_id CG.Port_key.value
 let input node_id = port_ref node_id CG.Port_key.input
 
 let supported_value_type = function
-  | Core_type.Unit | Core_type.Bool | Core_type.Nat -> true
+  | Core_type.Unit | Core_type.Bool | Core_type.Nat | Core_type.Product _ -> true
   | Core_type.Arrow _ -> false
 
 let rec parameter_use_count parameter = function

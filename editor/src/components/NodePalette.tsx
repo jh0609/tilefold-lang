@@ -108,6 +108,24 @@ const PALETTE_GROUPS: PaletteGroup[] = [
         tone: "operation",
         action: { kind: "element", elementKind: "bool_rec" },
       },
+      {
+        name: "Pair",
+        symbol: "×",
+        signature: "A · B → A × B",
+        description: "Combine two linear values into one Product value.",
+        keywords: "product pair tuple combine structure",
+        tone: "operation",
+        action: { kind: "element", elementKind: "pair" },
+      },
+      {
+        name: "Unpair",
+        symbol: "↔",
+        signature: "A × B → A · B",
+        description: "Split a Product value into its two components.",
+        keywords: "product pair tuple split destructure structure",
+        tone: "operation",
+        action: { kind: "element", elementKind: "unpair" },
+      },
     ],
   },
   {
@@ -283,7 +301,7 @@ export function NodePalette({
           <span className="panel-eyebrow">Build</span>
           <h2>Nodes</h2>
         </div>
-        <span className="palette-count">12 available</span>
+        <span className="palette-count">14 available</span>
       </div>
       <div className="palette-search">
         <label className="visually-hidden" htmlFor="node-palette-search">

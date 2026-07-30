@@ -209,6 +209,53 @@ describe("Project JSON v2 import and export", () => {
     expect(parseProjectJson(exportProjectJson(parsed))).toEqual(parsed);
   });
 
+  it("round-trips Product types and Pair/Unpair Project JSON v2 elements", () => {
+    const input = JSON.parse(exampleJson);
+    input.geometry.elements.push(
+      {
+        id: "node_pair_1",
+        kind: "pair",
+        bounds: { x: 320, y: 120, width: 112, height: 80 },
+        properties: { leftType: "nat", rightType: "bool" },
+        portAnchors: [
+          { port: "left", x: 320, y: 146 },
+          { port: "right", x: 320, y: 174 },
+          { port: "value", x: 432, y: 160 },
+        ],
+      },
+      {
+        id: "node_unpair_1",
+        kind: "unpair",
+        bounds: { x: 480, y: 120, width: 112, height: 80 },
+        properties: {
+          leftType: "nat",
+          rightType: { product: ["bool", "unit"] },
+        },
+        portAnchors: [
+          { port: "value", x: 480, y: 160 },
+          { port: "left", x: 592, y: 146 },
+          { port: "right", x: 592, y: 174 },
+        ],
+      },
+    );
+    const parsed = parseProjectJson(JSON.stringify(input));
+    expect(
+      parsed.geometry.elements.find((element) => element.id === "node_pair_1"),
+    ).toMatchObject({
+      kind: "pair",
+      properties: { leftType: "nat", rightType: "bool" },
+    });
+    expect(parseProjectJson(exportProjectJson(parsed))).toEqual(parsed);
+  });
+
+  it("rejects malformed Product type JSON", () => {
+    const input = JSON.parse(exampleJson);
+    input.geometry.containers[0].kind.resultType = { product: ["nat"] };
+    expect(() => parseProjectJson(JSON.stringify(input))).toThrow(
+      "$.geometry.containers[0].kind.resultType.product",
+    );
+  });
+
   it("round-trips and validates Standard Library call metadata", () => {
     const called = addFunctionCall(
       parseProjectJson(exampleJson),

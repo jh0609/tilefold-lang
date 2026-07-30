@@ -109,6 +109,7 @@ and payload =
   | Unit
   | Bool of bool
   | Nat of Nat.t
+  | Product of payload * payload
   | Closure of closure
 
 let create ~id ~payload ~origin = { id; payload; origin }
@@ -128,10 +129,12 @@ let id value = value.id
 let payload value = value.payload
 let origin value = value.origin
 
-let payload_type = function
+let rec payload_type = function
   | Unit -> Core_type.Unit
   | Bool _ -> Core_type.Bool
   | Nat _ -> Core_type.Nat
+  | Product (left, right) ->
+      Core_type.Product (payload_type left, payload_type right)
   | Closure closure -> Core_type.Arrow (closure.parameter_type, closure.result_type)
 
 let typ value = payload_type value.payload
@@ -141,6 +144,8 @@ let rec payload_equal left right =
   | Unit, Unit -> true
   | Bool left, Bool right -> Bool.equal left right
   | Nat left, Nat right -> Nat.equal left right
+  | Product (left_a, left_b), Product (right_a, right_b) ->
+      payload_equal left_a right_a && payload_equal left_b right_b
   | Closure left, Closure right -> closure_equal left right
   | _ -> false
 
@@ -161,10 +166,12 @@ and equal left right =
   && payload_equal left.payload right.payload
   && left.origin = right.origin
 
-let payload_to_string = function
+let rec payload_to_string = function
   | Unit -> "Unit"
   | Bool value -> if value then "Bool(True)" else "Bool(False)"
   | Nat value -> "Nat(" ^ Nat.to_string value ^ ")"
+  | Product (left, right) ->
+      "Product(" ^ payload_to_string left ^ ", " ^ payload_to_string right ^ ")"
   | Closure closure ->
       "Closure("
       ^ Core_graph.Function_template_id.to_string closure.template_id

@@ -20,6 +20,7 @@ import {
   updateBoolValue,
   updateElementType,
   updateNatValue,
+  updatePairTypes,
   type AddableElementKind,
   type FunctionTemplateDraft,
   type SurfaceFunctionSignatureEdit,
@@ -142,6 +143,12 @@ export type EditorCommand =
       id: string;
       before: { parameterType: CoreType; resultType: CoreType };
       after: { parameterType: CoreType; resultType: CoreType };
+    }
+  | {
+      type: "set_pair_types";
+      id: string;
+      before: { leftType: CoreType; rightType: CoreType };
+      after: { leftType: CoreType; rightType: CoreType };
     };
 
 export interface CommandResult {
@@ -407,6 +414,13 @@ export function applyEditorCommand(
         command.after.parameterType,
         command.after.resultType,
       );
+    case "set_pair_types":
+      return updatePairTypes(
+        document,
+        command.id,
+        command.after.leftType,
+        command.after.rightType,
+      );
   }
 }
 
@@ -417,6 +431,8 @@ const ELEMENT_LABELS: Record<AddableElementKind, string> = {
   succ: "Succ",
   drop: "Drop",
   copy: "Copy",
+  pair: "Pair",
+  unpair: "Unpair",
   apply: "Apply",
   bool_rec: "BoolRec",
   nat_rec: "NatRec",
@@ -462,6 +478,7 @@ export function editorCommandLabel(command: EditorCommand): string {
     case "set_element_type":
       return `Edit type for ${command.id}`;
     case "set_apply_types":
+    case "set_pair_types":
       return `Edit types for ${command.id}`;
   }
 }
@@ -492,6 +509,11 @@ export function isNoOpCommand(command: EditorCommand): boolean {
           command.after.parameterType,
         ) &&
         coreTypeEqual(command.before.resultType, command.after.resultType)
+      );
+    case "set_pair_types":
+      return (
+        coreTypeEqual(command.before.leftType, command.after.leftType) &&
+        coreTypeEqual(command.before.rightType, command.after.rightType)
       );
     case "edit_surface_function_signature":
       return false;
