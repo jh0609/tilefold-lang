@@ -1,7 +1,9 @@
 import {
   addElement,
   addFunctionCall,
+  addFunctionReferenceToPort,
   addFunctionTemplate,
+  addFunctionTemplateAndReferenceToPort,
   addResultBoundary,
   addWire,
   deleteSelection,
@@ -52,6 +54,18 @@ export type EditorCommand =
       type: "add_function_call";
       hostContainerId: string;
       templateId: string;
+    }
+  | {
+      type: "add_function_reference";
+      hostContainerId: string;
+      templateId: string;
+      target: ConnectablePort;
+    }
+  | {
+      type: "add_function_template_reference";
+      hostContainerId: string;
+      target: ConnectablePort;
+      draft?: FunctionTemplateDraft;
     }
   | {
       type: "edit_surface_function_signature";
@@ -281,6 +295,50 @@ export function applyEditorCommand(
         };
       }
     }
+    case "add_function_reference": {
+      const result = addFunctionReferenceToPort(
+        document,
+        command.hostContainerId,
+        command.templateId,
+        command.target,
+      );
+      if ("error" in result) return { document, error: result.error };
+      try {
+        return {
+          document: parseProjectJson(exportProjectJson(result.document)),
+        };
+      } catch (error) {
+        return {
+          document,
+          error:
+            error instanceof Error
+              ? `New function reference failed the editor structure check: ${error.message}`
+              : "New function reference failed the editor structure check.",
+        };
+      }
+    }
+    case "add_function_template_reference": {
+      const result = addFunctionTemplateAndReferenceToPort(
+        document,
+        command.hostContainerId,
+        command.target,
+        command.draft,
+      );
+      if ("error" in result) return { document, error: result.error };
+      try {
+        return {
+          document: parseProjectJson(exportProjectJson(result.document)),
+        };
+      } catch (error) {
+        return {
+          document,
+          error:
+            error instanceof Error
+              ? `New function from expected type failed the editor structure check: ${error.message}`
+              : "New function from expected type failed the editor structure check.",
+        };
+      }
+    }
     case "move_element": {
       const result = moveElement(document, command.id, command.to);
       if ("error" in result) return { document, error: result.error };
@@ -372,6 +430,10 @@ export function editorCommandLabel(command: EditorCommand): string {
       return `Add Function ${command.draft.templateId}`;
     case "add_function_call":
       return `Call ${command.templateId}`;
+    case "add_function_reference":
+      return `Reference ${command.templateId}`;
+    case "add_function_template_reference":
+      return `Create function reference`;
     case "edit_surface_function_signature":
       return `Edit signature for ${command.edit.templateId}`;
     case "edit_template_captures":

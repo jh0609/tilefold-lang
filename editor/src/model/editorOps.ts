@@ -12,6 +12,7 @@ import type {
   SurfaceFunctionMetadata,
 } from "./project";
 import {
+  collectConnectablePorts,
   coreTypeEqual,
   endpointHintEqual,
   pointEqual,
@@ -33,6 +34,8 @@ import {
 import {
   primitiveCoreType,
   formatCoreType,
+  flattenFunctionType,
+  functionType,
   type PrimitiveCoreType,
 } from "./coreTypes";
 import {
@@ -117,6 +120,21 @@ export interface AddFunctionCallResult {
     { kind: "function" } | { kind: "library_call" } | { kind: "project_call" }
   >;
   applyElement: Extract<ProjectElement, { kind: "apply" }> | null;
+}
+
+export interface FunctionReferenceCandidate {
+  templateId: string;
+  displayName: string;
+  parameters: FunctionParameterDraft[];
+  resultName: string;
+  resultType: CoreType;
+  functionType: CoreType;
+}
+
+export interface AddFunctionReferenceResult {
+  document: ProjectDocument;
+  functionElement: Extract<ProjectElement, { kind: "function" }>;
+  wire: ProjectWire;
 }
 
 const NEW_ELEMENT_SIZE: Record<
@@ -488,6 +506,293 @@ export function callableFunctionTemplates(
     (definition) => !projectTemplateIds.has(definition.templateId),
   ).map(callableFromStandardLibrary);
   return [...standardTemplates, ...projectTemplates];
+}
+
+function surfaceFunctionType(functionInfo: SurfaceFunctionMetadata): CoreType {
+  return functionType(
+    functionInfo.parameters.map((parameter) => parameter.type),
+    functionInfo.result.type,
+  );
+}
+
+export function compatibleFunctionReferenceCandidates(
+  document: ProjectDocument,
+  hostContainerId: string,
+  expectedType: CoreType,
+): FunctionReferenceCandidate[] {
+  const host = document.geometry.containers.find(
+    (container) => container.id === hostContainerId,
+  );
+  if (!host || typeof expectedType === "string") return [];
+  return (document.surfaceFunctions ?? [])
+    .filter((functionInfo) => {
+      if (functionInfo.templateId === host.kind.templateId) return false;
+      if (
+        dependencyReaches(document, functionInfo.templateId, host.kind.templateId)
+      ) {
+        return false;
+      }
+      return coreTypeEqual(surfaceFunctionType(functionInfo), expectedType);
+    })
+    .map((functionInfo) => ({
+      templateId: functionInfo.templateId,
+      displayName: functionInfo.name,
+      parameters: functionInfo.parameters.map((parameter) => ({
+        name: parameter.name,
+        type: parameter.type,
+      })),
+      resultName: functionInfo.result.name,
+      resultType: functionInfo.result.type,
+      functionType: surfaceFunctionType(functionInfo),
+    }))
+    .sort((left, right) => left.displayName.localeCompare(right.displayName) || left.templateId.localeCompare(right.templateId));
+}
+
+function functionReferenceElementFor(
+  id: string,
+  templateId: string,
+  parameterType: CoreType,
+  resultType: CoreType,
+  captures: FunctionCaptureDraft[],
+  bounds: Bounds,
+): Extract<ProjectElement, { kind: "function" }> {
+  return {
+    id,
+    kind: "function",
+    bounds,
+    properties: {
+      templateId,
+      parameterType,
+      resultType,
+      captures,
+    },
+    portAnchors: [
+      ...captures.map((capture, index) => ({
+        port: capture.key,
+        x: bounds.x,
+        y: bounds.y + 28 + index * 64,
+      })),
+      {
+        port: "value",
+        x: bounds.x + bounds.width,
+        y: bounds.y + bounds.height / 2,
+      },
+    ],
+  };
+}
+
+export function addFunctionReferenceToPort(
+  document: ProjectDocument,
+  hostContainerId: string,
+  templateId: string,
+  target: ConnectablePort,
+): AddFunctionReferenceResult | { error: string } {
+  if (target.direction !== "input") {
+    return { error: "Function references can only be connected to input ports." };
+  }
+  const host = document.geometry.containers.find(
+    (container) => container.id === hostContainerId,
+  );
+  if (!host) return { error: `Host container ${hostContainerId} does not exist.` };
+  const functionInfo = functionMetadata(document, templateId);
+  if (!functionInfo) return { error: `Surface function ${templateId} does not exist.` };
+  const expected = surfaceFunctionType(functionInfo);
+  if (!coreTypeEqual(expected, target.type)) {
+    return {
+      error: `Function ${functionInfo.name} has type ${formatCoreType(expected)}, but ${target.name} expects ${formatCoreType(target.type)}.`,
+    };
+  }
+  if (
+    templateId === host.kind.templateId ||
+    dependencyReaches(document, templateId, host.kind.templateId)
+  ) {
+    return { error: `Referencing ${templateId} here would create a recursive dependency.` };
+  }
+  const usedIds = collectStableIds(document);
+  const allocate = (prefix: string) => {
+    let index = 1;
+    while (usedIds.has(`${prefix}${index}`)) index += 1;
+    const id = `${prefix}${index}`;
+    usedIds.add(id);
+    return id;
+  };
+  const captures = templateCaptureDrafts(document, templateId);
+  const referenceWidth = Math.max(128, 108 + functionInfo.name.length * 4);
+  const referenceHeight = Math.max(72, captures.length * 64);
+  const bounds: Bounds = {
+    x: Math.max(host.bounds.x + 4, target.anchor.x - referenceWidth - 120),
+    y: Math.max(host.bounds.y + 40, target.anchor.y - referenceHeight / 2),
+    width: referenceWidth,
+    height: referenceHeight,
+  };
+  const reference = functionReferenceElementFor(
+    allocate("node_function_"),
+    templateId,
+    functionInfo.parameters[0]?.type ?? "unit",
+    curriedResultType(functionInfo.parameters.slice(1), functionInfo.result.type),
+    captures,
+    bounds,
+  );
+  const source = {
+    key: `element:${reference.id}:value`,
+    ownerId: reference.id,
+    name: "value",
+    direction: "output" as const,
+    type: expected,
+    anchor: reference.portAnchors.find((anchor) => anchor.port === "value")!,
+    hint: {
+      kind: "element_port" as const,
+      elementId: reference.id,
+      port: "value",
+    },
+  };
+  const withReference: ProjectDocument = {
+    ...document,
+    geometry: {
+      ...document.geometry,
+      elements: [...document.geometry.elements, reference],
+    },
+  };
+  const validation = validateConnection(withReference, source, target);
+  if ("error" in validation) return validation;
+  const wire: ProjectWire = {
+    id: allocate("wire_"),
+    points: [
+      { x: Math.round(validation.source.anchor.x), y: Math.round(validation.source.anchor.y) },
+      { x: Math.round(validation.target.anchor.x), y: Math.round(validation.target.anchor.y) },
+    ],
+    sourceHint: validation.source.hint,
+    targetHint: validation.target.hint,
+  };
+  return {
+    functionElement: reference,
+    wire,
+    document: {
+      ...withReference,
+      geometry: {
+        ...withReference.geometry,
+        wires: [...withReference.geometry.wires, wire],
+      },
+    },
+  };
+}
+
+function defaultTemplateNameForTarget(
+  document: ProjectDocument,
+  target: ConnectablePort,
+): string {
+  const hint = target.hint;
+  const owner =
+    hint.kind === "element_port"
+      ? (() => {
+          const element = document.geometry.elements.find(
+            (candidate) => candidate.id === hint.elementId,
+          );
+          return element ? findElementOwnerContainer(document, element) : undefined;
+        })()
+      : hint.kind === "boundary_port"
+        ? document.geometry.containers.find(
+            (container) => container.id === hint.containerId,
+          )
+        : undefined;
+  const ownerName =
+    owner && owner.kind.kind !== "entry" ? functionMetadata(document, owner.kind.templateId)?.name ?? owner.kind.templateId : null;
+  const base =
+    hint.kind === "element_port" &&
+    hint.port === "step" &&
+    document.geometry.elements.find(
+      (element) =>
+        element.id === hint.elementId && element.kind === "nat_rec",
+    )
+      ? ownerName
+        ? `${ownerName}Step`
+        : "step"
+      : "function";
+  const ids = collectStableIds(document);
+  let suffix = 1;
+  let candidate = base;
+  while (ids.has(candidate)) {
+    suffix += 1;
+    candidate = `${base}${suffix}`;
+  }
+  return candidate;
+}
+
+function defaultParameterNamesForTarget(
+  document: ProjectDocument,
+  target: ConnectablePort,
+  count: number,
+): string[] {
+  const hint = target.hint;
+  if (
+    hint.kind === "element_port" &&
+    hint.port === "step" &&
+    document.geometry.elements.some(
+      (element) =>
+        element.id === hint.elementId && element.kind === "nat_rec",
+    )
+  ) {
+    return ["index", "previous", ...Array.from({ length: Math.max(0, count - 2) }, (_unused, index) => `arg${index + 3}`)].slice(0, count);
+  }
+  return Array.from({ length: count }, (_unused, index) => `arg${index + 1}`);
+}
+
+export function draftFunctionForExpectedPort(
+  document: ProjectDocument,
+  target: ConnectablePort,
+  templateId?: string,
+): FunctionTemplateDraft | { error: string } {
+  if (target.direction !== "input") {
+    return { error: "New function references can only target input ports." };
+  }
+  if (typeof target.type === "string") {
+    return { error: `${target.name} expects ${formatCoreType(target.type)}, not a function.` };
+  }
+  const flattened = flattenFunctionType(target.type);
+  if (flattened.parameters.length === 0) {
+    return { error: `${target.name} does not expect a function type.` };
+  }
+  const names = defaultParameterNamesForTarget(
+    document,
+    target,
+    flattened.parameters.length,
+  );
+  return {
+    templateId: templateId ?? defaultTemplateNameForTarget(document, target),
+    parameters: flattened.parameters.map((type, index) => ({
+      name: names[index] ?? `arg${index + 1}`,
+      type,
+    })),
+    resultName: "result",
+    resultType: flattened.result,
+  };
+}
+
+export function addFunctionTemplateAndReferenceToPort(
+  document: ProjectDocument,
+  hostContainerId: string,
+  target: ConnectablePort,
+  draft?: FunctionTemplateDraft,
+): AddFunctionTemplateResult & { reference: Extract<ProjectElement, { kind: "function" }>; wire: ProjectWire } | { error: string } {
+  const inferred = draft ?? draftFunctionForExpectedPort(document, target);
+  if ("error" in inferred) return inferred;
+  const created = addFunctionTemplate(document, hostContainerId, inferred);
+  if ("error" in created) return created;
+  const source = collectConnectablePorts(created.document).find(
+    (port) =>
+      port.hint.kind === "element_port" &&
+      port.hint.elementId === created.element.id &&
+      port.name === "value",
+  );
+  if (!source) return { error: "New function reference did not expose a value port." };
+  const wireResult = addWire(created.document, source, target);
+  if ("error" in wireResult) return wireResult;
+  return {
+    ...created,
+    document: wireResult.document,
+    reference: created.element,
+    wire: wireResult.wire,
+  };
 }
 
 function literalPrefix(type: PrimitiveCoreType): string {

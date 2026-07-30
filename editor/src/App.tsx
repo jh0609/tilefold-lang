@@ -130,6 +130,9 @@ export function App() {
       previousSelection: Selection | null;
       previousViewBox: string;
     } | null>(null);
+  const [callerReturnContainerId, setCallerReturnContainerId] = useState<
+    string | null
+  >(null);
   const executionRequest = useRef(0);
   const executionBackend = useRef<ExecutionBackend | null>(null);
   const executionAbort = useRef<AbortController | null>(null);
@@ -483,6 +486,25 @@ export function App() {
     );
   }
 
+  function focusContainerById(containerId: string) {
+    const container = document.geometry.containers.find(
+      (candidate) => candidate.id === containerId,
+    );
+    const reference = parseViewBox(referenceViewBox);
+    if (!container || !reference) {
+      setInspectorError(`Container ${containerId} is not available.`);
+      return;
+    }
+    setStandardLibraryDefinition(null);
+    setSelection({ type: "container", id: container.id });
+    setHistory((current) => ({
+      ...current,
+      present: { ...current.present, currentContainerId: container.id },
+    }));
+    setInspectorError(null);
+    setViewBox(formatViewBox(fitViewBoxToBounds(container.bounds, reference)));
+  }
+
   function focusEntry() {
     const container = document.geometry.containers.find(
       (candidate) => candidate.kind.kind === "entry",
@@ -611,6 +633,60 @@ export function App() {
     }
   }
 
+  function addFunctionReference(target: ConnectablePort, templateId: string) {
+    if (!functionHost) {
+      setInspectorError("Function reference creation requires a host container.");
+      return;
+    }
+    const nextDocument = runCommand({
+      type: "add_function_reference",
+      hostContainerId: functionHost.id,
+      templateId,
+      target,
+    });
+    if (!nextDocument) return;
+    const wire = nextDocument.geometry.wires.find((candidate) => {
+      const hint = candidate.targetHint;
+      if (!hint || hint.kind !== target.hint.kind) return false;
+      if (hint.kind === "element_port" && target.hint.kind === "element_port") {
+        return hint.elementId === target.hint.elementId && hint.port === target.hint.port;
+      }
+      if (hint.kind === "boundary_port" && target.hint.kind === "boundary_port") {
+        return hint.containerId === target.hint.containerId && hint.boundaryId === target.hint.boundaryId;
+      }
+      return false;
+    });
+    if (wire) setSelection({ type: "wire", id: wire.id });
+    setConnectionMessage(`Connected a function reference to ${target.label ?? target.name}.`);
+  }
+
+  function createFunctionForPort(target: ConnectablePort) {
+    if (!functionHost) {
+      setInspectorError("Function creation requires a host container.");
+      return;
+    }
+    const nextDocument = runCommand({
+      type: "add_function_template_reference",
+      hostContainerId: functionHost.id,
+      target,
+    });
+    if (!nextDocument) return;
+    const current = nextDocument.geometry.containers.find(
+      (container) => container.id === nextDocument.currentContainerId,
+    );
+    if (current) {
+      setCallerReturnContainerId(functionHost.id);
+      setSelection({ type: "container", id: current.id });
+      const reference = parseViewBox(referenceViewBox);
+      if (reference) {
+        setViewBox(formatViewBox(fitViewBoxToBounds(current.bounds, reference)));
+      }
+    }
+    setConnectionMessage(
+      `Created a function for ${target.label ?? target.name} and connected its reference.`,
+    );
+  }
+
   function reconnectWire(
     wireId: string,
     endpoint: WireEndpoint,
@@ -706,6 +782,7 @@ export function App() {
         />
         <Canvas
           document={document}
+          currentContainerId={functionHost?.id ?? null}
           selection={selection}
           traceHighlightedElementId={traceHighlightedElementId}
           viewBox={viewBox}
@@ -773,6 +850,8 @@ export function App() {
             });
           }}
           onAddWire={connectPorts}
+          onAddFunctionReference={addFunctionReference}
+          onCreateFunctionForPort={createFunctionForPort}
           onReconnectWire={reconnectWire}
           onConnectionMessage={setConnectionMessage}
         />
@@ -879,6 +958,19 @@ export function App() {
             setInspectorError(null);
           }}
           onFocusEntry={focusEntry}
+          callerReturn={
+            callerReturnContainerId
+              ? {
+                  containerId: callerReturnContainerId,
+                  label:
+                    document.surfaceFunctions?.find(
+                      (functionInfo) =>
+                        functionInfo.bodyContainerId === callerReturnContainerId,
+                    )?.name ?? callerReturnContainerId,
+                  onReturn: () => focusContainerById(callerReturnContainerId),
+                }
+              : null
+          }
           standardLibraryDefinition={
             standardLibraryDefinition?.definition ?? null
           }

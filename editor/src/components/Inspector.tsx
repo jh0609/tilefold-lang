@@ -40,6 +40,9 @@ interface InspectorProps {
   onFocusTemplate: (templateId: string) => void;
   onOpenStandardLibraryDefinition: (definition: StandardLibraryFunction) => void;
   onFocusEntry: () => void;
+  callerReturn:
+    | { containerId: string; label: string; onReturn: () => void }
+    | null;
   standardLibraryDefinition: StandardLibraryFunction | null;
   onBackFromStandardLibraryDefinition: () => void;
   onEditSignature: (edit: SurfaceFunctionSignatureEdit) => boolean;
@@ -847,6 +850,7 @@ export function Inspector({
   onFocusTemplate,
   onOpenStandardLibraryDefinition,
   onFocusEntry,
+  callerReturn,
   standardLibraryDefinition,
   onBackFromStandardLibraryDefinition,
   onEditSignature,
@@ -1009,6 +1013,11 @@ export function Inspector({
               <button type="button" onClick={onFocusEntry}>
                 Return to entry graph
               </button>
+              {callerReturn && callerReturn.containerId !== container.id && (
+                <button type="button" onClick={callerReturn.onReturn}>
+                  Back to {callerReturn.label}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setEditingSignature(surfaceFunction)}

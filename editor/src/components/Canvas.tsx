@@ -15,6 +15,7 @@ import {
 import { formatCoreType } from "../model/coreTypes";
 import {
   findElementOwnerContainer,
+  compatibleFunctionReferenceCandidates,
   moveContainer,
   moveElement,
   replaceableAutoDropWireId,
@@ -52,6 +53,10 @@ import type {
 import { ElementNode } from "./ElementNode";
 import type { ResizeHandle } from "./ElementNode";
 
+function isFunctionType(type: CoreType): boolean {
+  return typeof type !== "string";
+}
+
 interface DragState {
   pointerId: number;
   elementId: string;
@@ -86,8 +91,14 @@ interface ContainerMoveState {
   next: Point;
 }
 
+interface FunctionPortActionState {
+  target: ConnectablePort;
+  projectPoint: Point;
+}
+
 interface CanvasProps {
   document: ProjectDocument;
+  currentContainerId: string | null;
   selection: Selection | null;
   traceHighlightedElementId: string | null;
   viewBox: string;
@@ -107,6 +118,8 @@ interface CanvasProps {
     after: Bounds,
   ) => void;
   onAddWire: (source: ConnectablePort, target: ConnectablePort) => void;
+  onAddFunctionReference: (target: ConnectablePort, templateId: string) => void;
+  onCreateFunctionForPort: (target: ConnectablePort) => void;
   onReconnectWire: (
     wireId: string,
     endpoint: WireEndpoint,
@@ -393,6 +406,7 @@ function endpointDataAttributes(
 
 export function Canvas({
   document,
+  currentContainerId,
   selection,
   traceHighlightedElementId,
   viewBox,
@@ -407,6 +421,8 @@ export function Canvas({
   onResizeElement,
   onResizeContainer,
   onAddWire,
+  onAddFunctionReference,
+  onCreateFunctionForPort,
   onReconnectWire,
   onConnectionMessage,
 }: CanvasProps) {
@@ -420,6 +436,8 @@ export function Canvas({
   const [containerMove, setContainerMove] =
     useState<ContainerMoveState | null>(null);
   const [connection, setConnection] = useState<ConnectionDrag | null>(null);
+  const [functionPortAction, setFunctionPortAction] =
+    useState<FunctionPortActionState | null>(null);
   const [pan, setPan] = useState<PanState | null>(null);
   const [svgViewport, setSvgViewport] = useState({ width: 0, height: 0 });
   const pixelsPerCanvasUnit = useMemo(
@@ -427,6 +445,17 @@ export function Canvas({
     [svgViewport, viewBox],
   );
   const ports = useMemo(() => collectConnectablePorts(document), [document]);
+  const functionReferenceCandidates = useMemo(
+    () =>
+      functionPortAction && currentContainerId
+        ? compatibleFunctionReferenceCandidates(
+            document,
+            currentContainerId,
+            functionPortAction.target.type,
+          )
+        : [],
+    [currentContainerId, document, functionPortAction],
+  );
   const connectionTargets = useMemo(() => {
     const compatible = new Set<string>();
     const rejected = new Set<string>();
@@ -482,6 +511,9 @@ export function Canvas({
         suppressNextSelectionRef.current = true;
         setConnection(null);
         onConnectionMessage("Wire connection cancelled.");
+      } else if (functionPortAction) {
+        setFunctionPortAction(null);
+        onConnectionMessage("Function reference action cancelled.");
       } else if (drag) {
         suppressNextSelectionRef.current = true;
         setDrag(null);
@@ -512,6 +544,7 @@ export function Canvas({
     containerMove,
     containerResize,
     drag,
+    functionPortAction,
     onConnectionMessage,
     onViewBoxChange,
     pan,
@@ -1074,7 +1107,14 @@ export function Canvas({
     event.stopPropagation();
     if (event.button !== 0 || pan || drag || resize || containerResize) return;
     if (port.direction !== "output") {
-      onConnectionMessage("Connections must start at an output port.");
+      if (isFunctionType(port.type)) {
+        setFunctionPortAction({ target: port, projectPoint: port.anchor });
+        onConnectionMessage(
+          `Choose or create a function reference for ${port.label ?? port.name}.`,
+        );
+      } else {
+        onConnectionMessage("Connections must start at an output port.");
+      }
       return;
     }
     try {
@@ -1188,6 +1228,19 @@ export function Canvas({
       return;
     }
     onSelect(next);
+  }
+
+  function overlayPosition(point: Point): { left: number; top: number } | null {
+    const camera = parseViewBox(viewBox);
+    if (!camera || svgViewport.width <= 0 || svgViewport.height <= 0) return null;
+    return {
+      left: ((point.x - camera.x) / camera.width) * svgViewport.width + 12,
+      top: ((point.y - camera.y) / camera.height) * svgViewport.height + 12,
+    };
+  }
+
+  function closeFunctionPortAction() {
+    setFunctionPortAction(null);
   }
 
   return (
@@ -1515,6 +1568,80 @@ export function Canvas({
             });
           })()}
       </svg>
+      {functionPortAction &&
+        (() => {
+          const position = overlayPosition(functionPortAction.projectPoint);
+          if (!position) return null;
+          return (
+            <div
+              className="function-port-action"
+              data-testid="function-port-action"
+              style={{ left: position.left, top: position.top }}
+              role="dialog"
+              aria-label={`Function reference actions for ${functionPortAction.target.label ?? functionPortAction.target.name}`}
+            >
+              <div className="function-port-action-heading">
+                <strong>Function value</strong>
+                <button
+                  type="button"
+                  aria-label="Close function reference actions"
+                  onClick={closeFunctionPortAction}
+                >
+                  ×
+                </button>
+              </div>
+              <p>
+                {functionPortAction.target.label ?? functionPortAction.target.name} expects{" "}
+                <code>{formatCoreType(functionPortAction.target.type)}</code>.
+              </p>
+              <button
+                type="button"
+                className="function-port-action-primary"
+                onClick={() => {
+                  const target = functionPortAction.target;
+                  closeFunctionPortAction();
+                  onCreateFunctionForPort(target);
+                }}
+              >
+                New function from this type
+              </button>
+              <div className="function-port-action-list" aria-label="Compatible function references">
+                <span className="function-port-action-subheading">
+                  Existing function reference
+                </span>
+                {functionReferenceCandidates.length === 0 ? (
+                  <span className="function-port-action-empty">
+                    No compatible functions.
+                  </span>
+                ) : (
+                  functionReferenceCandidates.map((candidate) => (
+                    <button
+                      key={candidate.templateId}
+                      type="button"
+                      className="function-port-action-candidate"
+                      onClick={() => {
+                        const target = functionPortAction.target;
+                        closeFunctionPortAction();
+                        onAddFunctionReference(target, candidate.templateId);
+                      }}
+                    >
+                      <span>{candidate.displayName}</span>
+                      <small>
+                        {candidate.parameters
+                          .map(
+                            (parameter) =>
+                              `${parameter.name}: ${formatCoreType(parameter.type)}`,
+                          )
+                          .join(", ")}{" "}
+                        → {candidate.resultName}: {formatCoreType(candidate.resultType)}
+                      </small>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          );
+        })()}
       {connection && (
         <div
           className={`connection-banner${connection.rejection ? " is-rejected" : ""}`}

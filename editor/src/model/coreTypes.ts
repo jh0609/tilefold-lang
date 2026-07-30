@@ -41,6 +41,28 @@ export function formatCoreType(type: CoreType): string {
   }`;
 }
 
+export function flattenFunctionType(
+  type: CoreType,
+): { parameters: CoreType[]; result: CoreType } {
+  const parameters: CoreType[] = [];
+  let current = type;
+  while (typeof current !== "string") {
+    parameters.push(current.arrow[0]);
+    current = current.arrow[1];
+  }
+  return { parameters, result: current };
+}
+
+export function functionType(
+  parameters: readonly CoreType[],
+  result: CoreType,
+): CoreType {
+  return parameters.reduceRight<CoreType>(
+    (current, parameter) => ({ arrow: [parameter, current] }),
+    result,
+  );
+}
+
 export function normalizeCoreType(type: CoreType): CoreType {
   if (typeof type === "string") return type;
   return {

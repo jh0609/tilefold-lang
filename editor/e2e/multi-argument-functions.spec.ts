@@ -196,6 +196,22 @@ async function createNat2Function(
   return containerId!;
 }
 
+async function createNat1Function(page: Page, name: string, firstName: string) {
+  await page.getByRole("button", { name: "Add Function" }).click();
+  await page.getByLabel("Function name").fill(name);
+  await page.getByLabel("Argument 1 name").fill(firstName);
+  await page.getByLabel("Argument 1 type").selectOption("nat");
+  await page.getByLabel("Result name").fill("result");
+  await page.getByLabel("Result type").selectOption("nat");
+  await page.getByRole("button", { name: "Create total function" }).click();
+  await expect(page.getByText(new RegExp(`Created ${name}`))).toBeVisible();
+  const container = page.locator(`g.container-shape[data-template-id="${name}"]`);
+  await expect(container).toBeVisible();
+  const containerId = await container.getAttribute("data-container-id");
+  expect(containerId).not.toBeNull();
+  return containerId!;
+}
+
 async function addStandardCall(page: Page, name: string, templateId: string) {
   const before = await page
     .locator('g.element-node[data-node-kind="library_call"]')
@@ -241,6 +257,16 @@ async function clearFunctionResultLiteral(page: Page, containerId: string) {
   const sourceId = await wire.getAttribute("data-source-node-id");
   expect(sourceId).not.toBeNull();
   await selectAndDelete(page, element(page, sourceId!));
+}
+
+async function clearFunctionResultLiteralIfPresent(page: Page, containerId: string) {
+  const wire = page
+    .locator(
+      `polyline[data-target-container-id="${containerId}"][data-target-boundary-role="result"]`,
+    )
+    .first();
+  if ((await wire.count()) === 0) return;
+  await selectAndDelete(page, wire);
 }
 
 async function returnToEntry(page: Page, containerId: string) {
@@ -356,13 +382,19 @@ async function addProjectCall(page: Page, templateId: string) {
   await page.getByLabel("Template to call").selectOption(templateId);
   await page.getByRole("button", { name: "Create call" }).click();
   const beforeSet = new Set(before);
-  const id = (
-    await page
-      .locator(`g.element-node[data-node-kind="project_call"][data-template-id="${templateId}"]`)
-      .evaluateAll((nodes) =>
-        nodes.map((node) => node.getAttribute("data-node-id") ?? ""),
-      )
-  ).find((candidate) => !beforeSet.has(candidate));
+  await expect
+    .poll(async () =>
+      page
+        .locator(`g.element-node[data-node-kind="project_call"][data-template-id="${templateId}"]`)
+        .count(),
+    )
+    .toBeGreaterThan(0);
+  const ids = await page
+    .locator(`g.element-node[data-node-kind="project_call"][data-template-id="${templateId}"]`)
+    .evaluateAll((nodes) =>
+      nodes.map((node) => node.getAttribute("data-node-id") ?? ""),
+    );
+  const id = ids.find((candidate) => !beforeSet.has(candidate)) ?? ids.at(-1);
   expect(id).toBeTruthy();
   return id!;
 }
@@ -631,6 +663,148 @@ test("passes a flat multi-argument Surface function value to NatRec.step", async
   );
   expect(recoveredEntry.kind.dependencies).toEqual(["factorialStep"]);
   await expect(page.getByText(/missing function template/i)).toHaveCount(0);
+  await expectNoBrowserIssues(issues);
+});
+
+test("creates a compatible function reference from NatRec.step expected type", async ({
+  page,
+}, testInfo) => {
+  const issues = watchBrowserIssues(page);
+  await page.goto("/");
+  const factorialContainerId = await createNat1Function(page, "factorial", "n");
+  await openContainer(page, factorialContainerId);
+  await clearFunctionResultLiteralIfPresent(page, factorialContainerId);
+  await openContainer(page, factorialContainerId);
+  const parameter = boundaryPort(page, factorialContainerId, "parameter", "output").first();
+  const natRecId = await addNodeAndGetId(page, "Add NatRec", "nat_rec");
+  const baseId = await addNodeAndGetId(page, "Add Nat", "nat_literal");
+  await setNatValue(page, baseId, 1);
+  await dragConnect(
+    page,
+    port(page, baseId, "value", "output"),
+    port(page, natRecId, "base", "input"),
+  );
+  await dragConnect(
+    page,
+    parameter,
+    port(page, natRecId, "count", "input"),
+    0,
+  );
+  await port(page, natRecId, "step", "input").click();
+  await expect(page.getByTestId("function-port-action")).toBeVisible();
+  await expect(page.getByTestId("function-port-action")).toContainText(
+    "Nat -> (Nat -> Nat)",
+  );
+  await page.getByRole("button", { name: "New function from this type" }).click();
+  const stepContainer = page.locator('g.container-shape[data-template-id="factorialStep"]');
+  await expect(stepContainer).toBeVisible();
+  const stepContainerId = await stepContainer.getAttribute("data-container-id");
+  expect(stepContainerId).not.toBeNull();
+  await expect(page.getByTestId("function-port-action")).toHaveCount(0);
+  await expect(boundaryPort(page, stepContainerId!, "parameter", "output")).toHaveCount(2);
+  await expect(
+    page.locator(`text[data-testid^="boundary-label-${stepContainerId!}-"]`),
+  ).toContainText(["index", "previous"]);
+  await clearFunctionResultLiteralIfPresent(page, stepContainerId!);
+  await openContainer(page, stepContainerId!);
+  const params = boundaryPort(page, stepContainerId!, "parameter", "output");
+  const succId = await addNodeAndGetId(page, "Add Succ", "succ");
+  await setElementPosition(page, succId, 460, 104);
+  const multiplyId = await addStandardCall(
+    page,
+    "multiply",
+    "tilefold.std.nat.multiply",
+  );
+  await clearAutoInputsAndResultDrop(page, multiplyId, 2);
+  await dragConnect(page, params.nth(0), port(page, succId, "input", "input"), 0);
+  await dragConnect(page, params.nth(1), port(page, multiplyId, "arg_0", "input"), 0);
+  await dragConnect(
+    page,
+    port(page, succId, "result", "output"),
+    port(page, multiplyId, "arg_1", "input"),
+  );
+  await dragConnect(
+    page,
+    port(page, multiplyId, "result", "output"),
+    boundaryPort(page, stepContainerId!, "result", "input"),
+  );
+  await openContainer(page, stepContainerId!);
+  await page.getByRole("button", { name: "Back to factorial" }).click();
+  await expect(
+    page.locator(
+      `polyline[data-target-node-id="${natRecId}"][data-target-port-name="step"][data-source-node-kind="function"][data-source-port-name="value"]`,
+    ),
+  ).toHaveCount(1);
+  await clearFunctionResultLiteralIfPresent(page, factorialContainerId);
+  await openContainer(page, factorialContainerId);
+  await dragConnect(
+    page,
+    port(page, natRecId, "result", "output"),
+    boundaryPort(page, factorialContainerId, "result", "input"),
+  );
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export JSON" }).click();
+  const download = await downloadPromise;
+  const savedPath = testInfo.outputPath("factorial-port-action.tilefold.json");
+  await download.saveAs(savedPath);
+  const exported = JSON.parse(await readFile(savedPath, "utf8"));
+  const factorialContainer = exported.geometry.containers.find(
+    (container: { kind: { templateId: string } }) =>
+      container.kind.templateId === "factorial",
+  );
+  expect(
+    factorialContainer.kind.dependencies.filter(
+      (dependency: string) => dependency === "factorialStep",
+    ),
+  ).toHaveLength(1);
+  await page.reload();
+  await page.getByLabel("Open JSON file").setInputFiles(savedPath);
+  await expect(page.getByText("factorial-port-action.tilefold.json")).toBeVisible();
+  await expect(
+    page.locator(
+      `polyline[data-target-node-id="${natRecId}"][data-target-port-name="step"][data-source-node-kind="function"][data-source-port-name="value"]`,
+    ),
+  ).toHaveCount(1);
+  await expectNoBrowserIssues(issues);
+});
+
+test("selects an existing compatible function reference from a function-typed port", async ({
+  page,
+}, testInfo) => {
+  const issues = watchBrowserIssues(page);
+  await page.goto("/");
+  await buildFactorialStep(page);
+  await enlargeEntryForMultiArgumentCall(page);
+  await removeInitialEntryGraph(page);
+  const natRecId = await addNodeAndGetId(page, "Add NatRec", "nat_rec");
+  await port(page, natRecId, "step", "input").click();
+  await expect(page.getByTestId("function-port-action")).toBeVisible();
+  await expect(page.getByTestId("function-port-action")).toContainText(
+    "factorialStep",
+  );
+  await page
+    .getByTestId("function-port-action")
+    .getByRole("button", { name: /factorialStep/ })
+    .click();
+  await expect(
+    page.locator(
+      `polyline[data-target-node-id="${natRecId}"][data-target-port-name="step"][data-source-node-kind="function"][data-source-port-name="value"]`,
+    ),
+  ).toHaveCount(1);
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export JSON" }).click();
+  const download = await downloadPromise;
+  const savedPath = testInfo.outputPath("existing-function-reference.tilefold.json");
+  await download.saveAs(savedPath);
+  const exported = JSON.parse(await readFile(savedPath, "utf8"));
+  const entry = exported.geometry.containers.find(
+    (container: { id: string }) => container.id === "entry",
+  );
+  expect(
+    entry.kind.dependencies.filter(
+      (dependency: string) => dependency === "factorialStep",
+    ),
+  ).toHaveLength(1);
   await expectNoBrowserIssues(issues);
 });
 

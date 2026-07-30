@@ -3,9 +3,13 @@ import { describe, expect, it } from "vitest";
 import {
   addElement,
   addFunctionCall,
+  addFunctionReferenceToPort,
   addFunctionTemplate,
+  addFunctionTemplateAndReferenceToPort,
   addWire,
+  compatibleFunctionReferenceCandidates,
   deleteSelection,
+  draftFunctionForExpectedPort,
   editTemplateCaptures,
   editSurfaceFunctionSignature,
   fitContainerBoundsToContent,
@@ -1129,6 +1133,116 @@ describe("editor operations", () => {
       retargeted.geometry.containers.find((container) => container.id === "entry")
         ?.kind.dependencies,
     ).toEqual(["otherStep"]);
+  });
+
+  it("offers function reference candidates from an input port expected type", () => {
+    let project = parseProjectJson(exampleJson);
+    project = addElement(project, "nat_rec", { x: 560, y: 260 }).document;
+    const stepTarget = collectConnectablePorts(project).find(
+      (port) => port.ownerId === "node_nat_rec_1" && port.name === "step",
+    );
+    expect(stepTarget?.direction).toBe("input");
+    expect(stepTarget?.type).toEqual({
+      arrow: ["nat", { arrow: ["nat", "nat"] }],
+    });
+    const draft = draftFunctionForExpectedPort(project, stepTarget!);
+    if ("error" in draft) throw new Error(draft.error);
+    expect(draft.parameters).toEqual([
+      { name: "index", type: "nat" },
+      { name: "previous", type: "nat" },
+    ]);
+    expect(draft.resultType).toBe("nat");
+
+    const compatible = addFunctionTemplate(project, "entry", {
+      templateId: "factorialStep",
+      parameters: [
+        { name: "index", type: "nat" },
+        { name: "previous", type: "nat" },
+      ],
+      resultType: "nat",
+    });
+    if ("error" in compatible) throw new Error(compatible.error);
+    const wrong = addFunctionTemplate(compatible.document, "entry", {
+      templateId: "notStep",
+      parameters: [{ name: "value", type: "nat" }],
+      resultType: "nat",
+    });
+    if ("error" in wrong) throw new Error(wrong.error);
+    expect(
+      compatibleFunctionReferenceCandidates(
+        wrong.document,
+        "entry",
+        stepTarget!.type,
+      ).map((candidate) => candidate.templateId),
+    ).toEqual(["factorialStep"]);
+  });
+
+  it("creates existing and new function references directly for a function-typed input", () => {
+    let project = parseProjectJson(exampleJson);
+    project = addElement(project, "nat_rec", { x: 560, y: 260 }).document;
+    const target = collectConnectablePorts(project).find(
+      (port) => port.ownerId === "node_nat_rec_1" && port.name === "step",
+    )!;
+    const authored = addFunctionTemplate(project, "entry", {
+      templateId: "factorialStep",
+      parameters: [
+        { name: "index", type: "nat" },
+        { name: "previous", type: "nat" },
+      ],
+      resultType: "nat",
+    });
+    if ("error" in authored) throw new Error(authored.error);
+    const referenced = addFunctionReferenceToPort(
+      authored.document,
+      "entry",
+      "factorialStep",
+      target,
+    );
+    if ("error" in referenced) throw new Error(referenced.error);
+    expect(referenced.functionElement.kind).toBe("function");
+    expect(referenced.wire.targetHint).toEqual(target.hint);
+    expect(
+      parseProjectJson(exportProjectJson(referenced.document)).geometry.containers.find(
+        (container) => container.id === "entry",
+      )?.kind.dependencies,
+    ).toEqual(["factorialStep"]);
+
+    project = addElement(parseProjectJson(exampleJson), "nat_rec", {
+      x: 560,
+      y: 260,
+    }).document;
+    const newTarget = collectConnectablePorts(project).find(
+      (port) => port.ownerId === "node_nat_rec_1" && port.name === "step",
+    )!;
+    const created = addFunctionTemplateAndReferenceToPort(
+      project,
+      "entry",
+      newTarget,
+      {
+        templateId: "step",
+        parameters: [
+          { name: "index", type: "nat" },
+          { name: "previous", type: "nat" },
+        ],
+        resultType: "nat",
+      },
+    );
+    if ("error" in created) throw new Error(created.error);
+    expect(created.container.kind.templateId).toBe("step");
+    expect(created.reference.id).toBe(created.element.id);
+    expect(created.wire.targetHint).toEqual(newTarget.hint);
+    expect(
+      created.document.geometry.wires.filter(
+        (wire) =>
+          wire.sourceHint?.kind === "element_port" &&
+          wire.sourceHint.elementId === created.reference.id,
+      ),
+    ).toHaveLength(1);
+    expect(
+      parseProjectJson(exportProjectJson(created.document)).geometry.containers.find(
+        (container) => container.id === "entry",
+      )?.kind.dependencies,
+    ).toEqual(["step"]);
   });
 
   it("creates a folded Standard Library call element", () => {
