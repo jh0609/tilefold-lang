@@ -464,6 +464,11 @@ Escape, `pointercancel`, or lost pointer capture restores a pan's starting
 camera. Wheel navigation is paused during element, connection, reconnection, or
 pan gestures so their coordinate transforms remain stable.
 
+The toolbar Theme control supports `System`, `Light`, and `Dark`. Theme choice is
+stored in browser local storage because it is an editor preference, not Project
+semantics. Exported Project JSON, undo/redo history, Trace Run, and Fast Run are
+unchanged by the selected theme.
+
 Starting a connection highlights exact compatible destination ports and ports
 that have one safe, confirmable type auto-match. Hovering a rejected port
 surfaces the validator's reason in a canvas banner; no approximate, geometric,

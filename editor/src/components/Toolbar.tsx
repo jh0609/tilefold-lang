@@ -4,6 +4,8 @@ import type {
 } from "../model/exampleProjects";
 import type { ExecutionMode } from "../model/executionApi";
 
+export type ThemePreference = "system" | "light" | "dark";
+
 interface ToolbarProps {
   projectName: string;
   format: string;
@@ -24,6 +26,8 @@ interface ToolbarProps {
   onCancel: () => void;
   executionMode: ExecutionMode;
   onExecutionModeChange: (mode: ExecutionMode) => void;
+  themePreference: ThemePreference;
+  onThemePreferenceChange: (theme: ThemePreference) => void;
   running: boolean;
 }
 
@@ -47,6 +51,8 @@ export function Toolbar({
   onCancel,
   executionMode,
   onExecutionModeChange,
+  themePreference,
+  onThemePreferenceChange,
   running,
 }: ToolbarProps) {
   return (
@@ -122,6 +128,20 @@ export function Toolbar({
         </button>
       </div>
       <div className="view-controls" aria-label="Canvas view">
+        <label className="example-picker">
+          <span>Theme</span>
+          <select
+            aria-label="Theme"
+            value={themePreference}
+            onChange={(event) =>
+              onThemePreferenceChange(event.target.value as ThemePreference)
+            }
+          >
+            <option value="system">System</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </label>
         <label className="example-picker">
           <span>Execution</span>
           <select

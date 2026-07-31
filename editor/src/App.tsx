@@ -4,6 +4,7 @@ import { Inspector } from "./components/Inspector";
 import { NodePalette } from "./components/NodePalette";
 import { StatusBar } from "./components/StatusBar";
 import { Toolbar } from "./components/Toolbar";
+import type { ThemePreference } from "./components/Toolbar";
 import {
   ExecutionPanel,
   type ExecutionState,
@@ -80,6 +81,15 @@ import {
 
 const initialExample = EXAMPLE_PROJECTS[0];
 const initialDocument = parseProjectJson(initialExample.projectJson);
+const THEME_STORAGE_KEY = "tilefold.editor.theme";
+
+function readStoredThemePreference(): ThemePreference {
+  if (typeof window === "undefined") return "system";
+  const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+  return stored === "light" || stored === "dark" || stored === "system"
+    ? stored
+    : "system";
+}
 
 function readFileText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -131,6 +141,9 @@ export function App() {
   });
   const [executionMode, setExecutionMode] =
     useState<ExecutionMode>("transparent");
+  const [themePreference, setThemePreference] = useState<ThemePreference>(
+    readStoredThemePreference,
+  );
   const [standardLibraryDefinition, setStandardLibraryDefinition] =
     useState<{
       definition: StandardLibraryFunction;
@@ -856,8 +869,12 @@ export function App() {
     [],
   );
 
+  useEffect(() => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, themePreference);
+  }, [themePreference]);
+
   return (
-    <div className="editor-app">
+    <div className="editor-app" data-theme={themePreference}>
       <Toolbar
         projectName={projectName}
         format={document.format}
@@ -881,6 +898,8 @@ export function App() {
           setExecutionMode(mode);
           invalidateExecution();
         }}
+        themePreference={themePreference}
+        onThemePreferenceChange={setThemePreference}
         running={executionState.status === "running"}
       />
       <div className="workspace">

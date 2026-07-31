@@ -18,7 +18,7 @@
 
 .inspector h3 {
   margin: 0 0 8px;
-  color: #475467;
+  color: var(--text-subtle);
   font-size: var(--font-caption);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -27,8 +27,8 @@
 .kind-chip {
   display: inline-block;
   border-radius: 999px;
-  color: #344054;
-  background: #eaecf0;
+  color: var(--text-control);
+  background: var(--bg-control-disabled);
   padding: 3px 8px;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: var(--font-micro);
@@ -50,7 +50,7 @@
   display: grid;
   gap: 5px;
   margin-bottom: 12px;
-  color: #475467;
+  color: var(--text-subtle);
   font-size: var(--font-body);
   font-weight: 650;
 }
@@ -61,7 +61,7 @@
   border-radius: 6px;
   padding: 8px;
   color: var(--text);
-  background: #fff;
+  background: var(--bg-input);
 }
 
 .inspector select {
@@ -70,12 +70,12 @@
   border-radius: 6px;
   padding: 8px;
   color: var(--text);
-  background: #fff;
+  background: var(--bg-input);
 }
 
 .inspector-actions {
   margin-top: 18px;
-  border-top: 1px solid #eaecf0;
+  border-top: 1px solid var(--border-subtle);
   padding-top: 14px;
 }
 
@@ -83,7 +83,7 @@
   display: grid;
   gap: 7px;
   margin-top: 22px;
-  border-top: 1px solid #eaecf0;
+  border-top: 1px solid var(--border-subtle);
   padding-top: 15px;
   color: var(--text-muted);
   font-size: var(--font-caption);
@@ -93,7 +93,7 @@
 .readout code,
 .inspector > code {
   display: block;
-  color: #475467;
+  color: var(--text-subtle);
   font-size: var(--font-caption);
 }
 
@@ -104,7 +104,7 @@
 }
 
 .empty-inspector h2 {
-  color: #344054;
+  color: var(--text-control);
 }
 
 .empty-icon {
@@ -113,7 +113,7 @@
 
 .project-summary {
   padding-bottom: 18px;
-  border-bottom: 1px solid #eaecf0;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .summary-grid {
@@ -125,10 +125,10 @@
 
 .summary-grid > span {
   display: grid;
-  border: 1px solid #e4e7ec;
+  border: 1px solid var(--border-subtle);
   border-radius: 6px;
   padding: 8px;
-  color: #344054;
+  color: var(--text-control);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-weight: 700;
 }
@@ -141,7 +141,7 @@
 }
 
 .structure-pass {
-  color: #087a5b;
+  color: var(--success);
   font-size: var(--font-caption);
   font-weight: 700;
 }
@@ -149,8 +149,8 @@
 .inline-error,
 .limitation {
   border-left: 3px solid #f79009;
-  color: #93370d;
-  background: #fffaeb;
+  color: var(--warning-text);
+  background: var(--warning-bg);
   padding: 9px 10px;
   font-size: var(--font-caption);
   line-height: 1.5;
@@ -163,7 +163,7 @@
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgb(16 24 40 / 42%);
+  background: var(--overlay);
 }
 
 .signature-dialog {
@@ -176,7 +176,7 @@
   border-radius: 8px;
   padding: 16px;
   background: var(--bg-panel);
-  box-shadow: 0 24px 60px rgb(16 24 40 / 25%);
+  box-shadow: var(--shadow-lg);
 }
 
 .signature-dialog .function-capture-row {
@@ -195,7 +195,7 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px;
-  background: var(--bg);
+  background: var(--bg-subtle);
 }
 
 .type-auto-match-summary div {
@@ -204,7 +204,7 @@
 }
 
 .type-auto-match-summary dt {
-  color: var(--muted);
+  color: var(--text-muted);
   font-size: var(--font-caption);
   font-weight: 700;
 }

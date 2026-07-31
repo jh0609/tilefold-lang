@@ -13,8 +13,8 @@
   min-height: 58px;
   padding: 7px 12px;
   border-bottom: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.97);
-  box-shadow: 0 2px 6px rgba(16, 24, 40, 0.04);
+  background: var(--bg-panel-translucent);
+  box-shadow: var(--shadow-sm);
 }
 
 .brand {
@@ -50,7 +50,7 @@
 }
 
 .brand .format-label {
-  color: #475467;
+  color: var(--text-subtle);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: var(--font-micro);
 }
@@ -60,7 +60,7 @@
   align-items: center;
   gap: 5px;
   padding-left: 16px;
-  border-left: 1px solid #e4e7ec;
+  border-left: 1px solid var(--border-subtle);
 }
 
 .example-picker {
@@ -210,10 +210,10 @@
   grid-template-columns: 22px minmax(0, 1fr);
   align-items: start;
   gap: 7px;
-  border: 1px solid #fda29b;
+  border: 1px solid var(--error-border);
   border-radius: 6px;
-  color: #7a271a;
-  background: #fff5f4;
+  color: var(--error-text);
+  background: var(--error-bg);
   padding: 7px;
   text-align: left;
 }
@@ -242,11 +242,11 @@
 }
 
 .diagnostic-copy strong {
-  color: #7a271a;
+  color: var(--error-text);
 }
 
 .diagnostic-copy span {
-  color: #912018;
+  color: var(--danger);
 }
 
 .execution-canceled {
@@ -333,7 +333,7 @@
 .trace-event-button[aria-current="step"] {
   border-color: var(--select);
   color: var(--select);
-  background: #edf5ff;
+  background: color-mix(in srgb, var(--select) 12%, var(--bg-panel));
 }
 
 .status-bar {
@@ -351,7 +351,7 @@
 }
 
 .status-ok {
-  color: #087a5b;
+  color: var(--success);
   font-weight: 700;
 }
 

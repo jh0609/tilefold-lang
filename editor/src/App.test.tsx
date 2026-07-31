@@ -50,6 +50,31 @@ function getFunctionResultTypeEditor(): HTMLElement {
 }
 
 describe("Tilefold editor UI", () => {
+  it("lets users choose and persist the editor theme", async () => {
+    const user = userEvent.setup();
+    window.localStorage.removeItem("tilefold.editor.theme");
+    const { unmount } = render(<App />);
+
+    const themePicker = screen.getByRole("combobox", { name: "Theme" });
+    expect(themePicker).toHaveValue("system");
+    expect(screen.getByText("Tilefold Editor").closest(".editor-app")).toHaveAttribute(
+      "data-theme",
+      "system",
+    );
+
+    await user.selectOptions(themePicker, "dark");
+    expect(themePicker).toHaveValue("dark");
+    expect(screen.getByText("Tilefold Editor").closest(".editor-app")).toHaveAttribute(
+      "data-theme",
+      "dark",
+    );
+    expect(window.localStorage.getItem("tilefold.editor.theme")).toBe("dark");
+
+    unmount();
+    render(<App />);
+    expect(screen.getByRole("combobox", { name: "Theme" })).toHaveValue("dark");
+  });
+
   it("opens the shared example and selects then clears an element", async () => {
     const user = userEvent.setup();
     render(<App />);

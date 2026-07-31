@@ -33,14 +33,14 @@
 
 .container-shape rect {
   fill: color-mix(in srgb, var(--container) 8%, transparent);
-  stroke: color-mix(in srgb, var(--container) 65%, white);
+  stroke: color-mix(in srgb, var(--container) 65%, var(--bg-panel));
   stroke-width: 2;
   stroke-dasharray: 8 5;
   vector-effect: non-scaling-stroke;
 }
 
 .container-shape text {
-  fill: #5e5182;
+  fill: var(--container);
   font-size: 9px;
   font-weight: 700;
   pointer-events: none;
@@ -89,7 +89,7 @@
 }
 
 .container-resize-handle-visible {
-  fill: #ffffff;
+  fill: var(--bg-panel);
   stroke: var(--select);
   stroke-width: 2.5;
   pointer-events: none;
@@ -97,12 +97,12 @@
 }
 
 .container-resize-handle:focus-visible .container-resize-handle-visible {
-  stroke: #101828;
+  stroke: var(--text);
   stroke-width: 4;
 }
 
 .boundary-port {
-  fill: #fff;
+  fill: var(--bg-panel);
   stroke: var(--structure);
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
@@ -130,24 +130,24 @@
 }
 
 .container-shape .boundary-port-label {
-  fill: #475467;
+  fill: var(--text-subtle);
   font-size: 10px;
   font-weight: 650;
   pointer-events: none;
 }
 
 .role-result {
-  fill: #ffead5;
+  fill: color-mix(in srgb, var(--result) 18%, var(--bg-panel));
   stroke: var(--result);
 }
 
 .role-parameter {
-  fill: #e7edf4;
+  fill: color-mix(in srgb, var(--structure) 16%, var(--bg-panel));
 }
 
 .wire {
   fill: none;
-  stroke: #40546b;
+  stroke: var(--wire);
   stroke-width: 2.5;
   stroke-linejoin: round;
   stroke-linecap: round;
@@ -175,7 +175,7 @@
 }
 
 .wire-endpoint-visible {
-  fill: #ffffff;
+  fill: var(--bg-panel);
   stroke: var(--selection);
   stroke-width: 2.5;
   pointer-events: none;
@@ -183,7 +183,7 @@
 
 .wire-endpoint-handle.target .wire-endpoint-visible {
   fill: var(--selection);
-  stroke: #ffffff;
+  stroke: var(--bg-panel);
 }
 
 .wire-endpoint-label {
@@ -248,15 +248,15 @@
 }
 
 .junction {
-  fill: #344054;
-  stroke: #fff;
+  fill: var(--text-control);
+  stroke: var(--bg-panel);
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
 }
 
 .junction-outlet {
   fill: var(--select);
-  stroke: #fff;
+  stroke: var(--bg-panel);
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
 }
@@ -275,7 +275,7 @@
 }
 
 .element-node rect {
-  fill: #fff;
+  fill: var(--node-fill);
   stroke: var(--structure);
   stroke-width: 2;
   filter: drop-shadow(0 2px 2px rgba(16, 24, 40, 0.1));
@@ -294,7 +294,7 @@
 
 .element-node .trace-highlight-ring {
   fill: none;
-  stroke: #b54708;
+  stroke: var(--warning-text);
   stroke-width: 3;
   stroke-dasharray: 5 3;
   filter: drop-shadow(0 0 4px rgba(181, 71, 8, 0.42));
@@ -313,38 +313,38 @@
 }
 
 .kind-nat_literal > .element-body {
-  fill: #eaf8f3;
+  fill: var(--node-fill-nat);
   stroke: var(--nat);
 }
 
 .kind-succ > .element-body,
 .kind-nat_rec > .element-body {
-  fill: #edf5fd;
+  fill: var(--node-fill-operation);
   stroke: var(--operation);
 }
 
 .kind-unit_literal > .element-body,
 .kind-drop > .element-body,
 .kind-copy > .element-body {
-  fill: #f2f4f7;
+  fill: var(--node-fill-structure);
   stroke: var(--structure);
 }
 
 .kind-function > .element-body,
 .kind-library_call > .element-body,
 .kind-apply > .element-body {
-  fill: #f2edfb;
+  fill: var(--node-fill-call);
   stroke: var(--call);
 }
 
 .standard-library-call > .element-body {
-  fill: #eef4ff;
-  stroke: #2e64d4;
+  fill: var(--node-fill-result);
+  stroke: var(--operation);
   stroke-dasharray: 7 4;
 }
 
 .element-kind {
-  fill: var(--text);
+  fill: var(--node-text);
   font-size: 12px;
   font-weight: 750;
   pointer-events: none;
@@ -357,7 +357,7 @@
 }
 
 .element-signature {
-  fill: #475467;
+  fill: var(--node-text-muted);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 9px;
   font-weight: 650;
@@ -365,14 +365,14 @@
 }
 
 .element-library-source {
-  fill: #2e64d4;
+  fill: var(--operation);
   font-size: 8px;
   font-weight: 750;
   pointer-events: none;
 }
 
 .element-primary-value {
-  fill: #075f4b;
+  fill: var(--nat);
   font-size: 18px;
   font-weight: 800;
   pointer-events: none;
@@ -422,7 +422,7 @@
 }
 
 .resize-handle-visible {
-  fill: #ffffff;
+  fill: var(--bg-panel);
   stroke: var(--select);
   stroke-width: 2.5;
   pointer-events: none;
@@ -430,7 +430,7 @@
 }
 
 .resize-handle:focus .resize-handle-visible {
-  stroke: #101828;
+  stroke: var(--text);
   stroke-width: 3.5;
 }
 
@@ -439,7 +439,7 @@
 }
 
 .port-anchor {
-  fill: #fff;
+  fill: var(--bg-panel);
   stroke: var(--structure);
   stroke-width: 2;
   pointer-events: none;
@@ -471,11 +471,11 @@
 }
 
 .port.input .port-anchor {
-  fill: #fff;
+  fill: var(--bg-panel);
 }
 
 .port-label {
-  fill: #475467;
+  fill: var(--node-text-muted);
   font-size: 9px;
   font-weight: 650;
   pointer-events: none;
@@ -491,8 +491,8 @@
   gap: 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  color: #475467;
-  background: rgba(255, 255, 255, 0.91);
+  color: var(--text-subtle);
+  background: color-mix(in srgb, var(--bg-panel) 91%, transparent);
   padding: 6px 9px;
   font-size: var(--font-caption);
   pointer-events: none;
@@ -504,7 +504,7 @@
 
 .canvas-hint span + span::before {
   margin-right: 8px;
-  color: #98a2b3;
+  color: var(--text-disabled);
   content: "·";
 }
 
@@ -518,10 +518,10 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text-muted);
-  background: rgba(255, 255, 255, 0.96);
+  background: color-mix(in srgb, var(--bg-panel) 96%, transparent);
   padding: 4px;
   font-size: var(--font-caption);
-  box-shadow: 0 4px 12px rgba(16, 24, 40, 0.08);
+  box-shadow: var(--shadow-md);
   z-index: 1;
 }
 
@@ -554,12 +554,12 @@
   min-width: min(420px, calc(100% - 28px));
   transform: translateX(-50%);
   gap: 2px;
-  border: 1px solid #6ce9a6;
+  border: 1px solid color-mix(in srgb, var(--success) 55%, var(--border));
   border-radius: 8px;
-  color: #05603a;
-  background: rgba(236, 253, 243, 0.96);
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, var(--bg-panel));
   padding: 8px 12px;
-  box-shadow: 0 6px 18px rgba(16, 24, 40, 0.12);
+  box-shadow: var(--shadow-md);
   font-size: var(--font-caption);
   pointer-events: none;
 }
@@ -569,9 +569,9 @@
 }
 
 .connection-banner.is-rejected {
-  border-color: #fda29b;
-  color: #912018;
-  background: rgba(254, 243, 242, 0.97);
+  border-color: var(--error-border);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--error) 12%, var(--bg-panel));
 }
 
 .function-port-action {
@@ -581,11 +581,11 @@
   max-height: min(360px, calc(100% - 32px));
   overflow: auto;
   padding: 12px;
-  border: 1px solid rgba(15, 23, 42, 0.16);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18);
-  color: #0f172a;
+  background: color-mix(in srgb, var(--bg-panel) 98%, transparent);
+  box-shadow: var(--shadow-lg);
+  color: var(--text);
   font-size: var(--font-caption);
 }
 
@@ -600,30 +600,30 @@
 .function-port-action-heading button {
   width: 26px;
   height: 26px;
-  border: 1px solid rgba(15, 23, 42, 0.16);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  background: #fff;
+  background: var(--bg-control);
   cursor: pointer;
 }
 
 .function-port-action p {
   margin: 0 0 10px;
   line-height: 1.4;
-  color: #475569;
+  color: var(--text-subtle);
 }
 
 .function-port-action code {
-  color: #1d4ed8;
+  color: var(--select);
 }
 
 .function-port-action-primary,
 .function-port-action-candidate {
   display: block;
   width: 100%;
-  border: 1px solid rgba(37, 99, 235, 0.22);
+  border: 1px solid color-mix(in srgb, var(--select) 28%, var(--border));
   border-radius: 6px;
-  background: #eff6ff;
-  color: #1e3a8a;
+  background: color-mix(in srgb, var(--select) 12%, var(--bg-panel));
+  color: var(--select);
   cursor: pointer;
   text-align: left;
 }
@@ -642,7 +642,7 @@
 .function-port-action-subheading,
 .function-port-action-empty {
   font-size: 11px;
-  color: #64748b;
+  color: var(--text-muted);
 }
 
 .function-port-action-candidate {
@@ -656,7 +656,7 @@
 
 .function-port-action-candidate small {
   margin-top: 3px;
-  color: #475569;
+  color: var(--text-subtle);
 }
 
 @media (max-width: 700px) {
