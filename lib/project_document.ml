@@ -1876,6 +1876,42 @@ let curried_template_id (function_info : surface_function) index =
 
 let flat_generated_capture key typ = { C.key = key; typ }
 
+let sort_captures_by_port_key captures =
+  List.sort
+    (fun (left : C.capture) (right : C.capture) ->
+      C.Port_key.compare left.C.key right.C.key)
+    captures
+
+let explicit_captures_of_boundary_ports boundary_ports =
+  boundary_ports
+  |> List.filter_map (fun (boundary : boundary_port) ->
+         match boundary.role with
+         | Capture key -> Some (key, boundary.typ)
+         | _ -> None)
+  |> List.sort (fun (left_key, _) (right_key, _) -> String.compare left_key right_key)
+
+let explicit_core_captures_of_boundary_ports ~invalid boundary_ports =
+  explicit_captures_of_boundary_ports boundary_ports
+  |> List.filter_map (fun (key, typ) ->
+         match C.Port_key.of_string key with
+         | Ok key -> Some { C.key; typ }
+         | Error message ->
+             invalid key message;
+             None)
+  |> sort_captures_by_port_key
+
+let generated_core_captures_of_parameters parameters =
+  parameters
+  |> List.map (fun (parameter : surface_parameter) ->
+         match C.Port_key.of_string parameter.name with
+         | Ok key -> flat_generated_capture key parameter.typ
+         | Error _ -> assert false)
+
+let flat_core_captures ~invalid container parameters =
+  explicit_core_captures_of_boundary_ports ~invalid container.boundary_ports
+  @ generated_core_captures_of_parameters parameters
+  |> sort_captures_by_port_key
+
 let list_filteri predicate values =
   values
   |> List.mapi (fun index value -> (index, value))
@@ -1898,6 +1934,15 @@ let generated_curried_surface_scene document =
     match function_info.parameters with
     | [] | [ _ ] -> ([], [], [], [])
     | parameters ->
+        let explicit_captures =
+          document.containers
+          |> List.find_opt (fun (container : container) ->
+                 String.equal container.id function_info.body_container_id)
+          |> Option.map (fun container ->
+                 explicit_captures_of_boundary_ports container.boundary_ports
+                 |> List.map (fun (name, typ) : surface_parameter -> { name; typ }))
+          |> Option.value ~default:[]
+        in
         let last_index = List.length parameters - 1 in
         let containers = ref [] in
         let boundaries = ref [] in
@@ -1911,6 +1956,9 @@ let generated_curried_surface_scene document =
         for index = 0 to last_index - 1 do
           let parameter = List.nth parameters index in
           let previous = list_filteri (fun i _ -> i < index) parameters in
+          let captures_for_container =
+            sort_parameters_by_port_key (previous @ explicit_captures)
+          in
           let captured_for_next =
             list_filteri (fun i _ -> i <= index) parameters
           in
@@ -1941,11 +1989,8 @@ let generated_curried_surface_scene document =
                     parameter_type = parameter.typ;
                     result_type;
                     captures =
-                      List.map
-                        (fun (parameter : surface_parameter) ->
-                          flat_generated_capture (port_key_or_fail parameter.name)
-                            parameter.typ)
-                        previous;
+                      generated_core_captures_of_parameters captures_for_container
+                      |> sort_captures_by_port_key;
                     dependencies = [ function_template_id_or_fail next_template_id ];
                   };
               bounds;
@@ -1973,7 +2018,7 @@ let generated_curried_surface_scene document =
                  position = { G.x = x + 360; y = y + 64 };
                }
             :: !boundaries;
-          previous
+          captures_for_container
           |> List.iteri (fun capture_index (capture : surface_parameter) ->
                  boundaries :=
                    {
@@ -1992,13 +2037,11 @@ let generated_curried_surface_scene document =
           let function_x = x + 168 in
           let function_y = y + 48 in
           let ordered_captures_for_next =
-            sort_parameters_by_port_key captured_for_next
+            sort_parameters_by_port_key (captured_for_next @ explicit_captures)
           in
           let captures =
-            List.map
-              (fun (capture : surface_parameter) ->
-                flat_generated_capture (port_key_or_fail capture.name) capture.typ)
-              ordered_captures_for_next
+            generated_core_captures_of_parameters ordered_captures_for_next
+            |> sort_captures_by_port_key
           in
           let function_element =
             {
@@ -2041,7 +2084,7 @@ let generated_curried_surface_scene document =
           in
           connect_capture { G.x = x; y = y + 64 } (port_key_or_fail parameter.name)
             ("parameter_to_" ^ parameter.name);
-          previous
+          captures_for_container
           |> List.iteri (fun capture_index (capture : surface_parameter) ->
                  connect_capture
                    { G.x = x; y = y + 112 + (capture_index * 24) }
@@ -2123,16 +2166,10 @@ let to_raw_scene document =
     match flat_info_for_container container with
     | Some function_info ->
         let parameters = function_info.parameters in
-        parameters
-        |> List.rev
-        |> List.tl
-        |> List.rev
-        |> List.filter_map (fun (parameter : surface_parameter) ->
-               match C.Port_key.of_string parameter.name with
-               | Ok key -> Some { C.key; typ = parameter.typ }
-               | Error message -> invalid parameter.name message; None)
-        |> List.sort (fun (left : C.capture) (right : C.capture) ->
-               C.Port_key.compare left.C.key right.C.key)
+        let generated_parameters =
+          parameters |> List.rev |> List.tl |> List.rev
+        in
+        flat_core_captures ~invalid container generated_parameters
     | None ->
         container.boundary_ports
         |> List.filter_map (fun (boundary : boundary_port) ->

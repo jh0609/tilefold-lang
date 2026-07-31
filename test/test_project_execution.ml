@@ -1026,6 +1026,173 @@ let () =
   in
   assert (member "status" capture_result = `String "completed");
   assert (member "result" capture_result = `String "Nat(5)");
+  let flat_capture_project : P.t =
+    {
+      format = "tilefold-project";
+      version = 2;
+      snap_tolerance = 8;
+      view = None;
+      junctions = [];
+      surface_project_calls = [];
+      surface_functions =
+        [
+          {
+            name = "flatCaptured";
+            template_id = "flatCaptured";
+            body_container_id = "flatCaptured-body";
+            parameters =
+              [
+                { name = "index"; typ = Tilefold.Core_type.Nat };
+                { name = "previous"; typ = Tilefold.Core_type.Nat };
+              ];
+            result_name = "result";
+            result_type = Tilefold.Core_type.Nat;
+          };
+        ];
+      containers =
+        [
+          {
+            id = "entry";
+            bounds = bounds 0 0 760 360;
+            kind =
+              P.Entry
+                {
+                  template_id = "entry-template";
+                  result_type = Tilefold.Core_type.Nat;
+                  dependencies = [ "flatCaptured" ];
+                };
+            boundary_ports =
+              [
+                boundary "entry-parameter" P.Parameter Tilefold.Core_type.Unit 0 108;
+                boundary "entry-result" P.Result Tilefold.Core_type.Nat 760 186;
+              ];
+          };
+          {
+            id = "flatCaptured-body";
+            bounds = bounds 900 0 480 280;
+            kind =
+              P.Template
+                {
+                  template_id = "flatCaptured";
+                  parameter_type = Tilefold.Core_type.Nat;
+                  result_type = Tilefold.Core_type.Nat;
+                  dependencies = [];
+                };
+            boundary_ports =
+              [
+                boundary "flat-index" P.Parameter Tilefold.Core_type.Nat 0 72;
+                boundary "flat-previous" P.Parameter Tilefold.Core_type.Nat 0 136;
+                boundary "flat-capture-n" (P.Capture "n") Tilefold.Core_type.Nat 0 204;
+                boundary "flat-result" P.Result Tilefold.Core_type.Nat 480 204;
+              ];
+          };
+        ];
+      elements =
+        [
+          element "entry-drop" (P.Drop Tilefold.Core_type.Unit) (bounds 80 80 88 56)
+            [ anchor "input" 80 108 ];
+          element "captured-n" (P.Nat_literal "5") (bounds 80 150 96 56)
+            [ anchor "value" 176 178 ];
+          element
+            "flat-function"
+            (P.Function
+               {
+                 template_id = "flatCaptured";
+                 parameter_type = Tilefold.Core_type.Nat;
+                 result_type =
+                   Tilefold.Core_type.Arrow
+                     (Tilefold.Core_type.Nat, Tilefold.Core_type.Nat);
+                 captures = [ ("n", Tilefold.Core_type.Nat) ];
+               })
+            (bounds 240 136 128 72)
+            [ anchor "n" 240 160; anchor "value" 368 172 ];
+          element "arg-index" (P.Nat_literal "0") (bounds 240 240 96 56)
+            [ anchor "value" 336 268 ];
+          element
+            "apply-index"
+            (P.Apply
+               {
+                 parameter_type = Tilefold.Core_type.Nat;
+                 result_type =
+                   Tilefold.Core_type.Arrow
+                     (Tilefold.Core_type.Nat, Tilefold.Core_type.Nat);
+               })
+            (bounds 420 128 120 90)
+            [
+              anchor "function" 420 158;
+              anchor "argument" 420 188;
+              anchor "result" 540 173;
+            ];
+          element "arg-previous" (P.Nat_literal "0") (bounds 420 250 96 56)
+            [ anchor "value" 516 278 ];
+          element
+            "apply-previous"
+            (P.Apply
+               {
+                 parameter_type = Tilefold.Core_type.Nat;
+                 result_type = Tilefold.Core_type.Nat;
+               })
+            (bounds 600 142 120 90)
+            [
+              anchor "function" 600 172;
+              anchor "argument" 600 202;
+              anchor "result" 720 187;
+            ];
+          element "drop-index" (P.Drop Tilefold.Core_type.Nat) (bounds 980 46 88 56)
+            [ anchor "input" 980 74 ];
+          element "drop-previous" (P.Drop Tilefold.Core_type.Nat) (bounds 980 110 88 56)
+            [ anchor "input" 980 138 ];
+        ];
+      wires =
+        [
+          wire "w-entry-param"
+            (boundary_port "entry" "entry-parameter")
+            (element_port "entry-drop" "input")
+            [ pt 0 108; pt 80 108 ];
+          wire "w-capture-bind"
+            (element_port "captured-n" "value")
+            (element_port "flat-function" "n")
+            [ pt 176 178; pt 240 160 ];
+          wire "w-function-apply-index"
+            (element_port "flat-function" "value")
+            (element_port "apply-index" "function")
+            [ pt 368 172; pt 420 158 ];
+          wire "w-arg-index"
+            (element_port "arg-index" "value")
+            (element_port "apply-index" "argument")
+            [ pt 336 268; pt 420 188 ];
+          wire "w-apply-index"
+            (element_port "apply-index" "result")
+            (element_port "apply-previous" "function")
+            [ pt 540 173; pt 600 172 ];
+          wire "w-arg-previous"
+            (element_port "arg-previous" "value")
+            (element_port "apply-previous" "argument")
+            [ pt 516 278; pt 600 202 ];
+          wire "w-entry-result"
+            (element_port "apply-previous" "result")
+            (boundary_port "entry" "entry-result")
+            [ pt 720 187; pt 760 186 ];
+          wire "w-flat-index"
+            (boundary_port "flatCaptured-body" "flat-index")
+            (element_port "drop-index" "input")
+            [ pt 900 72; pt 980 74 ];
+          wire "w-flat-previous"
+            (boundary_port "flatCaptured-body" "flat-previous")
+            (element_port "drop-previous" "input")
+            [ pt 900 136; pt 980 138 ];
+          wire "w-flat-capture-result"
+            (boundary_port "flatCaptured-body" "flat-capture-n")
+            (boundary_port "flatCaptured-body" "flat-result")
+            [ pt 900 204; pt 1380 204 ];
+        ];
+    }
+  in
+  let flat_capture_result =
+    project_execution_result flat_capture_project
+  in
+  assert (member "status" flat_capture_result = `String "completed");
+  assert (member "result" flat_capture_result = `String "Nat(5)");
   let factorial_project : P.t =
     {
       format = "tilefold-project";
