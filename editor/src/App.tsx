@@ -178,9 +178,15 @@ export function App() {
       const element = document.geometry.elements.find(
         (candidate) => candidate.id === selection.id,
       );
-      if (element) return findElementOwnerContainer(document, element);
+      if (element) {
+        const owner = findElementOwnerContainer(document, element);
+        if (owner) return owner;
+      }
     }
     return (
+      document.geometry.containers.find(
+        (container) => container.id === document.currentContainerId,
+      ) ??
       document.geometry.containers.find(
         (container) => container.kind.kind === "entry",
       ) ?? document.geometry.containers[0]
@@ -397,17 +403,20 @@ export function App() {
   }
 
   function add(kind: AddableElementKind) {
-    const currentContainer = document.geometry.containers.find(
-      (container) => container.id === document.currentContainerId,
-    );
+    const targetContainer = functionHost;
+    if (!targetContainer) {
+      setInspectorError("Select an entry or function container before adding a node.");
+      return;
+    }
     const command = {
       type: "add_element",
       kind,
+      containerId: targetContainer.id,
       center: findOpenElementCenter(
         document,
         kind,
         viewportCenter,
-        currentContainer?.bounds,
+        targetContainer.bounds,
       ),
     } as const;
     const nextDocument = runCommand(command);
@@ -416,6 +425,31 @@ export function App() {
     if (element) {
       setSelection({ type: "element", id: element.id });
     }
+  }
+
+  function activateSelectionContainer(next: Selection | null) {
+    let containerId: string | null = null;
+    if (next?.type === "container") {
+      containerId = next.id;
+    } else if (next?.type === "boundary") {
+      containerId = next.containerId;
+    } else if (next?.type === "element") {
+      const element = document.geometry.elements.find(
+        (candidate) => candidate.id === next.id,
+      );
+      containerId = element ? findElementOwnerContainer(document, element)?.id ?? null : null;
+    }
+    if (!containerId || containerId === document.currentContainerId) return;
+    setHistory((current) => ({
+      ...current,
+      present: { ...current.present, currentContainerId: containerId },
+    }));
+  }
+
+  function select(next: Selection | null) {
+    setSelection(next);
+    activateSelectionContainer(next);
+    setInspectorError(null);
   }
 
   function selectionCanBeDeleted(current: Selection | null): boolean {
@@ -826,8 +860,7 @@ export function App() {
           onFitView={fitView}
           onResetView={() => setViewBox(savedViewBox(document.view))}
           onSelect={(next) => {
-            setSelection(next);
-            setInspectorError(null);
+            select(next);
           }}
           onMoveElement={(id, next) => {
             const element = document.geometry.elements.find(

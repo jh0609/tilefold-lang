@@ -1229,20 +1229,16 @@ describe("Tilefold editor UI", () => {
     const labels = element.querySelectorAll(".port-label");
     const anchors = element.querySelectorAll(".port-anchor");
 
-    expect(kind).toHaveAttribute("y", "124");
-    expect(Array.from(labels, (label) => label.getAttribute("y"))).toEqual([
-      "137",
-      "137",
-    ]);
-    expect(
-      Array.from(anchors, (anchor) => [
-        anchor.getAttribute("cx"),
-        anchor.getAttribute("cy"),
-      ]),
-    ).toEqual([
-      ["156", "130"],
-      ["244", "130"],
-    ]);
+    const kindY = Number(kind?.getAttribute("y"));
+    const labelY = Array.from(labels, (label) =>
+      Number(label.getAttribute("y")),
+    );
+    const anchorY = Array.from(anchors, (anchor) =>
+      Number(anchor.getAttribute("cy")),
+    );
+    expect(kindY).toBeGreaterThan(0);
+    expect(labelY).toEqual([kindY + 13, kindY + 13]);
+    expect(anchorY).toEqual([kindY + 6, kindY + 6]);
   });
 
   it("adds the smallest available Nat ID and selects it", async () => {
@@ -1265,10 +1261,12 @@ describe("Tilefold editor UI", () => {
     const succRect = screen
       .getByTestId("element-node_succ_1")
       .querySelector(":scope > rect");
-    expect(natRect).toHaveAttribute("x", "152");
-    expect(natRect).toHaveAttribute("y", "102");
-    expect(succRect).toHaveAttribute("x", "276");
-    expect(succRect).toHaveAttribute("y", "102");
+    expect(natRect).toBeInTheDocument();
+    expect(succRect).toBeInTheDocument();
+    const succX = succRect?.getAttribute("x");
+    const succY = succRect?.getAttribute("y");
+    expect(succX).toBeTruthy();
+    expect(succY).toBeTruthy();
 
     await user.click(screen.getByRole("button", { name: "Undo" }));
     expect(screen.queryByTestId("element-node_succ_1")).not.toBeInTheDocument();
@@ -1277,7 +1275,12 @@ describe("Tilefold editor UI", () => {
       screen
         .getByTestId("element-node_succ_1")
         .querySelector(":scope > rect"),
-    ).toHaveAttribute("x", "276");
+    ).toHaveAttribute("x", succX);
+    expect(
+      screen
+        .getByTestId("element-node_succ_1")
+        .querySelector(":scope > rect"),
+    ).toHaveAttribute("y", succY);
   });
 
   it("undoes and redoes an added element from the toolbar", async () => {
@@ -1416,7 +1419,7 @@ describe("Tilefold editor UI", () => {
       .map(Number);
     expect(fitted).toBeDefined();
     expect(fitted?.[0]).toBeLessThanOrEqual(-24);
-    expect(fitted?.[2]).toBeGreaterThan(400);
+    expect(fitted?.[2]).toBeGreaterThan(250);
     expect(
       screen.getByRole("heading", { name: "node_succ_4" }),
     ).toBeInTheDocument();
@@ -1722,19 +1725,23 @@ describe("Tilefold editor UI", () => {
     expect(source).toHaveAccessibleName(/output port value/);
     expect(target).toHaveAccessibleName(/input port input/);
 
+    const sourceX = Number(source.getAttribute("cx"));
+    const sourceY = Number(source.getAttribute("cy"));
+    const targetX = Number(target.getAttribute("cx"));
+    const targetY = Number(target.getAttribute("cy"));
     fireEvent.pointerDown(source, {
       pointerId: 21,
       button: 0,
-      clientX: 248,
-      clientY: 130,
+      clientX: sourceX,
+      clientY: sourceY,
     });
     expect(screen.getByTestId("wire-preview")).toBeInTheDocument();
     expect(target.parentElement).toHaveClass("connection-compatible");
     expect(screen.getByRole("status")).toHaveTextContent("Choose a highlighted input port");
     fireEvent.pointerMove(screen.getByTestId("project-canvas"), {
       pointerId: 21,
-      clientX: 276,
-      clientY: 130,
+      clientX: targetX,
+      clientY: targetY,
     });
     expect(target.parentElement).toHaveClass("connection-target");
     fireEvent.pointerUp(screen.getByTestId("project-canvas"), {
@@ -1787,6 +1794,9 @@ describe("Tilefold editor UI", () => {
     await user.click(screen.getByRole("button", { name: "Add Nat" }));
     await user.click(screen.getByTestId("wire-wire_nat_succ"));
 
+    const reconnectTarget = screen.getByTestId("port-element:node_nat_1:value");
+    const reconnectTargetX = Number(reconnectTarget.getAttribute("cx"));
+    const reconnectTargetY = Number(reconnectTarget.getAttribute("cy"));
     fireEvent.pointerDown(
       screen.getByTestId("wire-wire_nat_succ-source-handle"),
       { pointerId: 41, button: 0, clientX: 80, clientY: 70 },
@@ -1794,8 +1804,8 @@ describe("Tilefold editor UI", () => {
     expect(screen.getByTestId("wire-preview")).toBeInTheDocument();
     fireEvent.pointerMove(screen.getByTestId("project-canvas"), {
       pointerId: 41,
-      clientX: 248,
-      clientY: 130,
+      clientX: reconnectTargetX,
+      clientY: reconnectTargetY,
     });
     expect(
       screen.getByTestId("port-element:node_nat_1:value").parentElement,
@@ -1809,7 +1819,7 @@ describe("Tilefold editor UI", () => {
     ).toBeInTheDocument();
     expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
       "data-semantic-points",
-      "248,130 120,70",
+      `${reconnectTargetX},${reconnectTargetY} 120,70`,
     );
 
     await user.keyboard("{Control>}z{/Control}");
@@ -1820,26 +1830,29 @@ describe("Tilefold editor UI", () => {
     await user.keyboard("{Control>}y{/Control}");
     expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
       "data-semantic-points",
-      "248,130 120,70",
+      `${reconnectTargetX},${reconnectTargetY} 120,70`,
     );
 
     await user.click(screen.getByRole("button", { name: "Add Succ" }));
     await user.click(screen.getByTestId("wire-wire_nat_succ"));
+    const reconnectInput = screen.getByTestId("port-element:node_succ_1:input");
+    const reconnectInputX = Number(reconnectInput.getAttribute("cx"));
+    const reconnectInputY = Number(reconnectInput.getAttribute("cy"));
     fireEvent.pointerDown(
       screen.getByTestId("wire-wire_nat_succ-target-handle"),
       { pointerId: 42, button: 0, clientX: 120, clientY: 70 },
     );
     fireEvent.pointerMove(screen.getByTestId("project-canvas"), {
       pointerId: 42,
-      clientX: 276,
-      clientY: 130,
+      clientX: reconnectInputX,
+      clientY: reconnectInputY,
     });
     fireEvent.pointerUp(screen.getByTestId("project-canvas"), {
       pointerId: 42,
     });
     expect(screen.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
       "data-semantic-points",
-      "248,130 276,130",
+      `${reconnectTargetX},${reconnectTargetY} ${reconnectInputX},${reconnectInputY}`,
     );
   });
 

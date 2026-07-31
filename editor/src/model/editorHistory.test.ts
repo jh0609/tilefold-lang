@@ -28,6 +28,43 @@ describe("editor command history", () => {
     expect(redone.present.geometry.elements.at(-1)).toEqual(added);
   });
 
+  it("adds an element against the explicit target container instead of stale currentContainerId", () => {
+    const initial = parseProjectJson(exampleJson);
+    const withTemplate = executeEditorCommand(createEditorHistory(initial), {
+      type: "add_function_template",
+      hostContainerId: "entry",
+      draft: {
+        templateId: "helper",
+        parameterType: "unit",
+        resultType: "nat",
+      },
+    }).history.present;
+    const template = withTemplate.geometry.containers.find(
+      (container) =>
+        container.kind.kind === "template" &&
+        container.kind.templateId === "helper",
+    )!;
+    const stale = { ...withTemplate, currentContainerId: template.id };
+    const executed = executeEditorCommand(createEditorHistory(stale), {
+      type: "add_element",
+      kind: "nat_literal",
+      containerId: "entry",
+      center: { x: 500, y: 300 },
+    }).history;
+    const added = executed.present.geometry.elements.at(-1)!;
+
+    expect(executed.present.currentContainerId).toBe("entry");
+    expect(added.kind).toBe("nat_literal");
+    expect(added.bounds.x).toBe(452);
+    expect(added.bounds.y).toBe(272);
+
+    const undone = undoEditorCommand(executed);
+    expect(undone.present).toBe(stale);
+    const redone = redoEditorCommand(undone);
+    expect(redone.present.geometry.elements.at(-1)).toEqual(added);
+    expect(redone.present.currentContainerId).toBe("entry");
+  });
+
   it("undoes and redoes the whole Function authoring transaction once", () => {
     const initial = parseProjectJson(exampleJson);
     const executed = executeEditorCommand(createEditorHistory(initial), {

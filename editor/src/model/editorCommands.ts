@@ -48,6 +48,7 @@ export type EditorCommand =
       type: "add_element";
       kind: AddableElementKind;
       center: Point;
+      containerId?: string;
     }
   | {
       type: "add_function_template";
@@ -183,7 +184,13 @@ export function applyEditorCommand(
 ): CommandResult {
   switch (command.type) {
     case "add_element":
-      return addElement(document, command.kind, command.center);
+      return addElement(
+        command.containerId
+          ? { ...document, currentContainerId: command.containerId }
+          : document,
+        command.kind,
+        command.center,
+      );
     case "add_function_template": {
       const result = addFunctionTemplate(
         document,
