@@ -33,9 +33,10 @@ shows that selected value type directly in canvas titles such as `NatRec<Nat>`,
   and `result` use `A`.
 - `BoolRec<A>` always takes `condition: Bool`, while `false_case`,
   `true_case`, and `result` use `A`.
-- A fresh Rec node can infer `A` from the first safe connection to a value
-  port. For example, connecting a Bool value to a new `NatRec` base changes it
-  to `NatRec<Bool>` before adding the wire.
+- When a wire is dropped on a port with a safely editable type parameter, the
+  editor can offer to change that stored type and connect in one confirmed edit.
+  For example, connecting a Bool value to a default `NatRec<Nat>` base offers to
+  change it to `NatRec<Bool>` before adding the wire.
 - If existing value-port wires would conflict, the editor keeps the current
   type and explains the mismatch. Manual type edits live in the Inspector under
   **Accumulator / result type** and are blocked while connected wires would be
@@ -46,6 +47,23 @@ Fast Run use the same typed `NatRec[A]` and `BoolRec[A]` graph model.
 Trace Run records the transparent Core rewrite trace; Fast Run shares the same
 decode, validation, and lowering preflight, then computes supported programs
 without materializing every raw rewrite event.
+
+### Type Auto-Matching
+
+Connection type auto-matching is a confirmed editor command, not an implicit
+cast. If a dragged wire is not directly compatible, the editor checks whether
+one endpoint has a safe, editable type parameter that can be changed to the
+other endpoint's exact Core type. The current policy prefers changing the input
+side; if the input is fixed, it may consider the output side. Fixed primitives
+such as `Succ`, literals, and already compatible ports are never rewritten into
+different operations.
+
+The confirmation dialog shows the source type, current target type, owner being
+changed, before/after type, and affected existing wire count. Confirming applies
+the type change and new wire as one undoable command. Canceling leaves the
+Project document unchanged and adds no history entry. If an editable owner
+already has connected wires, the editor keeps the existing incompatible
+connection feedback instead of silently deleting or changing those wires.
 
 ### Product Values
 

@@ -464,11 +464,26 @@ Escape, `pointercancel`, or lost pointer capture restores a pan's starting
 camera. Wheel navigation is paused during element, connection, reconnection, or
 pan gestures so their coordinate transforms remain stable.
 
-Starting a connection highlights every exact, currently compatible destination
-port and de-emphasizes rejected candidates. Hovering a rejected port surfaces
-the validator's reason in a canvas banner; no approximate, geometric, or
-name-based compatibility is inferred. This connection guidance is ephemeral UI
-state and never enters Project JSON or history.
+Starting a connection highlights exact compatible destination ports and ports
+that have one safe, confirmable type auto-match. Hovering a rejected port
+surfaces the validator's reason in a canvas banner; no approximate, geometric,
+or name-based compatibility is inferred. This connection guidance is ephemeral
+UI state and never enters Project JSON or history.
+
+Type auto-matching is a confirmation-based editing shortcut. When a mismatched
+wire is dropped on a port whose owner has editable type parameters, the editor
+builds a structural Core-type plan using the same recursive type AST as normal
+validation. The policy prefers changing the destination/input side to the
+source/output type; if the destination is fixed, the source side can be
+considered. Confirming applies the type-parameter change and the new wire as one
+typed command, so one Undo restores both the previous type and wire set and one
+Redo reapplies both. Canceling, pressing Escape, or dropping on a fixed
+primitive mismatch leaves the document, autosave state, and history unchanged.
+The command refuses owners with existing wires that would need cleanup, matching
+the Inspector policy that connected generic nodes must be disconnected before
+their type parameters change. This is not a cast or runtime coercion: Project
+JSON stores the changed explicit type, and Trace Run and Fast Run see the same
+validated graph as before.
 
 Containers are selectable but cannot be moved. Moving a container
 without a fully specified policy for contained elements and wires could change

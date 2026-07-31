@@ -39,6 +39,11 @@ import {
   type PrimitiveCoreType,
 } from "./coreTypes";
 import {
+  applyTypeAutoMatchChange,
+  verifyTypeAutoMatchPlan,
+  type TypeAutoMatchPlan,
+} from "./typeAutoMatch";
+import {
   STANDARD_LIBRARY_FUNCTIONS,
   isStandardLibraryTemplate,
   standardLibraryFunction,
@@ -4285,9 +4290,6 @@ export function addWire(
   source: ConnectablePort,
   target: ConnectablePort,
 ): { document: ProjectDocument; wire: ProjectWire } | { error: string } {
-  const inferred = inferRecTypeForFirstConnection(document, source, target);
-  if ("error" in inferred) return inferred;
-  document = inferred.document;
   if (
     managedCaptureSourcePort(document, source) ||
     resourceFlowSourceIds(document).has(source.key)
@@ -5130,6 +5132,22 @@ export function updatePairTypes(
       },
     },
   };
+}
+
+export function addWireWithTypeAutoMatch(
+  document: ProjectDocument,
+  plan: TypeAutoMatchPlan,
+): { document: ProjectDocument; wire: ProjectWire } | { error: string } {
+  const verified = verifyTypeAutoMatchPlan(document, plan);
+  if ("error" in verified) return verified;
+  const changed = applyTypeAutoMatchChange(document, verified.plan.change);
+  const ports = collectConnectablePorts(changed);
+  const source = ports.find((port) => port.key === plan.source.key);
+  const target = ports.find((port) => port.key === plan.target.key);
+  if (!source || !target) {
+    return { error: "The auto-matched ports are no longer available." };
+  }
+  return addWire(changed, source, target);
 }
 
 export function updateSumTypes(

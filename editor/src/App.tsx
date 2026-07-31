@@ -16,6 +16,7 @@ import {
   projectContentBounds,
   savedViewBox,
 } from "./model/coordinates";
+import { formatCoreType } from "./model/coreTypes";
 import {
   type EditorCommand,
 } from "./model/editorCommands";
@@ -72,6 +73,10 @@ import {
   type ExampleProjectId,
 } from "./model/exampleProjects";
 import type { StandardLibraryFunction } from "./model/standardLibrary";
+import {
+  planTypeAutoMatch,
+  type TypeAutoMatchPlan,
+} from "./model/typeAutoMatch";
 
 const initialExample = EXAMPLE_PROJECTS[0];
 const initialDocument = parseProjectJson(initialExample.projectJson);
@@ -119,6 +124,8 @@ export function App() {
   const [importError, setImportError] = useState<string | null>(null);
   const [inspectorError, setInspectorError] = useState<string | null>(null);
   const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
+  const [typeAutoMatchPlan, setTypeAutoMatchPlan] =
+    useState<TypeAutoMatchPlan | null>(null);
   const [executionState, setExecutionState] = useState<ExecutionState>({
     status: "idle",
   });
@@ -691,6 +698,19 @@ export function App() {
   }
 
   function connectPorts(source: ConnectablePort, target: ConnectablePort) {
+    const autoMatch = planTypeAutoMatch(document, source, target);
+    if (autoMatch.kind === "auto_match") {
+      setTypeAutoMatchPlan(autoMatch.plan);
+      setConnectionMessage(null);
+      setInspectorError(null);
+      return;
+    }
+    if (autoMatch.kind === "ambiguous") {
+      setConnectionMessage(
+        "This connection has more than one safe type change. Change a type in the Inspector first.",
+      );
+      return;
+    }
     const nextDocument = runCommand({ type: "add_wire", source, target });
     if (!nextDocument) return;
     const wire = nextDocument.geometry.wires.at(-1);
@@ -698,6 +718,27 @@ export function App() {
       setSelection({ type: "wire", id: wire.id });
       setConnectionMessage(`Added wire ${wire.id}.`);
     }
+  }
+
+  function confirmTypeAutoMatch() {
+    const plan = typeAutoMatchPlan;
+    if (!plan) return;
+    const nextDocument = runCommand({
+      type: "add_wire_with_type_auto_match",
+      plan,
+    });
+    if (!nextDocument) return;
+    const wire = nextDocument.geometry.wires.at(-1);
+    if (wire) setSelection({ type: "wire", id: wire.id });
+    setTypeAutoMatchPlan(null);
+    setConnectionMessage(
+      `Changed ${plan.change.ownerLabel} type and added a wire.`,
+    );
+  }
+
+  function cancelTypeAutoMatch() {
+    setTypeAutoMatchPlan(null);
+    setConnectionMessage("Type auto-match cancelled.");
   }
 
   function addFunctionReference(target: ConnectablePort, templateId: string) {
@@ -774,6 +815,11 @@ export function App() {
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      if (typeAutoMatchPlan && event.key === "Escape") {
+        event.preventDefault();
+        cancelTypeAutoMatch();
+        return;
+      }
       const modifier = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
       if (modifier && key === "z") {
@@ -1175,6 +1221,53 @@ export function App() {
           onDiagnosticSelect={focusDiagnostic}
         />
       </div>
+      {typeAutoMatchPlan && (
+        <div className="signature-dialog-backdrop">
+          <section
+            className="signature-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="type-auto-match-title"
+          >
+            <strong id="type-auto-match-title">
+              Change type and connect?
+            </strong>
+            <p>
+              Current target port type is{" "}
+              <code>{formatCoreType(typeAutoMatchPlan.targetType)}</code>, but
+              the output type is{" "}
+              <code>{formatCoreType(typeAutoMatchPlan.sourceType)}</code>.
+            </p>
+            <p>
+              {typeAutoMatchPlan.change.ownerLabel} can be updated so this wire
+              can be connected.
+            </p>
+            <dl className="type-auto-match-summary">
+              <div>
+                <dt>Change</dt>
+                <dd>{typeAutoMatchPlan.message}</dd>
+              </div>
+              <div>
+                <dt>Affected existing wires</dt>
+                <dd>{typeAutoMatchPlan.affectedConnectionIds.length}</dd>
+              </div>
+            </dl>
+            <div className="dialog-actions">
+              <button type="button" onClick={cancelTypeAutoMatch}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary"
+                autoFocus
+                onClick={confirmTypeAutoMatch}
+              >
+                Change and connect
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       <StatusBar
         document={document}
         importError={importError}

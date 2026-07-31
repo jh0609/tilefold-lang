@@ -8,6 +8,7 @@ import {
   addFunctionTemplateAndReferenceToPort,
   addResultBoundary,
   addWire,
+  addWireWithTypeAutoMatch,
   compatibleFunctionReferenceCandidates,
   deleteSelection,
   draftFunctionForExpectedPort,
@@ -27,10 +28,12 @@ import {
   templateCaptureDrafts,
   templateFunctionReferences,
   updateApplyTypes,
+  updateCaseTypes,
   updateElementType,
   updateEntryResultType,
   updateListItemType,
   updateListRecTypes,
+  updateSumTypes,
   type AddableElementKind,
 } from "./editorOps";
 import { exportProjectJson, parseProjectJson } from "./importProject";
@@ -38,6 +41,7 @@ import { collectConnectablePorts } from "./portConnections";
 import { preflightProjectDiagnostics } from "./sourceDiagnostics";
 import type { ProjectElement } from "./project";
 import { STANDARD_LIBRARY_FUNCTIONS } from "./standardLibrary";
+import { planTypeAutoMatch } from "./typeAutoMatch";
 
 function disconnectedPair() {
   let project = parseProjectJson(exampleJson);
@@ -2416,7 +2420,7 @@ describe("container geometry editing", () => {
 });
 
 describe("Rec node value type UX", () => {
-  it("infers a default NatRec accumulator/result type from the first safe value connection", () => {
+  it("plans and applies a confirmed NatRec accumulator/result type match", () => {
     let project = parseProjectJson(exampleJson);
     project = addElement(project, "bool_literal", { x: 460, y: 160 }).document;
     project = addElement(project, "nat_rec", { x: 620, y: 160 }).document;
@@ -2428,7 +2432,13 @@ describe("Rec node value type UX", () => {
       (port) => port.ownerId === "node_nat_rec_1" && port.name === "base",
     )!;
 
-    const connected = addWire(project, source, target);
+    expect(addWire(project, source, target)).toMatchObject({
+      error: expect.stringContaining("Type mismatch"),
+    });
+    const planned = planTypeAutoMatch(project, source, target);
+    expect(planned.kind).toBe("auto_match");
+    if (planned.kind !== "auto_match") throw new Error("expected plan");
+    const connected = addWireWithTypeAutoMatch(project, planned.plan);
     if ("error" in connected) throw new Error(connected.error);
     project = connected.document;
 
@@ -2448,26 +2458,150 @@ describe("Rec node value type UX", () => {
     });
   });
 
-  it("infers a default BoolRec branch/result type from the first safe branch connection", () => {
+  it("plans and applies a confirmed BoolRec branch/result type match", () => {
     let project = parseProjectJson(exampleJson);
-    project = addElement(project, "bool_literal", { x: 460, y: 160 }).document;
+    project = addElement(project, "nat_literal", { x: 460, y: 160 }).document;
     project = addElement(project, "bool_rec", { x: 620, y: 160 }).document;
     const ports = collectConnectablePorts(project);
     const source = ports.find(
-      (port) => port.ownerId === "node_bool_1" && port.name === "value",
+      (port) => port.ownerId === "node_nat_1" && port.name === "value",
     )!;
     const target = ports.find(
       (port) => port.ownerId === "node_bool_rec_1" && port.name === "true_case",
     )!;
 
-    const connected = addWire(project, source, target);
+    const planned = planTypeAutoMatch(project, source, target);
+    expect(planned.kind).toBe("auto_match");
+    if (planned.kind !== "auto_match") throw new Error("expected plan");
+    const connected = addWireWithTypeAutoMatch(project, planned.plan);
     if ("error" in connected) throw new Error(connected.error);
 
     const rec = connected.document.geometry.elements.find(
       (element): element is Extract<ProjectElement, { kind: "bool_rec" }> =>
         element.id === "node_bool_rec_1" && element.kind === "bool_rec",
     )!;
-    expect(rec.properties.type).toBe("bool");
+    expect(rec.properties.type).toBe("nat");
+  });
+
+  it("does not mutate the project when a type auto-match plan is only inspected", () => {
+    let project = parseProjectJson(exampleJson);
+    project = addElement(project, "nat_literal", { x: 420, y: 160 }).document;
+    project = addElement(project, "cons", { x: 620, y: 160 }).document;
+    project = updateListItemType(project, "node_cons_1", "bool").document;
+    const before = exportProjectJson(project);
+    const ports = collectConnectablePorts(project);
+    const source = ports.find(
+      (port) => port.ownerId === "node_nat_1" && port.name === "value",
+    )!;
+    const target = ports.find(
+      (port) => port.ownerId === "node_cons_1" && port.name === "head",
+    )!;
+    const planned = planTypeAutoMatch(project, source, target);
+    expect(planned.kind).toBe("auto_match");
+    expect(exportProjectJson(project)).toBe(before);
+  });
+
+  it("auto-matches shared Cons item type across head, tail, and result", () => {
+    let project = parseProjectJson(exampleJson);
+    project = addElement(project, "nat_literal", { x: 420, y: 160 }).document;
+    project = addElement(project, "cons", { x: 620, y: 160 }).document;
+    project = updateListItemType(project, "node_cons_1", "bool").document;
+    const ports = collectConnectablePorts(project);
+    const source = ports.find(
+      (port) => port.ownerId === "node_nat_1" && port.name === "value",
+    )!;
+    const target = ports.find(
+      (port) => port.ownerId === "node_cons_1" && port.name === "head",
+    )!;
+    const planned = planTypeAutoMatch(project, source, target);
+    expect(planned.kind).toBe("auto_match");
+    if (planned.kind !== "auto_match") throw new Error("expected plan");
+    const connected = addWireWithTypeAutoMatch(project, planned.plan);
+    if ("error" in connected) throw new Error(connected.error);
+    const cons = connected.document.geometry.elements.find(
+      (element): element is Extract<ProjectElement, { kind: "cons" }> =>
+        element.id === "node_cons_1" && element.kind === "cons",
+    )!;
+    expect(cons.properties.itemType).toBe("nat");
+    const nextPorts = collectConnectablePorts(connected.document);
+    expect(nextPorts.find((port) => port.key === "element:node_cons_1:tail")?.type).toEqual({ list: "nat" });
+    expect(nextPorts.find((port) => port.key === "element:node_cons_1:value")?.type).toEqual({ list: "nat" });
+  });
+
+  it("auto-matches ListRec item type and updates the derived step type", () => {
+    let project = parseProjectJson(exampleJson);
+    project = addElement(project, "nil", { x: 420, y: 160 }).document;
+    project = addElement(project, "list_rec", { x: 650, y: 160 }).document;
+    project = updateListItemType(project, "node_nil_1", "nat").document;
+    project = updateListRecTypes(project, "node_list_rec_1", "bool", "nat").document;
+    const ports = collectConnectablePorts(project);
+    const source = ports.find(
+      (port) => port.ownerId === "node_nil_1" && port.name === "value",
+    )!;
+    const target = ports.find(
+      (port) => port.ownerId === "node_list_rec_1" && port.name === "list",
+    )!;
+    const planned = planTypeAutoMatch(project, source, target);
+    expect(planned.kind).toBe("auto_match");
+    if (planned.kind !== "auto_match") throw new Error("expected plan");
+    const connected = addWireWithTypeAutoMatch(project, planned.plan);
+    if ("error" in connected) throw new Error(connected.error);
+    const rec = connected.document.geometry.elements.find(
+      (element): element is Extract<ProjectElement, { kind: "list_rec" }> =>
+        element.id === "node_list_rec_1" && element.kind === "list_rec",
+    )!;
+    expect(rec.properties.itemType).toBe("nat");
+    const step = collectConnectablePorts(connected.document).find(
+      (port) => port.ownerId === "node_list_rec_1" && port.name === "step",
+    )!;
+    expect(step.type).toEqual({
+      arrow: [
+        { product: ["nat", { product: [{ list: "nat" }, "nat"] }] },
+        "nat",
+      ],
+    });
+  });
+
+  it("auto-matches Case scrutinee type and updates the onLeft function type", () => {
+    let project = parseProjectJson(exampleJson);
+    project = addElement(project, "left", { x: 420, y: 160 }).document;
+    project = addElement(project, "case", { x: 650, y: 160 }).document;
+    project = updateSumTypes(project, "node_left_1", "nat", "bool").document;
+    const caseTyped = updateCaseTypes(project, "node_case_1", "unit", "bool", "nat");
+    if (caseTyped.error) throw new Error(caseTyped.error);
+    project = caseTyped.document;
+    const ports = collectConnectablePorts(project);
+    const source = ports.find(
+      (port) => port.ownerId === "node_left_1" && port.name === "value",
+    )!;
+    const target = ports.find(
+      (port) => port.ownerId === "node_case_1" && port.name === "scrutinee",
+    )!;
+    const planned = planTypeAutoMatch(project, source, target);
+    expect(planned.kind).toBe("auto_match");
+    if (planned.kind !== "auto_match") throw new Error("expected plan");
+    const connected = addWireWithTypeAutoMatch(project, planned.plan);
+    if ("error" in connected) throw new Error(connected.error);
+    const onLeft = collectConnectablePorts(connected.document).find(
+      (port) => port.ownerId === "node_case_1" && port.name === "onLeft",
+    )!;
+    expect(onLeft.type).toEqual({ arrow: ["nat", "nat"] });
+  });
+
+  it("does not offer type auto-match for fixed primitive ports", () => {
+    let project = parseProjectJson(exampleJson);
+    project = addElement(project, "bool_literal", { x: 420, y: 160 }).document;
+    project = addElement(project, "succ", { x: 650, y: 160 }).document;
+    const ports = collectConnectablePorts(project);
+    const source = ports.find(
+      (port) => port.ownerId === "node_bool_1" && port.name === "value",
+    )!;
+    const target = ports.find(
+      (port) => port.ownerId === "node_succ_1" && port.name === "input",
+    )!;
+    expect(planTypeAutoMatch(project, source, target)).toMatchObject({
+      kind: "incompatible",
+    });
   });
 
   it("keeps a Rec type fixed when existing value connections would conflict", () => {
@@ -2494,11 +2628,14 @@ describe("Rec node value type UX", () => {
     const boolSource = ports.find(
       (port) => port.ownerId === "node_bool_1" && port.name === "value",
     )!;
-    const result = ports.find(
-      (port) => port.ownerId === "node_nat_rec_1" && port.name === "result",
+    const occupiedBase = ports.find(
+      (port) => port.ownerId === "node_nat_rec_1" && port.name === "base",
     )!;
-    expect(addWire(project, boolSource, result)).toMatchObject({
-      error: expect.stringContaining("already has a"),
+    expect(addWire(project, boolSource, occupiedBase)).toMatchObject({
+      error: expect.stringContaining("Type mismatch"),
+    });
+    expect(planTypeAutoMatch(project, boolSource, occupiedBase)).toMatchObject({
+      kind: "incompatible",
     });
   });
 

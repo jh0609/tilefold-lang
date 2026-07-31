@@ -16,7 +16,6 @@ import { formatCoreType } from "../model/coreTypes";
 import {
   findElementOwnerContainer,
   compatibleFunctionReferenceCandidates,
-  inferRecTypeForFirstConnection,
   moveContainer,
   moveElement,
   replaceableAutoDropWireId,
@@ -51,6 +50,7 @@ import type {
   ProjectElement,
   Selection,
 } from "../model/project";
+import { planTypeAutoMatch } from "../model/typeAutoMatch";
 import { ElementNode } from "./ElementNode";
 import type { ResizeHandle } from "./ElementNode";
 
@@ -58,17 +58,17 @@ function isFunctionType(type: CoreType): boolean {
   return typeof type !== "string";
 }
 
-function validateConnectionWithSafeRecInference(
+function validateConnectionWithTypeAutoMatchPreview(
   document: ProjectDocument,
   source: ConnectablePort,
   target: ConnectablePort,
-  options: Parameters<typeof validateConnection>[3],
+  options: Parameters<typeof validateConnection>[3] = {},
 ) {
   const validation = validateConnection(document, source, target, options);
   if (!("error" in validation)) return validation;
-  const inferred = inferRecTypeForFirstConnection(document, source, target);
-  if ("error" in inferred || inferred.document === document) return validation;
-  return validateConnection(inferred.document, source, target, options);
+  if (options.excludeWireId || options.allowSourceFanOut) return validation;
+  const autoMatch = planTypeAutoMatch(document, source, target);
+  return autoMatch.kind === "auto_match" ? { source, target } : validation;
 }
 
 interface DragState {
@@ -488,7 +488,7 @@ export function Canvas({
         connection.kind === "reconnect" && connection.endpoint === "source"
           ? connection.fixed
           : candidate;
-      const validation = validateConnectionWithSafeRecInference(document, source, target, {
+      const validation = validateConnectionWithTypeAutoMatchPreview(document, source, target, {
         excludeWireId:
           connection.kind === "reconnect"
             ? connection.wireId
@@ -591,7 +591,7 @@ export function Canvas({
         activeConnection.endpoint === "source"
           ? activeConnection.fixed
           : hover;
-      const validation = validateConnectionWithSafeRecInference(
+      const validation = validateConnectionWithTypeAutoMatchPreview(
         document,
         source,
         target,

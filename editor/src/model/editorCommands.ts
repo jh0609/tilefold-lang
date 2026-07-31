@@ -6,6 +6,7 @@ import {
   addFunctionTemplateAndReferenceToPort,
   addResultBoundary,
   addWire,
+  addWireWithTypeAutoMatch,
   deleteSelection,
   editTemplateCaptures,
   editSurfaceFunctionSignature,
@@ -44,6 +45,7 @@ import type {
   ProjectDocument,
   Selection,
 } from "./project";
+import type { TypeAutoMatchPlan } from "./typeAutoMatch";
 
 export type EditorCommand =
   | {
@@ -84,6 +86,7 @@ export type EditorCommand =
     }
   | { type: "add_result_boundary"; containerId?: string }
   | { type: "add_wire"; source: ConnectablePort; target: ConnectablePort }
+  | { type: "add_wire_with_type_auto_match"; plan: TypeAutoMatchPlan }
   | {
       type: "reconnect_wire_endpoint";
       wireId: string;
@@ -344,6 +347,23 @@ export function applyEditorCommand(
         };
       }
     }
+    case "add_wire_with_type_auto_match": {
+      const result = addWireWithTypeAutoMatch(document, command.plan);
+      if ("error" in result) return { document, error: result.error };
+      try {
+        return {
+          document: parseProjectJson(exportProjectJson(result.document)),
+        };
+      } catch (error) {
+        return {
+          document,
+          error:
+            error instanceof Error
+              ? `Auto-matched wire failed the editor structure check: ${error.message}`
+              : "Auto-matched wire failed the editor structure check.",
+        };
+      }
+    }
     case "add_function_reference": {
       const result = addFunctionReferenceToPort(
         document,
@@ -532,6 +552,8 @@ export function editorCommandLabel(command: EditorCommand): string {
       return "Add Result";
     case "add_wire":
       return "Add wire";
+    case "add_wire_with_type_auto_match":
+      return "Auto-match type and add wire";
     case "reconnect_wire_endpoint":
       return `Reconnect ${command.wireId} ${command.endpoint}`;
     case "delete_selection":
@@ -616,6 +638,7 @@ export function isNoOpCommand(command: EditorCommand): boolean {
     case "set_entry_result_type":
       return coreTypeEqual(command.before, command.after);
     case "edit_surface_function_signature":
+    case "add_wire_with_type_auto_match":
       return false;
     default:
       return false;

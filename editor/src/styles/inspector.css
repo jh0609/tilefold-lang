@@ -188,6 +188,33 @@
   grid-column: 1 / -1;
 }
 
+.type-auto-match-summary {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--bg);
+}
+
+.type-auto-match-summary div {
+  display: grid;
+  gap: 3px;
+}
+
+.type-auto-match-summary dt {
+  color: var(--muted);
+  font-size: var(--font-caption);
+  font-weight: 700;
+}
+
+.type-auto-match-summary dd {
+  margin: 0;
+  font-size: var(--font-caption);
+  line-height: 1.45;
+}
+
 .dialog-actions {
   display: flex;
   justify-content: flex-end;

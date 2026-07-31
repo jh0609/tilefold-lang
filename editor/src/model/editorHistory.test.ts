@@ -7,8 +7,9 @@ import {
   undoEditorCommand,
 } from "./editorHistory";
 import { parseProjectJson } from "./importProject";
-import { addElement } from "./editorOps";
+import { addElement, updateListItemType } from "./editorOps";
 import { collectConnectablePorts } from "./portConnections";
+import { planTypeAutoMatch } from "./typeAutoMatch";
 
 describe("editor command history", () => {
   it("undoes and redoes an added element without changing its stable ID", () => {
@@ -26,6 +27,43 @@ describe("editor command history", () => {
 
     const redone = redoEditorCommand(undone);
     expect(redone.present.geometry.elements.at(-1)).toEqual(added);
+  });
+
+  it("undoes and redoes type auto-match and wire creation as one command", () => {
+    let initial = parseProjectJson(exampleJson);
+    initial = addElement(initial, "nat_literal", { x: 420, y: 160 }).document;
+    initial = addElement(initial, "cons", { x: 650, y: 160 }).document;
+    initial = updateListItemType(initial, "node_cons_1", "bool").document;
+    const ports = collectConnectablePorts(initial);
+    const source = ports.find(
+      (port) => port.ownerId === "node_nat_1" && port.name === "value",
+    )!;
+    const target = ports.find(
+      (port) => port.ownerId === "node_cons_1" && port.name === "head",
+    )!;
+    const planned = planTypeAutoMatch(initial, source, target);
+    expect(planned.kind).toBe("auto_match");
+    if (planned.kind !== "auto_match") throw new Error("expected plan");
+
+    const executed = executeEditorCommand(createEditorHistory(initial), {
+      type: "add_wire_with_type_auto_match",
+      plan: planned.plan,
+    }).history;
+    expect(executed.past).toHaveLength(1);
+    expect(
+      executed.present.geometry.elements.find(
+        (element) => element.id === "node_cons_1" && element.kind === "cons",
+      )?.properties,
+    ).toEqual({ itemType: "nat" });
+    expect(executed.present.geometry.wires).toHaveLength(
+      initial.geometry.wires.length + 1,
+    );
+
+    const undone = undoEditorCommand(executed);
+    expect(undone.present).toBe(initial);
+
+    const redone = redoEditorCommand(undone);
+    expect(redone.present).toBe(executed.present);
   });
 
   it("adds an element against the explicit target container instead of stale currentContainerId", () => {
