@@ -19,6 +19,7 @@ import {
   updateApplyTypes,
   updateBoolValue,
   updateElementType,
+  updateEntryResultType,
   updateNatValue,
   updatePairTypes,
   type AddableElementKind,
@@ -149,6 +150,12 @@ export type EditorCommand =
       id: string;
       before: { leftType: CoreType; rightType: CoreType };
       after: { leftType: CoreType; rightType: CoreType };
+    }
+  | {
+      type: "set_entry_result_type";
+      containerId: string;
+      before: CoreType;
+      after: CoreType;
     };
 
 export interface CommandResult {
@@ -421,6 +428,8 @@ export function applyEditorCommand(
         command.after.leftType,
         command.after.rightType,
       );
+    case "set_entry_result_type":
+      return updateEntryResultType(document, command.containerId, command.after);
   }
 }
 
@@ -480,6 +489,8 @@ export function editorCommandLabel(command: EditorCommand): string {
     case "set_apply_types":
     case "set_pair_types":
       return `Edit types for ${command.id}`;
+    case "set_entry_result_type":
+      return "Edit entry result type";
   }
 }
 
@@ -515,6 +526,8 @@ export function isNoOpCommand(command: EditorCommand): boolean {
         coreTypeEqual(command.before.leftType, command.after.leftType) &&
         coreTypeEqual(command.before.rightType, command.after.rightType)
       );
+    case "set_entry_result_type":
+      return coreTypeEqual(command.before, command.after);
     case "edit_surface_function_signature":
       return false;
     default:

@@ -43,6 +43,12 @@ beforeAll(() => {
 
 afterEach(() => vi.unstubAllGlobals());
 
+function getFunctionResultTypeEditor(): HTMLElement {
+  const [editor] = screen.getAllByLabelText("Result type");
+  if (!editor) throw new Error("Function result type editor was not rendered.");
+  return editor;
+}
+
 describe("Tilefold editor UI", () => {
   it("opens the shared example and selects then clears an element", async () => {
     const user = userEvent.setup();
@@ -163,7 +169,7 @@ describe("Tilefold editor UI", () => {
 
     await user.click(screen.getByRole("button", { name: "Add Function" }));
     await user.selectOptions(screen.getByLabelText("Argument 1 type"), "nat");
-    await user.selectOptions(screen.getByLabelText("Result type"), "unit");
+    await user.selectOptions(getFunctionResultTypeEditor(), "unit");
     await user.click(
       screen.getByRole("button", { name: "Create total function" }),
     );
@@ -198,7 +204,7 @@ describe("Tilefold editor UI", () => {
     await user.clear(screen.getByLabelText("Function name"));
     await user.type(screen.getByLabelText("Function name"), "container_a");
     await user.selectOptions(screen.getByLabelText("Argument 1 type"), "unit");
-    await user.selectOptions(screen.getByLabelText("Result type"), "bool");
+    await user.selectOptions(getFunctionResultTypeEditor(), "bool");
     await user.click(
       screen.getByRole("button", { name: "Create total function" }),
     );
@@ -208,7 +214,7 @@ describe("Tilefold editor UI", () => {
     await user.clear(screen.getByLabelText("Function name"));
     await user.type(screen.getByLabelText("Function name"), "container_b");
     await user.selectOptions(screen.getByLabelText("Argument 1 type"), "unit");
-    await user.selectOptions(screen.getByLabelText("Result type"), "nat");
+    await user.selectOptions(getFunctionResultTypeEditor(), "nat");
     await user.click(
       screen.getByRole("button", { name: "Create total function" }),
     );
@@ -283,7 +289,7 @@ describe("Tilefold editor UI", () => {
     expect(screen.getByRole("button", { name: "Add Call" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Add Function" }));
     await user.selectOptions(screen.getByLabelText("Argument 1 type"), "nat");
-    await user.selectOptions(screen.getByLabelText("Result type"), "nat");
+    await user.selectOptions(getFunctionResultTypeEditor(), "nat");
     await user.click(
       screen.getByRole("button", { name: "Create total function" }),
     );
@@ -326,7 +332,7 @@ describe("Tilefold editor UI", () => {
     await user.selectOptions(screen.getByLabelText("Argument 2 type"), "nat");
     await user.clear(screen.getByLabelText("Result name"));
     await user.type(screen.getByLabelText("Result name"), "selected");
-    await user.selectOptions(screen.getByLabelText("Result type"), "nat");
+    await user.selectOptions(getFunctionResultTypeEditor(), "nat");
     await user.click(
       screen.getByRole("button", { name: "Create total function" }),
     );
@@ -392,7 +398,7 @@ describe("Tilefold editor UI", () => {
     await user.clear(screen.getByLabelText("Argument 2 name"));
     await user.type(screen.getByLabelText("Argument 2 name"), "right");
     await user.selectOptions(screen.getByLabelText("Argument 2 type"), "nat");
-    await user.selectOptions(screen.getByLabelText("Result type"), "nat");
+    await user.selectOptions(getFunctionResultTypeEditor(), "nat");
     await user.click(
       screen.getByRole("button", { name: "Create total function" }),
     );
@@ -480,7 +486,7 @@ describe("Tilefold editor UI", () => {
     await user.clear(screen.getByLabelText("Argument 2 name"));
     await user.type(screen.getByLabelText("Argument 2 name"), "right");
     await user.selectOptions(screen.getByLabelText("Argument 2 type"), "nat");
-    await user.selectOptions(screen.getByLabelText("Result type"), "nat");
+    await user.selectOptions(getFunctionResultTypeEditor(), "nat");
     await user.click(
       screen.getByRole("button", { name: "Create total function" }),
     );
@@ -549,7 +555,7 @@ describe("Tilefold editor UI", () => {
 
     await user.click(screen.getByRole("button", { name: "Add Function" }));
     await user.selectOptions(screen.getByLabelText("Argument 1 type"), "nat");
-    await user.selectOptions(screen.getByLabelText("Result type"), "nat");
+    await user.selectOptions(getFunctionResultTypeEditor(), "nat");
     await user.click(
       screen.getByRole("button", { name: "Create total function" }),
     );

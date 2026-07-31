@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 function attachIssueWatch(page: Page) {
   const issues = { consoleErrors: [] as string[], pageErrors: [] as string[] };
@@ -134,6 +134,48 @@ const productSwapProject = `{
   }
 }`;
 
+const largeEntryNatProject = `{
+  "format": "tilefold-project",
+  "version": 2,
+  "geometry": {
+    "snapTolerance": 8,
+    "elements": [
+      {
+        "id": "unit-drop",
+        "kind": "drop",
+        "bounds": { "x": 80, "y": 80, "width": 88, "height": 56 },
+        "properties": { "type": "unit" },
+        "portAnchors": [{ "port": "input", "x": 80, "y": 108 }]
+      }
+    ],
+    "containers": [
+      {
+        "id": "entry",
+        "kind": {
+          "kind": "entry",
+          "templateId": "entry_template",
+          "resultType": "nat",
+          "dependencies": []
+        },
+        "bounds": { "x": 0, "y": 0, "width": 900, "height": 520 },
+        "boundaryPorts": [
+          { "id": "entry-parameter", "role": "parameter", "type": "unit", "anchor": { "x": 0, "y": 108 } },
+          { "id": "entry-result", "role": "result", "type": "nat", "anchor": { "x": 900, "y": 260 } }
+        ]
+      }
+    ],
+    "wires": [
+      {
+        "id": "w-unit-drop",
+        "points": [{ "x": 0, "y": 108 }, { "x": 80, "y": 108 }],
+        "sourceHint": { "kind": "boundary_port", "containerId": "entry", "boundaryId": "entry-parameter" },
+        "targetHint": { "kind": "element_port", "elementId": "unit-drop", "port": "input" }
+      }
+    ],
+    "junctions": []
+  }
+}`;
+
 async function importJson(page: Page, json: string, name = "product.tilefold.json") {
   await page.getByLabel("Open JSON file").setInputFiles({
     name,
@@ -145,6 +187,69 @@ async function importJson(page: Page, json: string, name = "product.tilefold.jso
 async function runMode(page: Page, mode: "transparent" | "fast") {
   await page.getByLabel("Execution mode").selectOption(mode);
   await page.getByRole("button", { name: "Run" }).click();
+}
+
+async function center(locator: Locator) {
+  await expect(locator).toBeVisible();
+  const box = await locator.boundingBox();
+  expect(box).not.toBeNull();
+  return { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 };
+}
+
+async function dragConnect(page: Page, source: Locator, target: Locator) {
+  const before = await page.locator('polyline[data-testid^="wire-"]').count();
+  const from = await center(source);
+  const to = await center(target);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(to.x, to.y, { steps: 16 });
+  await page.mouse.up();
+  try {
+    await expect
+      .poll(() => page.locator('polyline[data-testid^="wire-"]').count(), {
+        timeout: 1200,
+      })
+      .toBe(before + 1);
+  } catch {
+    await source.dragTo(target, { force: true });
+    await expect
+      .poll(() => page.locator('polyline[data-testid^="wire-"]').count())
+      .toBe(before + 1);
+  }
+}
+
+function port(page: Page, id: string, name: string, direction: string) {
+  return page.locator(
+    `circle[role="button"][data-node-id="${id}"][data-port-name="${name}"][data-port-direction="${direction}"]`,
+  );
+}
+
+function boundaryPort(
+  page: Page,
+  containerId: string,
+  name: string,
+  direction: string,
+) {
+  return page.locator(
+    `circle[role="button"][data-port-kind="boundary"][data-container-id="${containerId}"][data-port-name="${name}"][data-port-direction="${direction}"]`,
+  );
+}
+
+async function selectAndDelete(page: Page, locator: Locator) {
+  await expect(locator).toBeAttached();
+  await locator.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("button", { name: "Delete selected" })).toBeEnabled();
+  await page.getByRole("button", { name: "Delete selected" }).click();
+}
+
+async function newestNodeId(page: Page, kind: string) {
+  const id = await page
+    .locator(`g.element-node[data-node-kind="${kind}"]`)
+    .last()
+    .getAttribute("data-node-id");
+  expect(id).toBeTruthy();
+  return id!;
 }
 
 test("Product Pair and Unpair are authorable, executable, and serializable", async ({
@@ -190,6 +295,76 @@ test("Product Pair and Unpair are authorable, executable, and serializable", asy
   await expect(page.locator('g.element-node[data-node-kind="pair"]')).toHaveCount(2);
   await runMode(page, "fast");
   await expect(page.getByText(/Result:/)).toContainText("Product(Bool(True), Nat(3))");
+
+  expect(issues.consoleErrors).toEqual([]);
+  expect(issues.pageErrors).toEqual([]);
+});
+
+test("Entry result type can be changed to Product and executed", async ({
+  page,
+}) => {
+  const issues = attachIssueWatch(page);
+  await page.goto("/");
+  await importJson(page, largeEntryNatProject, "large-entry.tilefold.json");
+
+  await page.locator('.container-shape[data-container-id="entry"]').click();
+  await expect(page.getByRole("heading", { name: "entry", exact: true })).toBeVisible();
+  await page.getByLabel("Entry output type").selectOption("product");
+  await expect(
+    page.locator(".core-type-summary", { hasText: "Nat × Bool" }).last(),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Add Nat", exact: true }).click();
+  const natId = await newestNodeId(page, "nat_literal");
+  await page.getByLabel("Nat value").fill("3");
+
+  await page.getByRole("button", { name: "Add Bool", exact: true }).click();
+  const boolId = await newestNodeId(page, "bool_literal");
+  await page.getByLabel("Bool value").selectOption("true");
+
+  await page.getByRole("button", { name: "Add Pair", exact: true }).click();
+  const pairId = await newestNodeId(page, "pair");
+
+  await dragConnect(
+    page,
+    port(page, natId, "value", "output"),
+    port(page, pairId, "left", "input"),
+  );
+  await dragConnect(
+    page,
+    port(page, boolId, "value", "output"),
+    port(page, pairId, "right", "input"),
+  );
+  await dragConnect(
+    page,
+    port(page, pairId, "value", "output"),
+    boundaryPort(page, "entry", "result", "input"),
+  );
+
+  await runMode(page, "transparent");
+  await expect(page.getByText(/Result:/)).toContainText(
+    "Product(Nat(3), Bool(True))",
+  );
+  await runMode(page, "fast");
+  await expect(page.getByText(/Result:/)).toContainText(
+    "Product(Nat(3), Bool(True))",
+  );
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export JSON" }).click();
+  const download = await downloadPromise;
+  const exportedPath = await download.path();
+  expect(exportedPath).toBeTruthy();
+
+  await page.reload();
+  await page.getByLabel("Open JSON file").setInputFiles(exportedPath!);
+  await expect(page.getByTestId(`element-${pairId}-signature`)).toContainText(
+    "Nat × Bool",
+  );
+  await runMode(page, "fast");
+  await expect(page.getByText(/Result:/)).toContainText(
+    "Product(Nat(3), Bool(True))",
+  );
 
   expect(issues.consoleErrors).toEqual([]);
   expect(issues.pageErrors).toEqual([]);

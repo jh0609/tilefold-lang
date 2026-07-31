@@ -28,6 +28,7 @@ import {
   templateFunctionReferences,
   updateApplyTypes,
   updateElementType,
+  updateEntryResultType,
   type AddableElementKind,
 } from "./editorOps";
 import { exportProjectJson, parseProjectJson } from "./importProject";
@@ -2425,5 +2426,61 @@ describe("Rec node value type UX", () => {
     expect(addWire(project, boolSource, result)).toMatchObject({
       error: expect.stringContaining("already has a"),
     });
+  });
+
+  it("updates entry result type and its result boundary together", () => {
+    const project = parseProjectJson(exampleJson);
+    const entryResultBoundary = project.geometry.containers
+      .find((container) => container.id === "entry")!
+      .boundaryPorts.find((boundary) => boundary.role === "result")!;
+    const disconnected = {
+      ...project,
+      geometry: {
+        ...project.geometry,
+        wires: project.geometry.wires.filter(
+          (wire) =>
+            !(
+              wire.targetHint?.kind === "boundary_port" &&
+              wire.targetHint.containerId === "entry" &&
+              wire.targetHint.boundaryId === entryResultBoundary.id
+            ),
+        ),
+      },
+    };
+    const productType = { product: ["nat", "bool"] } as const;
+    const updated = updateEntryResultType(disconnected, "entry", productType);
+    expect(updated.error).toBeUndefined();
+    const entry = updated.document.geometry.containers.find(
+      (container) => container.id === "entry",
+    )!;
+    expect(entry.kind).toMatchObject({
+      kind: "entry",
+      resultType: productType,
+    });
+    expect(
+      entry.boundaryPorts.find((boundary) => boundary.id === entryResultBoundary.id)
+        ?.type,
+    ).toEqual(productType);
+    expect(() =>
+      parseProjectJson(exportProjectJson(updated.document)),
+    ).not.toThrow();
+
+    const nestedProduct = {
+      product: ["nat", { product: ["bool", "nat"] }],
+    } as const;
+    const nested = updateEntryResultType(updated.document, "entry", nestedProduct);
+    expect(nested.error).toBeUndefined();
+    expect(
+      nested.document.geometry.containers[0]?.boundaryPorts.find(
+        (boundary) => boundary.id === entryResultBoundary.id,
+      )?.type,
+    ).toEqual(nestedProduct);
+  });
+
+  it("blocks entry result type changes while the result boundary is connected", () => {
+    const project = parseProjectJson(exampleJson);
+    const blocked = updateEntryResultType(project, "entry", "bool");
+    expect(blocked.error).toContain("Disconnect entry result wire");
+    expect(blocked.document).toBe(project);
   });
 });

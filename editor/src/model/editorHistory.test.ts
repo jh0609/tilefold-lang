@@ -97,6 +97,44 @@ describe("editor command history", () => {
     expect(element?.properties).toEqual({ value: "2" });
   });
 
+  it("undoes and redoes an entry result type edit", () => {
+    const initial = parseProjectJson(exampleJson);
+    const entryResultBoundary = initial.geometry.containers
+      .find((container) => container.id === "entry")!
+      .boundaryPorts.find((boundary) => boundary.role === "result")!;
+    const disconnected = {
+      ...initial,
+      geometry: {
+        ...initial.geometry,
+        wires: initial.geometry.wires.filter(
+          (wire) =>
+            !(
+              wire.targetHint?.kind === "boundary_port" &&
+              wire.targetHint.containerId === "entry" &&
+              wire.targetHint.boundaryId === entryResultBoundary.id
+            ),
+        ),
+      },
+    };
+    const productType = { product: ["nat", "bool"] } as const;
+    const executed = executeEditorCommand(createEditorHistory(disconnected), {
+      type: "set_entry_result_type",
+      containerId: "entry",
+      before: "nat",
+      after: productType,
+    });
+    expect(executed.error).toBeUndefined();
+    const entry = executed.history.present.geometry.containers.find(
+      (container) => container.id === "entry",
+    )!;
+    expect(entry.kind).toMatchObject({ kind: "entry", resultType: productType });
+
+    const undone = undoEditorCommand(executed.history);
+    expect(undone.present).toBe(disconnected);
+    const redone = redoEditorCommand(undone);
+    expect(redone.present).toBe(executed.history.present);
+  });
+
   it("deletes an element and connected wire in one undoable command", () => {
     const initial = parseProjectJson(exampleJson);
     const result = executeEditorCommand(createEditorHistory(initial), {

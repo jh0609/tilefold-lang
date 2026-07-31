@@ -40,6 +40,7 @@ interface InspectorProps {
     leftType: CoreType,
     rightType: CoreType,
   ) => void;
+  onEntryResultTypeChange: (containerId: string, resultType: CoreType) => void;
   canDelete: boolean;
   onDelete: () => void;
   onFocusTemplate: (templateId: string) => void;
@@ -938,6 +939,7 @@ export function Inspector({
   onElementTypeChange,
   onApplyTypesChange,
   onPairTypesChange,
+  onEntryResultTypeChange,
   canDelete,
   onDelete,
   onFocusTemplate,
@@ -1044,6 +1046,17 @@ export function Inspector({
       (candidate) => candidate.id === selection.id,
     );
     if (container && boundary) {
+      const connectedWires = document.geometry.wires
+        .filter(
+          (wire) =>
+            (wire.sourceHint?.kind === "boundary_port" &&
+              wire.sourceHint.containerId === container.id &&
+              wire.sourceHint.boundaryId === boundary.id) ||
+            (wire.targetHint?.kind === "boundary_port" &&
+              wire.targetHint.containerId === container.id &&
+              wire.targetHint.boundaryId === boundary.id),
+        )
+        .map((wire) => wire.id);
       content = (
         <>
           <div className="inspector-heading">
@@ -1056,6 +1069,29 @@ export function Inspector({
           <code>
             anchor ({boundary.anchor.x}, {boundary.anchor.y})
           </code>
+          <section className="readout">
+            <h3>Type</h3>
+            <span>{formatCoreType(boundary.type)}</span>
+          </section>
+          {container.kind.kind === "entry" && boundary.role === "result" && (
+            <section className="readout">
+              <h3>Entry result</h3>
+              <CoreTypeEditor
+                label="Entry output type"
+                value={boundary.type}
+                onChange={(resultType) =>
+                  onEntryResultTypeChange(container.id, resultType)
+                }
+                disabled={connectedWires.length > 0}
+              />
+              {connectedWires.length > 0 && (
+                <p className="limitation">
+                  Disconnect entry result wire(s) before changing this type:{" "}
+                  {connectedWires.join(", ")}
+                </p>
+              )}
+            </section>
+          )}
           {boundary.role !== "result" && (
             <p className="limitation">
               Parameter and capture boundaries are structural and cannot be
@@ -1125,6 +1161,36 @@ export function Inspector({
               {formatCoreType(container.kind.parameterType)} {"->"}{" "}
               {formatCoreType(container.kind.resultType)}
             </span>
+          )}
+          {container.kind.kind === "entry" && (
+            <section className="readout">
+              <h3>Signature</h3>
+              <span>Unit {"->"} {formatCoreType(container.kind.resultType)}</span>
+              <CoreTypeEditor
+                label="Entry output type"
+                value={container.kind.resultType}
+                onChange={(resultType) =>
+                  onEntryResultTypeChange(container.id, resultType)
+                }
+                disabled={document.geometry.wires.some((wire) =>
+                  container.boundaryPorts
+                    .filter((boundary) => boundary.role === "result")
+                    .some(
+                      (boundary) =>
+                        (wire.sourceHint?.kind === "boundary_port" &&
+                          wire.sourceHint.containerId === container.id &&
+                          wire.sourceHint.boundaryId === boundary.id) ||
+                        (wire.targetHint?.kind === "boundary_port" &&
+                          wire.targetHint.containerId === container.id &&
+                          wire.targetHint.boundaryId === boundary.id),
+                    ),
+                )}
+              />
+              <p className="limitation">
+                The entry parameter is fixed to Unit. The result may be any
+                valid Core type.
+              </p>
+            </section>
           )}
           {container.kind.kind === "template" && (
             <section className="readout">

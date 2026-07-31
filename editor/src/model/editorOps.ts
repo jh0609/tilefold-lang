@@ -5046,6 +5046,78 @@ export function updatePairTypes(
   };
 }
 
+function hintReferencesBoundary(
+  hint: ProjectWire["sourceHint"],
+  containerId: string,
+  boundaryId: string,
+): boolean {
+  return (
+    hint?.kind === "boundary_port" &&
+    hint.containerId === containerId &&
+    hint.boundaryId === boundaryId
+  );
+}
+
+function boundaryReferences(
+  document: ProjectDocument,
+  containerId: string,
+  boundaryId: string,
+): string[] {
+  return document.geometry.wires
+    .filter(
+      (wire) =>
+        hintReferencesBoundary(wire.sourceHint, containerId, boundaryId) ||
+        hintReferencesBoundary(wire.targetHint, containerId, boundaryId),
+    )
+    .map((wire) => wire.id);
+}
+
+export function updateEntryResultType(
+  document: ProjectDocument,
+  containerId: string,
+  resultType: CoreType,
+): { document: ProjectDocument; error?: string } {
+  const container = document.geometry.containers.find(
+    (candidate) => candidate.id === containerId,
+  );
+  if (!container) return { document, error: `Container ${containerId} does not exist.` };
+  if (container.kind.kind !== "entry") {
+    return { document, error: `${containerId} is not the entry container.` };
+  }
+  const resultBoundaries = container.boundaryPorts.filter(
+    (boundary) => boundary.role === "result",
+  );
+  const references = resultBoundaries.flatMap((boundary) =>
+    boundaryReferences(document, container.id, boundary.id),
+  );
+  if (references.length > 0) {
+    return {
+      document,
+      error: `Disconnect entry result wire(s) before changing result type: ${references.join(", ")}`,
+    };
+  }
+  return {
+    document: {
+      ...document,
+      geometry: {
+        ...document.geometry,
+        containers: document.geometry.containers.map((candidate) => {
+          if (candidate.id !== container.id || candidate.kind.kind !== "entry") {
+            return candidate;
+          }
+          return {
+            ...candidate,
+            kind: { ...candidate.kind, resultType },
+            boundaryPorts: candidate.boundaryPorts.map((boundary) =>
+              boundary.role === "result" ? { ...boundary, type: resultType } : boundary,
+            ),
+          };
+        }),
+      },
+    },
+  };
+}
+
 function removeSurfaceLibraryCallsForDeletedElements(
   document: ProjectDocument,
   deletedElementIds: ReadonlySet<string>,

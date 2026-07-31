@@ -997,6 +997,18 @@ export function App() {
               after: { leftType, rightType },
             });
           }}
+          onEntryResultTypeChange={(containerId, resultType: CoreType) => {
+            const container = document.geometry.containers.find(
+              (candidate) => candidate.id === containerId,
+            );
+            if (!container || container.kind.kind !== "entry") return;
+            runCommand({
+              type: "set_entry_result_type",
+              containerId,
+              before: container.kind.resultType,
+              after: resultType,
+            });
+          }}
           canDelete={selectionCanBeDeleted(selection)}
           onDelete={removeSelected}
           onFocusTemplate={focusTemplate}
