@@ -51,6 +51,9 @@ const KIND_LABELS: Record<ProjectElement["kind"], string> = {
   left: "Left",
   right: "Right",
   case: "Case",
+  nil: "Nil",
+  cons: "Cons",
+  list_rec: "ListRec",
   function: "Function",
   library_call: "Library Call",
   project_call: "Call",
@@ -130,6 +133,27 @@ function nodeSignature(element: ProjectElement, ports: ConnectablePort[]) {
         ? `${formatCoreType(scrutinee)} · ${formatCoreType(onLeft)} · ${formatCoreType(onRight)} -> ${formatCoreType(result)}`
         : "";
     }
+    case "nil": {
+      const value = output("value");
+      return value ? `empty -> ${formatCoreType(value)}` : "";
+    }
+    case "cons": {
+      const head = input("head");
+      const tail = input("tail");
+      const value = output("value");
+      return head && tail && value
+        ? `${formatCoreType(head)} · ${formatCoreType(tail)} -> ${formatCoreType(value)}`
+        : "";
+    }
+    case "list_rec": {
+      const list = input("list");
+      const base = input("base");
+      const step = input("step");
+      const result = output("result");
+      return list && base && step && result
+        ? `${formatCoreType(list)} · ${formatCoreType(base)} · ${formatCoreType(step)} -> ${formatCoreType(result)}`
+        : "";
+    }
     case "apply": {
       const argument = input("argument");
       const result = output("result");
@@ -182,6 +206,15 @@ function nodeDisplayLabel(
   }
   if (element.kind === "bool_rec") {
     return `BoolRec<${formatCoreType(element.properties.type)}>`;
+  }
+  if (element.kind === "nil") {
+    return `Nil<${formatCoreType(element.properties.itemType)}>`;
+  }
+  if (element.kind === "cons") {
+    return `Cons<${formatCoreType(element.properties.itemType)}>`;
+  }
+  if (element.kind === "list_rec") {
+    return `ListRec<${formatCoreType(element.properties.itemType)}, ${formatCoreType(element.properties.resultType)}>`;
   }
   if (element.kind === "function") {
     return (

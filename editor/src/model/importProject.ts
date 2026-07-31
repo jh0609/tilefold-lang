@@ -120,6 +120,13 @@ function coreTypeAt(value: unknown, path: string): void {
     coreTypeAt(sum[1], `${path}.sum[1]`);
     return;
   }
+  if ("list" in type) {
+    if (Object.keys(type).some((key) => key !== "list")) {
+      throw new StructureError(path, "unknown type field");
+    }
+    coreTypeAt(required(type, "list", path), `${path}.list`);
+    return;
+  }
   if (Object.keys(type).some((key) => key !== "product")) {
     throw new StructureError(path, "unknown type field");
   }
@@ -248,6 +255,23 @@ function elementAt(value: unknown, path: string): ProjectElement {
       coreTypeAt(
         required(properties, "rightType", `${path}.properties`),
         `${path}.properties.rightType`,
+      );
+      coreTypeAt(
+        required(properties, "resultType", `${path}.properties`),
+        `${path}.properties.resultType`,
+      );
+      break;
+    case "nil":
+    case "cons":
+      coreTypeAt(
+        required(properties, "itemType", `${path}.properties`),
+        `${path}.properties.itemType`,
+      );
+      break;
+    case "list_rec":
+      coreTypeAt(
+        required(properties, "itemType", `${path}.properties`),
+        `${path}.properties.itemType`,
       );
       coreTypeAt(
         required(properties, "resultType", `${path}.properties`),

@@ -42,6 +42,10 @@ module Port_key = struct
   let base = "base"
   let step = "step"
   let count = "count"
+  let list = "list"
+  let head = "head"
+  let tail = "tail"
+  let recursive = "recursive"
   let predecessor = "predecessor"
   let partial = "partial"
   let accumulator = "accumulator"
@@ -92,6 +96,9 @@ type node_kind =
   | Left of sum_signature
   | Right of sum_signature
   | Case of case_signature
+  | Nil of Core_type.t
+  | Cons of Core_type.t
+  | ListRec of listrec_signature
   | Function of function_signature
   | Apply of apply_signature
   | NatRec of Core_type.t
@@ -116,6 +123,11 @@ and case_signature = {
   case_left_type : Core_type.t;
   case_right_type : Core_type.t;
   case_result_type : Core_type.t;
+}
+
+and listrec_signature = {
+  list_item_type : Core_type.t;
+  list_result_type : Core_type.t;
 }
 
 and function_signature = {
@@ -209,6 +221,27 @@ let ports_of_node_kind = function
           (Core_type.Arrow (signature.case_right_type, signature.case_result_type));
         port Port_key.result Output signature.case_result_type;
       ]
+  | Nil item_type ->
+      [ port Port_key.value Output (Core_type.List item_type) ]
+  | Cons item_type ->
+      [
+        port Port_key.head Input item_type;
+        port Port_key.tail Input (Core_type.List item_type);
+        port Port_key.value Output (Core_type.List item_type);
+      ]
+  | ListRec signature ->
+      let item_type = signature.list_item_type in
+      let result_type = signature.list_result_type in
+      [
+        port Port_key.list Input (Core_type.List item_type);
+        port Port_key.base Input result_type;
+        port Port_key.step Input
+          (Core_type.Arrow
+             ( Core_type.Product
+                 (item_type, Core_type.Product (Core_type.List item_type, result_type)),
+               result_type ));
+        port Port_key.result Output result_type;
+      ]
   | Function signature ->
       List.map
         (fun (capture : capture) -> port capture.key Input capture.typ)
@@ -244,7 +277,7 @@ let ports_of_node_kind = function
 
 let is_executable_node_kind = function
   | Succ | Drop _ | Copy _ | Pair _ | Unpair _ | Left _ | Right _ | Case _
-  | Function _ | Apply _ | NatRec _ | BoolRec _ ->
+  | Nil _ | Cons _ | ListRec _ | Function _ | Apply _ | NatRec _ | BoolRec _ ->
       true
   | Unit_literal | Bool_literal _ | Nat_literal _ | Parameter _ | Capture _ | Result _ -> false
 

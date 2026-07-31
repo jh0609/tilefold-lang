@@ -6,12 +6,13 @@ import {
   normalizeCoreType,
 } from "../model/coreTypes";
 
-type TypeKind = "unit" | "bool" | "nat" | "product" | "sum" | "function";
+type TypeKind = "unit" | "bool" | "nat" | "product" | "sum" | "list" | "function";
 
 function typeKind(type: CoreType): TypeKind {
   if (type === "unit" || type === "bool" || type === "nat") return type;
   if ("product" in type) return "product";
   if ("sum" in type) return "sum";
+  if ("list" in type) return "list";
   return "function";
 }
 
@@ -19,6 +20,7 @@ function defaultTypeForKind(kind: TypeKind): CoreType {
   if (kind === "unit" || kind === "bool" || kind === "nat") return kind;
   if (kind === "product") return { product: ["nat", "bool"] };
   if (kind === "sum") return { sum: ["nat", "bool"] };
+  if (kind === "list") return { list: "nat" };
   return { arrow: ["nat", "nat"] };
 }
 
@@ -41,6 +43,7 @@ export function CoreTypeEditor({
   const isArrow = typeof normalized !== "string" && "arrow" in normalized;
   const isProduct = typeof normalized !== "string" && "product" in normalized;
   const isSum = typeof normalized !== "string" && "sum" in normalized;
+  const isList = typeof normalized !== "string" && "list" in normalized;
   return (
     <fieldset
       className={`core-type-editor depth-${Math.min(level, 4)}`}
@@ -61,6 +64,7 @@ export function CoreTypeEditor({
           <option value="nat">Nat</option>
           <option value="product">Product</option>
           <option value="sum">Sum</option>
+          <option value="list">List</option>
           <option value="function">Function</option>
         </select>
       </label>
@@ -141,6 +145,18 @@ export function CoreTypeEditor({
             value={normalized.sum[1]}
             disabled={disabled}
             onChange={(right) => onChange({ sum: [normalized.sum[0], right] })}
+            level={level + 1}
+            showPresets={false}
+          />
+        </div>
+      )}
+      {isList && (
+        <div className="core-type-children">
+          <CoreTypeEditor
+            label={`${label} item`}
+            value={normalized.list}
+            disabled={disabled}
+            onChange={(item) => onChange({ list: item })}
             level={level + 1}
             showPresets={false}
           />

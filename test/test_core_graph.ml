@@ -104,7 +104,21 @@ let () =
     Core_type.to_string
       (Core_type.Arrow
          (Core_type.Arrow (Core_type.Unit, Core_type.Nat), Core_type.Nat))
-    = "(Unit -> Nat) -> Nat")
+    = "(Unit -> Nat) -> Nat");
+  assert (
+    Core_type.to_string (Core_type.List Core_type.Nat) = "List<Nat>");
+  assert (
+    Core_type.to_string
+      (Core_type.List (Core_type.Product (Core_type.Nat, Core_type.Bool)))
+    = "List<Nat * Bool>");
+  assert (
+    Core_type.to_string
+      (Core_type.Product (Core_type.Nat, Core_type.List Core_type.Bool))
+    = "Nat * List<Bool>");
+  assert (
+    Core_type.to_string
+      (Core_type.Arrow (Core_type.List Core_type.Nat, Core_type.Nat))
+    = "List<Nat> -> Nat")
 
 let () =
   match validate (raw ()) with
@@ -1017,7 +1031,7 @@ let function_graph ?(function_captures : capture list option) ?(template = fn_te
           | Core_type.Bool -> node ("capture-lit-" ^ string_of_int index) (Bool_literal true)
           | Core_type.Nat ->
               node ("capture-lit-" ^ string_of_int index) (Nat_literal (nat "1"))
-          | Core_type.Product _ | Core_type.Sum _ ->
+          | Core_type.Product _ | Core_type.Sum _ | Core_type.List _ ->
               node ("capture-lit-" ^ string_of_int index) Unit_literal
           | Core_type.Arrow _ ->
               node ("capture-lit-" ^ string_of_int index) Unit_literal)

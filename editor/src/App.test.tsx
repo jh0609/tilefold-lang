@@ -79,6 +79,8 @@ describe("Tilefold editor UI", () => {
       "Successor — 2 → 3",
       "Addition — 2 + 3 = 5",
       "Multiplication — 3 × 4 = 12",
+      "Option fallback — safePred/getOrElse",
+      "List — [1, 2, 3]",
     ]);
     await user.selectOptions(picker, "addition");
     await user.click(screen.getByRole("button", { name: "Open example" }));
@@ -477,16 +479,25 @@ describe("Tilefold editor UI", () => {
     render(<App />);
 
     await user.click(screen.getByRole("button", { name: "Add Function" }));
-    await user.clear(screen.getByLabelText("Function name"));
-    await user.type(screen.getByLabelText("Function name"), "foo");
+    fireEvent.change(screen.getByLabelText("Function name"), {
+      target: { value: "foo" },
+    });
     await user.click(screen.getByRole("button", { name: "Add argument" }));
-    await user.clear(screen.getByLabelText("Argument 1 name"));
-    await user.type(screen.getByLabelText("Argument 1 name"), "left");
-    await user.selectOptions(screen.getByLabelText("Argument 1 type"), "nat");
-    await user.clear(screen.getByLabelText("Argument 2 name"));
-    await user.type(screen.getByLabelText("Argument 2 name"), "right");
-    await user.selectOptions(screen.getByLabelText("Argument 2 type"), "nat");
-    await user.selectOptions(getFunctionResultTypeEditor(), "nat");
+    fireEvent.change(screen.getByLabelText("Argument 1 name"), {
+      target: { value: "left" },
+    });
+    fireEvent.change(screen.getByLabelText("Argument 1 type"), {
+      target: { value: "nat" },
+    });
+    fireEvent.change(screen.getByLabelText("Argument 2 name"), {
+      target: { value: "right" },
+    });
+    fireEvent.change(screen.getByLabelText("Argument 2 type"), {
+      target: { value: "nat" },
+    });
+    fireEvent.change(getFunctionResultTypeEditor(), {
+      target: { value: "nat" },
+    });
     await user.click(
       screen.getByRole("button", { name: "Create total function" }),
     );
@@ -504,8 +515,9 @@ describe("Tilefold editor UI", () => {
     expect(screen.getByText(/right: Nat/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Open function foo" }));
     await user.click(screen.getByRole("button", { name: "Edit signature" }));
-    await user.clear(screen.getByLabelText("Function name"));
-    await user.type(screen.getByLabelText("Function name"), "bar");
+    fireEvent.change(screen.getByLabelText("Function name"), {
+      target: { value: "bar" },
+    });
     await user.click(screen.getByRole("button", { name: "Apply signature" }));
     await user.click(screen.getByRole("button", { name: "Return to entry graph" }));
 

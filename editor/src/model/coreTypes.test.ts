@@ -33,6 +33,23 @@ describe("Core type utilities", () => {
       "Nat × (Bool + Unit)",
       { product: ["nat", { sum: ["bool", "unit"] }] } satisfies CoreType,
     ],
+    ["List<Nat>", { list: "nat" } satisfies CoreType],
+    [
+      "List<Nat × Bool>",
+      { list: { product: ["nat", "bool"] } } satisfies CoreType,
+    ],
+    [
+      "List<Unit + Nat>",
+      { list: { sum: ["unit", "nat"] } } satisfies CoreType,
+    ],
+    [
+      "List<List<Nat>>",
+      { list: { list: "nat" } } satisfies CoreType,
+    ],
+    [
+      "Nat × List<Bool>",
+      { product: ["nat", { list: "bool" }] } satisfies CoreType,
+    ],
     [
       "(Nat -> Bool) + Nat",
       { sum: [{ arrow: ["nat", "bool"] }, "nat"] } satisfies CoreType,
@@ -91,6 +108,14 @@ describe("Core type utilities", () => {
     const left: CoreType = { sum: ["nat", { sum: ["bool", "unit"] }] };
     const same: CoreType = { sum: ["nat", { sum: ["bool", "unit"] }] };
     const different: CoreType = { sum: [{ sum: ["nat", "bool"] }, "unit"] };
+    expect(coreTypeEqual(left, same)).toBe(true);
+    expect(coreTypeEqual(left, different)).toBe(false);
+  });
+
+  it("compares List types structurally", () => {
+    const left: CoreType = { list: { sum: ["nat", { list: "bool" }] } };
+    const same: CoreType = { list: { sum: ["nat", { list: "bool" }] } };
+    const different: CoreType = { list: { sum: [{ list: "nat" }, "bool"] } };
     expect(coreTypeEqual(left, same)).toBe(true);
     expect(coreTypeEqual(left, different)).toBe(false);
   });

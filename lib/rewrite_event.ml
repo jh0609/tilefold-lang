@@ -11,6 +11,13 @@ type rule =
   | ApplyReturn
   | CaseLeft
   | CaseRight
+  | Nil
+  | Cons
+  | ListRecNil
+  | ListRecCons
+  | ListRecStepEnter
+  | ListRecStepReturn
+  | ListRecComplete
   | NatRecZero
   | NatRecStart
   | NatRecUnfold
@@ -47,6 +54,13 @@ let rule_to_string = function
   | ApplyReturn -> "ApplyReturn"
   | CaseLeft -> "CaseLeft"
   | CaseRight -> "CaseRight"
+  | Nil -> "Nil"
+  | Cons -> "Cons"
+  | ListRecNil -> "ListRecNil"
+  | ListRecCons -> "ListRecCons"
+  | ListRecStepEnter -> "ListRecStepEnter"
+  | ListRecStepReturn -> "ListRecStepReturn"
+  | ListRecComplete -> "ListRecComplete"
   | NatRecZero -> "NatRecZero"
   | NatRecStart -> "NatRecStart"
   | NatRecUnfold -> "NatRecUnfold"

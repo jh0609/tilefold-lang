@@ -33,6 +33,19 @@ const EXAMPLES = [
   },
 ] as const;
 
+const STRUCTURED_EXAMPLES = [
+  {
+    id: "option-safe-pred-get-or-else",
+    fileName: "option-safe-pred-get-or-else.tilefold.json",
+    result: "Nat(4)",
+  },
+  {
+    id: "list-nat",
+    fileName: "list-nat.tilefold.json",
+    result: "List[Nat(1), Nat(2), Nat(3)]",
+  },
+] as const;
+
 function watchBrowserIssues(page: Page): BrowserIssues {
   const issues: BrowserIssues = { consoleErrors: [], pageErrors: [] };
   page.on("console", (message) => {
@@ -62,6 +75,12 @@ async function runAndExpect(
   );
 }
 
+async function runModeAndExpect(page: Page, mode: "transparent" | "fast", result: string) {
+  await page.getByLabel("Execution mode").selectOption(mode);
+  await page.getByRole("button", { name: "Run" }).click();
+  await expect(page.getByText(/Result:/)).toContainText(result);
+}
+
 test("lists the original and natural-number examples in canonical order", async ({
   page,
 }) => {
@@ -74,6 +93,8 @@ test("lists the original and natural-number examples in canonical order", async 
     "Successor — 2 → 3",
     "Addition — 2 + 3 = 5",
     "Multiplication — 3 × 4 = 12",
+    "Option fallback — safePred/getOrElse",
+    "List — [1, 2, 3]",
   ]);
   await expectNoBrowserIssues(issues);
 });
@@ -89,6 +110,22 @@ test("runs each natural-number example in Chromium with exact results", async ({
     await expect(page.getByText(example.fileName)).toBeVisible();
     await expect(page.getByTestId(example.marker)).toBeVisible();
     await runAndExpect(page, example);
+  }
+
+  await expectNoBrowserIssues(issues);
+});
+
+test("runs structured official examples from the picker in both modes", async ({
+  page,
+}) => {
+  const issues = watchBrowserIssues(page);
+  await page.goto("/");
+
+  for (const example of STRUCTURED_EXAMPLES) {
+    await openExample(page, example.id);
+    await expect(page.getByText(example.fileName)).toBeVisible();
+    await runModeAndExpect(page, "transparent", example.result);
+    await runModeAndExpect(page, "fast", example.result);
   }
 
   await expectNoBrowserIssues(issues);

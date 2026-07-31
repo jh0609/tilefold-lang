@@ -4,6 +4,7 @@ type t =
   | Nat
   | Product of t * t
   | Sum of t * t
+  | List of t
   | Arrow of t * t
 
 val equal : t -> t -> bool

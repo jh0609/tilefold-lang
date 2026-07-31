@@ -36,6 +36,10 @@ module Port_key : sig
   val base : t
   val step : t
   val count : t
+  val list : t
+  val head : t
+  val tail : t
+  val recursive : t
   val predecessor : t
   val partial : t
   val accumulator : t
@@ -78,6 +82,9 @@ type node_kind =
   | Left of sum_signature
   | Right of sum_signature
   | Case of case_signature
+  | Nil of Core_type.t
+  | Cons of Core_type.t
+  | ListRec of listrec_signature
   | Function of function_signature
   | Apply of apply_signature
   | NatRec of Core_type.t
@@ -102,6 +109,11 @@ and case_signature = {
   case_left_type : Core_type.t;
   case_right_type : Core_type.t;
   case_result_type : Core_type.t;
+}
+
+and listrec_signature = {
+  list_item_type : Core_type.t;
+  list_result_type : Core_type.t;
 }
 
 and function_signature = {

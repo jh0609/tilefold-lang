@@ -29,6 +29,8 @@ import {
   updateApplyTypes,
   updateElementType,
   updateEntryResultType,
+  updateListItemType,
+  updateListRecTypes,
   type AddableElementKind,
 } from "./editorOps";
 import { exportProjectJson, parseProjectJson } from "./importProject";
@@ -78,6 +80,78 @@ describe("editor operations", () => {
     expect(result.element.id).toBe("node_nat_1");
     expect(result.element.properties).toEqual({ value: "0" });
     expect(result.element.bounds.x).toBe(452);
+  });
+
+  it("adds List constructors and ListRec with typed ports", () => {
+    let project = parseProjectJson(exampleJson);
+    const nil = addElement(project, "nil", { x: 500, y: 160 });
+    project = nil.document;
+    const cons = addElement(project, "cons", { x: 650, y: 160 });
+    project = cons.document;
+    const listRec = addElement(project, "list_rec", { x: 820, y: 160 });
+    project = listRec.document;
+
+    expect(nil.element.properties).toEqual({ itemType: "nat" });
+    expect(cons.element.properties).toEqual({ itemType: "nat" });
+    expect(listRec.element.properties).toEqual({
+      itemType: "nat",
+      resultType: "nat",
+    });
+
+    const ports = collectConnectablePorts(project);
+    expect(
+      ports.find((port) => port.key === `element:${nil.element.id}:value`)
+        ?.type,
+    ).toEqual({ list: "nat" });
+    expect(
+      ports.find((port) => port.key === `element:${cons.element.id}:head`)
+        ?.type,
+    ).toBe("nat");
+    expect(
+      ports.find((port) => port.key === `element:${cons.element.id}:tail`)
+        ?.type,
+    ).toEqual({ list: "nat" });
+    expect(
+      ports.find((port) => port.key === `element:${listRec.element.id}:step`)
+        ?.type,
+    ).toEqual({
+      arrow: [
+        { product: ["nat", { product: [{ list: "nat" }, "nat"] }] },
+        "nat",
+      ],
+    });
+    expect(() => parseProjectJson(exportProjectJson(project))).not.toThrow();
+  });
+
+  it("updates disconnected List type parameters atomically", () => {
+    let project = parseProjectJson(exampleJson);
+    const nil = addElement(project, "nil", { x: 500, y: 160 });
+    project = nil.document;
+    const listRec = addElement(project, "list_rec", { x: 700, y: 160 });
+    project = listRec.document;
+
+    const updatedNil = updateListItemType(project, nil.element.id, "bool");
+    if (updatedNil.error) throw new Error(updatedNil.error);
+    expect(
+      updatedNil.document.geometry.elements.find(
+        (element) => element.id === nil.element.id,
+      ),
+    ).toMatchObject({ properties: { itemType: "bool" } });
+
+    const updatedRec = updateListRecTypes(
+      updatedNil.document,
+      listRec.element.id,
+      "bool",
+      { list: "nat" },
+    );
+    if (updatedRec.error) throw new Error(updatedRec.error);
+    expect(
+      updatedRec.document.geometry.elements.find(
+        (element) => element.id === listRec.element.id,
+      ),
+    ).toMatchObject({
+      properties: { itemType: "bool", resultType: { list: "nat" } },
+    });
   });
 
   it("adds Result boundaries to the requested container using its result type", () => {

@@ -1,0 +1,756 @@
+{
+  "format": "tilefold-project",
+  "version": 2,
+  "geometry": {
+    "snapTolerance": 8,
+    "elements": [
+      {
+        "id": "unit-drop",
+        "kind": "drop",
+        "bounds": {
+          "x": 80,
+          "y": 70,
+          "width": 88,
+          "height": 56
+        },
+        "properties": {
+          "type": "unit"
+        },
+        "portAnchors": [
+          {
+            "port": "input",
+            "x": 80,
+            "y": 98
+          }
+        ]
+      },
+      {
+        "id": "payload",
+        "kind": "nat_literal",
+        "bounds": {
+          "x": 80,
+          "y": 180,
+          "width": 96,
+          "height": 56
+        },
+        "properties": {
+          "value": "4"
+        },
+        "portAnchors": [
+          {
+            "port": "value",
+            "x": 176,
+            "y": 208
+          }
+        ]
+      },
+      {
+        "id": "safePred-result",
+        "kind": "right",
+        "bounds": {
+          "x": 240,
+          "y": 176,
+          "width": 104,
+          "height": 64
+        },
+        "properties": {
+          "leftType": "unit",
+          "rightType": "nat"
+        },
+        "portAnchors": [
+          {
+            "port": "input",
+            "x": 240,
+            "y": 208
+          },
+          {
+            "port": "value",
+            "x": 344,
+            "y": 208
+          }
+        ]
+      },
+      {
+        "id": "fallback",
+        "kind": "nat_literal",
+        "bounds": {
+          "x": 80,
+          "y": 290,
+          "width": 96,
+          "height": 56
+        },
+        "properties": {
+          "value": "7"
+        },
+        "portAnchors": [
+          {
+            "port": "value",
+            "x": 176,
+            "y": 318
+          }
+        ]
+      },
+      {
+        "id": "input-pair",
+        "kind": "pair",
+        "bounds": {
+          "x": 410,
+          "y": 220,
+          "width": 120,
+          "height": 84
+        },
+        "properties": {
+          "leftType": {
+            "sum": [
+              "unit",
+              "nat"
+            ]
+          },
+          "rightType": "nat"
+        },
+        "portAnchors": [
+          {
+            "port": "left",
+            "x": 410,
+            "y": 248
+          },
+          {
+            "port": "right",
+            "x": 410,
+            "y": 276
+          },
+          {
+            "port": "value",
+            "x": 530,
+            "y": 262
+          }
+        ]
+      },
+      {
+        "id": "unpair",
+        "kind": "unpair",
+        "bounds": {
+          "x": 590,
+          "y": 220,
+          "width": 120,
+          "height": 84
+        },
+        "properties": {
+          "leftType": {
+            "sum": [
+              "unit",
+              "nat"
+            ]
+          },
+          "rightType": "nat"
+        },
+        "portAnchors": [
+          {
+            "port": "value",
+            "x": 590,
+            "y": 262
+          },
+          {
+            "port": "left",
+            "x": 710,
+            "y": 248
+          },
+          {
+            "port": "right",
+            "x": 710,
+            "y": 276
+          }
+        ]
+      },
+      {
+        "id": "left-function",
+        "kind": "function",
+        "bounds": {
+          "x": 760,
+          "y": 90,
+          "width": 144,
+          "height": 96
+        },
+        "properties": {
+          "templateId": "getOrElse_left",
+          "parameterType": "unit",
+          "resultType": "nat",
+          "captures": []
+        },
+        "portAnchors": [
+          {
+            "port": "value",
+            "x": 904,
+            "y": 138
+          }
+        ]
+      },
+      {
+        "id": "fallback-drop",
+        "kind": "drop",
+        "bounds": {
+          "x": 760,
+          "y": 220,
+          "width": 88,
+          "height": 56
+        },
+        "properties": {
+          "type": "nat"
+        },
+        "portAnchors": [
+          {
+            "port": "input",
+            "x": 760,
+            "y": 248
+          }
+        ]
+      },
+      {
+        "id": "right-function",
+        "kind": "function",
+        "bounds": {
+          "x": 760,
+          "y": 330,
+          "width": 144,
+          "height": 80
+        },
+        "properties": {
+          "templateId": "getOrElse_right",
+          "parameterType": "nat",
+          "resultType": "nat",
+          "captures": []
+        },
+        "portAnchors": [
+          {
+            "port": "value",
+            "x": 904,
+            "y": 370
+          }
+        ]
+      },
+      {
+        "id": "case",
+        "kind": "case",
+        "bounds": {
+          "x": 960,
+          "y": 220,
+          "width": 144,
+          "height": 112
+        },
+        "properties": {
+          "leftType": "unit",
+          "rightType": "nat",
+          "resultType": "nat"
+        },
+        "portAnchors": [
+          {
+            "port": "scrutinee",
+            "x": 960,
+            "y": 248
+          },
+          {
+            "port": "onLeft",
+            "x": 960,
+            "y": 276
+          },
+          {
+            "port": "onRight",
+            "x": 960,
+            "y": 304
+          },
+          {
+            "port": "result",
+            "x": 1104,
+            "y": 276
+          }
+        ]
+      },
+      {
+        "id": "left-drop",
+        "kind": "drop",
+        "bounds": {
+          "x": 80,
+          "y": 580,
+          "width": 88,
+          "height": 56
+        },
+        "properties": {
+          "type": "unit"
+        },
+        "portAnchors": [
+          {
+            "port": "input",
+            "x": 80,
+            "y": 610
+          }
+        ]
+      },
+      {
+        "id": "left-fallback-literal",
+        "kind": "nat_literal",
+        "bounds": {
+          "x": 180,
+          "y": 662,
+          "width": 96,
+          "height": 56
+        },
+        "properties": {
+          "value": "7"
+        },
+        "portAnchors": [
+          {
+            "port": "value",
+            "x": 276,
+            "y": 690
+          }
+        ]
+      }
+    ],
+    "containers": [
+      {
+        "id": "entry",
+        "kind": {
+          "kind": "entry",
+          "templateId": "entry_template",
+          "resultType": "nat",
+          "dependencies": [
+            "getOrElse_left",
+            "getOrElse_right"
+          ]
+        },
+        "bounds": {
+          "x": 0,
+          "y": 0,
+          "width": 1260,
+          "height": 470
+        },
+        "boundaryPorts": [
+          {
+            "id": "entry-parameter",
+            "role": "parameter",
+            "type": "unit",
+            "anchor": {
+              "x": 0,
+              "y": 98
+            }
+          },
+          {
+            "id": "entry-result",
+            "role": "result",
+            "type": "nat",
+            "anchor": {
+              "x": 1260,
+              "y": 276
+            }
+          }
+        ]
+      },
+      {
+        "id": "getOrElse_left_container",
+        "kind": {
+          "kind": "template",
+          "templateId": "getOrElse_left",
+          "parameterType": "unit",
+          "resultType": "nat",
+          "dependencies": []
+        },
+        "bounds": {
+          "x": 0,
+          "y": 520,
+          "width": 520,
+          "height": 260
+        },
+        "boundaryPorts": [
+          {
+            "id": "left-parameter",
+            "role": "parameter",
+            "type": "unit",
+            "anchor": {
+              "x": 0,
+              "y": 90
+            }
+          },
+          {
+            "id": "left-result",
+            "role": "result",
+            "type": "nat",
+            "anchor": {
+              "x": 520,
+              "y": 130
+            }
+          }
+        ]
+      },
+      {
+        "id": "getOrElse_right_container",
+        "kind": {
+          "kind": "template",
+          "templateId": "getOrElse_right",
+          "parameterType": "nat",
+          "resultType": "nat",
+          "dependencies": []
+        },
+        "bounds": {
+          "x": 600,
+          "y": 520,
+          "width": 440,
+          "height": 220
+        },
+        "boundaryPorts": [
+          {
+            "id": "right-parameter",
+            "role": "parameter",
+            "type": "nat",
+            "anchor": {
+              "x": 0,
+              "y": 110
+            }
+          },
+          {
+            "id": "right-result",
+            "role": "result",
+            "type": "nat",
+            "anchor": {
+              "x": 440,
+              "y": 110
+            }
+          }
+        ]
+      }
+    ],
+    "wires": [
+      {
+        "id": "w-entry-drop",
+        "points": [
+          {
+            "x": 0,
+            "y": 98
+          },
+          {
+            "x": 80,
+            "y": 98
+          }
+        ],
+        "sourceHint": {
+          "kind": "boundary_port",
+          "containerId": "entry",
+          "boundaryId": "entry-parameter"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "unit-drop",
+          "port": "input"
+        }
+      },
+      {
+        "id": "w-payload-right",
+        "points": [
+          {
+            "x": 176,
+            "y": 208
+          },
+          {
+            "x": 240,
+            "y": 208
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "payload",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "safePred-result",
+          "port": "input"
+        }
+      },
+      {
+        "id": "w-option-pair",
+        "points": [
+          {
+            "x": 344,
+            "y": 208
+          },
+          {
+            "x": 410,
+            "y": 248
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "safePred-result",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "input-pair",
+          "port": "left"
+        }
+      },
+      {
+        "id": "w-fallback-pair",
+        "points": [
+          {
+            "x": 176,
+            "y": 318
+          },
+          {
+            "x": 410,
+            "y": 276
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "fallback",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "input-pair",
+          "port": "right"
+        }
+      },
+      {
+        "id": "w-pair-unpair",
+        "points": [
+          {
+            "x": 530,
+            "y": 262
+          },
+          {
+            "x": 590,
+            "y": 262
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "input-pair",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "unpair",
+          "port": "value"
+        }
+      },
+      {
+        "id": "w-option-case",
+        "points": [
+          {
+            "x": 710,
+            "y": 248
+          },
+          {
+            "x": 960,
+            "y": 248
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "unpair",
+          "port": "left"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "case",
+          "port": "scrutinee"
+        }
+      },
+      {
+        "id": "w-fallback-drop",
+        "points": [
+          {
+            "x": 710,
+            "y": 276
+          },
+          {
+            "x": 760,
+            "y": 248
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "unpair",
+          "port": "right"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "fallback-drop",
+          "port": "input"
+        }
+      },
+      {
+        "id": "w-left-case",
+        "points": [
+          {
+            "x": 904,
+            "y": 138
+          },
+          {
+            "x": 960,
+            "y": 276
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "left-function",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "case",
+          "port": "onLeft"
+        }
+      },
+      {
+        "id": "w-right-case",
+        "points": [
+          {
+            "x": 904,
+            "y": 370
+          },
+          {
+            "x": 960,
+            "y": 304
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "right-function",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "case",
+          "port": "onRight"
+        }
+      },
+      {
+        "id": "w-case-result",
+        "points": [
+          {
+            "x": 1104,
+            "y": 276
+          },
+          {
+            "x": 1260,
+            "y": 276
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "case",
+          "port": "result"
+        },
+        "targetHint": {
+          "kind": "boundary_port",
+          "containerId": "entry",
+          "boundaryId": "entry-result"
+        }
+      },
+      {
+        "id": "w-left-param-drop",
+        "points": [
+          {
+            "x": 0,
+            "y": 610
+          },
+          {
+            "x": 80,
+            "y": 610
+          }
+        ],
+        "sourceHint": {
+          "kind": "boundary_port",
+          "containerId": "getOrElse_left_container",
+          "boundaryId": "left-parameter"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "left-drop",
+          "port": "input"
+        }
+      },
+      {
+        "id": "w-left-fallback-result",
+        "points": [
+          {
+            "x": 276,
+            "y": 690
+          },
+          {
+            "x": 520,
+            "y": 650
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "left-fallback-literal",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "boundary_port",
+          "containerId": "getOrElse_left_container",
+          "boundaryId": "left-result"
+        }
+      },
+      {
+        "id": "w-right-param-result",
+        "points": [
+          {
+            "x": 600,
+            "y": 630
+          },
+          {
+            "x": 1040,
+            "y": 630
+          }
+        ],
+        "sourceHint": {
+          "kind": "boundary_port",
+          "containerId": "getOrElse_right_container",
+          "boundaryId": "right-parameter"
+        },
+        "targetHint": {
+          "kind": "boundary_port",
+          "containerId": "getOrElse_right_container",
+          "boundaryId": "right-result"
+        }
+      }
+    ],
+    "junctions": []
+  },
+  "surfaceFunctions": [
+    {
+      "name": "getOrElseLeft",
+      "templateId": "getOrElse_left",
+      "bodyContainerId": "getOrElse_left_container",
+      "parameters": [
+        {
+          "name": "none",
+          "type": "unit"
+        }
+      ],
+      "result": {
+        "name": "fallback",
+        "type": "nat"
+      }
+    },
+    {
+      "name": "getOrElseRight",
+      "templateId": "getOrElse_right",
+      "bodyContainerId": "getOrElse_right_container",
+      "parameters": [
+        {
+          "name": "value",
+          "type": "nat"
+        }
+      ],
+      "result": {
+        "name": "value",
+        "type": "nat"
+      }
+    }
+  ]
+}

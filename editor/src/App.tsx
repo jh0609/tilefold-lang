@@ -1068,6 +1068,39 @@ export function App() {
               after: { leftType, rightType, resultType },
             });
           }}
+          onListItemTypeChange={(id, itemType: CoreType) => {
+            const element = document.geometry.elements.find(
+              (candidate) => candidate.id === id,
+            );
+            if (!element || (element.kind !== "nil" && element.kind !== "cons")) {
+              return;
+            }
+            runCommand({
+              type: "set_list_item_type",
+              id,
+              before: element.properties.itemType,
+              after: itemType,
+            });
+          }}
+          onListRecTypesChange={(
+            id,
+            itemType: CoreType,
+            resultType: CoreType,
+          ) => {
+            const element = document.geometry.elements.find(
+              (candidate) => candidate.id === id,
+            );
+            if (!element || element.kind !== "list_rec") return;
+            runCommand({
+              type: "set_list_rec_types",
+              id,
+              before: {
+                itemType: element.properties.itemType,
+                resultType: element.properties.resultType,
+              },
+              after: { itemType, resultType },
+            });
+          }}
           onEntryResultTypeChange={(containerId, resultType: CoreType) => {
             const container = document.geometry.containers.find(
               (candidate) => candidate.id === containerId,

@@ -65,6 +65,81 @@ describe("Project JSON v2 import and export", () => {
     expect(() => parseProjectJson(JSON.stringify(malformed))).toThrow(
       "expected two type entries",
     );
+
+    const malformedList = JSON.parse(exampleJson);
+    malformedList.geometry.elements[0].properties.type = {
+      list: { nope: true },
+    };
+    expect(() => parseProjectJson(JSON.stringify(malformedList))).toThrow(
+      "unknown type field",
+    );
+  });
+
+  it("round-trips List types and List nodes", () => {
+    const input = JSON.parse(exampleJson);
+    input.geometry.containers[0].kind.resultType = { list: "nat" };
+    input.geometry.containers[0].boundaryPorts[0].type = { list: "nat" };
+    input.geometry.elements.push(
+      {
+        id: "nil_1",
+        kind: "nil",
+        properties: { itemType: "nat" },
+        bounds: { x: 100, y: 100, width: 96, height: 56 },
+        portAnchors: [{ port: "value", x: 96, y: 28 }],
+      },
+      {
+        id: "cons_1",
+        kind: "cons",
+        properties: { itemType: { sum: ["unit", "nat"] } },
+        bounds: { x: 260, y: 100, width: 120, height: 84 },
+        portAnchors: [
+          { port: "head", x: 0, y: 28 },
+          { port: "tail", x: 0, y: 56 },
+          { port: "value", x: 120, y: 42 },
+        ],
+      },
+      {
+        id: "list_rec_1",
+        kind: "list_rec",
+        properties: { itemType: "nat", resultType: { product: ["nat", "bool"] } },
+        bounds: { x: 430, y: 100, width: 152, height: 120 },
+        portAnchors: [
+          { port: "list", x: 0, y: 24 },
+          { port: "base", x: 0, y: 48 },
+          { port: "step", x: 0, y: 72 },
+          { port: "result", x: 152, y: 60 },
+        ],
+      },
+    );
+
+    const project = parseProjectJson(JSON.stringify(input));
+    const exported = exportProjectJson(project);
+    expect(parseProjectJson(exported)).toMatchObject({
+      geometry: {
+        containers: [
+          expect.objectContaining({
+            kind: expect.objectContaining({ resultType: { list: "nat" } }),
+          }),
+        ],
+        elements: expect.arrayContaining([
+          expect.objectContaining({
+            kind: "nil",
+            properties: { itemType: "nat" },
+          }),
+          expect.objectContaining({
+            kind: "cons",
+            properties: { itemType: { sum: ["unit", "nat"] } },
+          }),
+          expect.objectContaining({
+            kind: "list_rec",
+            properties: {
+              itemType: "nat",
+              resultType: { product: ["nat", "bool"] },
+            },
+          }),
+        ]),
+      },
+    });
   });
 
   it("requires the container and boundary Core type fields used by OCaml", () => {

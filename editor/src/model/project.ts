@@ -16,6 +16,7 @@ export type CoreType =
   | "nat"
   | { product: readonly [CoreType, CoreType] }
   | { sum: readonly [CoreType, CoreType] }
+  | { list: CoreType }
   | { arrow: readonly [CoreType, CoreType] };
 
 export interface PortAnchor extends Point {
@@ -91,6 +92,18 @@ export type ProjectElement =
         rightType: CoreType;
         resultType: CoreType;
       };
+    })
+  | (ElementBase & {
+      kind: "nil";
+      properties: { itemType: CoreType };
+    })
+  | (ElementBase & {
+      kind: "cons";
+      properties: { itemType: CoreType };
+    })
+  | (ElementBase & {
+      kind: "list_rec";
+      properties: { itemType: CoreType; resultType: CoreType };
     })
   | (ElementBase & {
       kind: "nat_rec";
@@ -312,6 +325,9 @@ export const ELEMENT_KINDS = [
   "left",
   "right",
   "case",
+  "nil",
+  "cons",
+  "list_rec",
   "function",
   "library_call",
   "project_call",

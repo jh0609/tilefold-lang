@@ -51,6 +51,12 @@ interface InspectorProps {
     rightType: CoreType,
     resultType: CoreType,
   ) => void;
+  onListItemTypeChange: (id: string, itemType: CoreType) => void;
+  onListRecTypesChange: (
+    id: string,
+    itemType: CoreType,
+    resultType: CoreType,
+  ) => void;
   onEntryResultTypeChange: (containerId: string, resultType: CoreType) => void;
   canDelete: boolean;
   onDelete: () => void;
@@ -604,6 +610,8 @@ function ElementInspector({
   onPairTypesChange,
   onSumTypesChange,
   onCaseTypesChange,
+  onListItemTypeChange,
+  onListRecTypesChange,
   onFocusTemplate,
   onOpenStandardLibraryDefinition,
   onError,
@@ -634,6 +642,12 @@ function ElementInspector({
     id: string,
     leftType: CoreType,
     rightType: CoreType,
+    resultType: CoreType,
+  ) => void;
+  onListItemTypeChange: (id: string, itemType: CoreType) => void;
+  onListRecTypesChange: (
+    id: string,
+    itemType: CoreType,
     resultType: CoreType,
   ) => void;
   onFocusTemplate: (templateId: string) => void;
@@ -876,6 +890,54 @@ function ElementInspector({
           </p>
         </>
       )}
+      {(element.kind === "nil" || element.kind === "cons") && (
+        <>
+          <CoreTypeField
+            label="Item type"
+            value={element.properties.itemType}
+            disabled={connectedWires.length > 0}
+            onChange={(itemType) =>
+              onListItemTypeChange(element.id, itemType)
+            }
+          />
+          <p className="limitation">
+            List constructors preserve element order. Cons consumes one item and
+            the remaining List of the same item type.
+          </p>
+        </>
+      )}
+      {element.kind === "list_rec" && (
+        <>
+          <CoreTypeField
+            label="Item type"
+            value={element.properties.itemType}
+            disabled={connectedWires.length > 0}
+            onChange={(itemType) =>
+              onListRecTypesChange(
+                element.id,
+                itemType,
+                element.properties.resultType,
+              )
+            }
+          />
+          <CoreTypeField
+            label="Result type"
+            value={element.properties.resultType}
+            disabled={connectedWires.length > 0}
+            onChange={(resultType) =>
+              onListRecTypesChange(
+                element.id,
+                element.properties.itemType,
+                resultType,
+              )
+            }
+          />
+          <p className="limitation">
+            ListRec applies the step closure once per Cons cell. The step
+            parameter is head × (tail × recursive result).
+          </p>
+        </>
+      )}
       {element.kind === "function" && (
         <section className="readout">
           <h3>Function template</h3>
@@ -1044,6 +1106,8 @@ export function Inspector({
   onPairTypesChange,
   onSumTypesChange,
   onCaseTypesChange,
+  onListItemTypeChange,
+  onListRecTypesChange,
   onEntryResultTypeChange,
   canDelete,
   onDelete,
@@ -1139,6 +1203,8 @@ export function Inspector({
           onPairTypesChange={onPairTypesChange}
           onSumTypesChange={onSumTypesChange}
           onCaseTypesChange={onCaseTypesChange}
+          onListItemTypeChange={onListItemTypeChange}
+          onListRecTypesChange={onListRecTypesChange}
           onFocusTemplate={onFocusTemplate}
           onOpenStandardLibraryDefinition={onOpenStandardLibraryDefinition}
           onError={onError}

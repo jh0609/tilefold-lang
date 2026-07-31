@@ -31,6 +31,8 @@ let rec render_payload = function
       "Product(" ^ render_payload left ^ ", " ^ render_payload right ^ ")"
   | Left (payload, _) -> "Left(" ^ render_payload payload ^ ")"
   | Right (_, payload) -> "Right(" ^ render_payload payload ^ ")"
+  | List (_item_type, items) ->
+      "List[" ^ String.concat ", " (List.map render_payload items) ^ "]"
   | Closure closure ->
       "Closure(template=" ^ render_template_id closure.template_id
       ^ ",parameter=" ^ render_type closure.parameter_type
@@ -78,6 +80,9 @@ let render_call_site = function
       "Case(node=" ^ render_node_id node_id ^ ",branch="
       ^ (match branch with `Left -> "Left" | `Right -> "Right")
       ^ ")"
+  | ListRec_step { node_id; index } ->
+      "ListRecStep(node=" ^ render_node_id node_id ^ ",index="
+      ^ string_of_int index ^ ")"
 
 let rec render_instance = function
   | Runtime_value.Instance_id.Root -> "Root"

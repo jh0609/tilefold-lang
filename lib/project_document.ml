@@ -22,6 +22,9 @@ type element_kind =
       right_type : Core_type.t;
       result_type : Core_type.t;
     }
+  | Nil of Core_type.t
+  | Cons of Core_type.t
+  | ListRec of { item_type : Core_type.t; result_type : Core_type.t }
   | Function of {
       template_id : string;
       parameter_type : Core_type.t;
@@ -319,6 +322,11 @@ let rec decode_type path = function
             let* right = decode_type (path ^ ".sum[1]") right in
             Ok (Core_type.Sum (left, right))
         | _ -> error (path ^ ".sum") (Invalid_value "sum requires two types"))
+      else if List.exists (fun (name, _) -> String.equal name "list") fields then (
+        let* () = reject_unknown path [ "list" ] fields in
+        let* item = field path "list" fields in
+        let* item = decode_type (path ^ ".list") item in
+        Ok (Core_type.List item))
       else (
         let* () = reject_unknown path [ "product" ] fields in
         let* product = field path "product" fields in
@@ -495,6 +503,19 @@ let decode_element_kind path json =
       let* right_type = type_field "rightType" in
       let* result_type = type_field "resultType" in
       Ok (Case { left_type; right_type; result_type })
+  | "nil" ->
+      let* () = reject_unknown path [ "kind"; "itemType" ] fields in
+      let* item_type = type_field "itemType" in
+      Ok (Nil item_type)
+  | "cons" ->
+      let* () = reject_unknown path [ "kind"; "itemType" ] fields in
+      let* item_type = type_field "itemType" in
+      Ok (Cons item_type)
+  | "list_rec" ->
+      let* () = reject_unknown path [ "kind"; "itemType"; "resultType" ] fields in
+      let* item_type = type_field "itemType" in
+      let* result_type = type_field "resultType" in
+      Ok (ListRec { item_type; result_type })
   | "nat_rec" ->
       let* () = reject_unknown path [ "kind"; "type" ] fields in
       let* typ = type_field "type" in
@@ -971,6 +992,7 @@ let rec json_type = function
       `Assoc [ ("product", `List [ json_type left; json_type right ]) ]
   | Core_type.Sum (left, right) ->
       `Assoc [ ("sum", `List [ json_type left; json_type right ]) ]
+  | Core_type.List item -> `Assoc [ ("list", json_type item) ]
   | Core_type.Arrow (left, right) -> `Assoc [ ("arrow", `List [ json_type left; json_type right ]) ]
 
 let json_captures captures =
@@ -1020,6 +1042,15 @@ let json_element_kind = function
           [
             ("leftType", json_type left_type);
             ("rightType", json_type right_type);
+            ("resultType", json_type result_type);
+          ] )
+  | Nil item_type -> ("nil", `Assoc [ ("itemType", json_type item_type) ])
+  | Cons item_type -> ("cons", `Assoc [ ("itemType", json_type item_type) ])
+  | ListRec { item_type; result_type } ->
+      ( "list_rec",
+        `Assoc
+          [
+            ("itemType", json_type item_type);
             ("resultType", json_type result_type);
           ] )
   | NatRec typ -> ("nat_rec", `Assoc [ ("type", json_type typ) ])
@@ -1324,6 +1355,10 @@ let core_kind = function
              case_right_type = right_type;
              case_result_type = result_type;
            })
+  | Nil item_type -> Ok (C.Nil item_type)
+  | Cons item_type -> Ok (C.Cons item_type)
+  | ListRec { item_type; result_type } ->
+      Ok (C.ListRec { list_item_type = item_type; list_result_type = result_type })
   | NatRec typ -> Ok (C.NatRec typ)
   | BoolRec typ -> Ok (C.BoolRec typ)
   | Apply { parameter_type; result_type } ->

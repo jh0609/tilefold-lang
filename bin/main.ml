@@ -11,6 +11,8 @@ let rec payload_to_string_payload = function
       ^ payload_to_string_payload right ^ ")"
   | Left (payload, _) -> "Left(" ^ payload_to_string_payload payload ^ ")"
   | Right (_, payload) -> "Right(" ^ payload_to_string_payload payload ^ ")"
+  | List (_item_type, items) ->
+      "List[" ^ String.concat ", " (List.map payload_to_string_payload items) ^ "]"
   | Closure closure ->
       "Closure("
       ^ Tilefold.Core_graph.Function_template_id.to_string closure.template_id

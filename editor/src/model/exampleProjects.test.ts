@@ -2,13 +2,15 @@ import { describe, expect, it } from "vitest";
 import { exportProjectJson, parseProjectJson } from "./importProject";
 import { EXAMPLE_PROJECTS, exampleProjectById } from "./exampleProjects";
 
-describe("natural-number example projects", () => {
-  it("lists the original, successor, addition, and multiplication examples", () => {
+describe("example projects", () => {
+  it("lists examples in canonical picker order", () => {
     expect(EXAMPLE_PROJECTS.map((example) => example.name)).toEqual([
       "Original — Nat(2) → Succ",
       "Successor — 2 → 3",
       "Addition — 2 + 3 = 5",
       "Multiplication — 3 × 4 = 12",
+      "Option fallback — safePred/getOrElse",
+      "List — [1, 2, 3]",
     ]);
     expect(
       exampleProjectById(
@@ -17,7 +19,13 @@ describe("natural-number example projects", () => {
     ).toBeUndefined();
   });
 
-  it.each(["successor", "addition", "multiplication"] as const)(
+  it.each([
+    "successor",
+    "addition",
+    "multiplication",
+    "option-safe-pred-get-or-else",
+    "list-nat",
+  ] as const)(
     "round-trips the %s Project JSON without semantic data loss",
     (id) => {
       const example = exampleProjectById(id);

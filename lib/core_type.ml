@@ -4,6 +4,7 @@ type t =
   | Nat
   | Product of t * t
   | Sum of t * t
+  | List of t
   | Arrow of t * t
 
 let equal = ( = )
@@ -22,6 +23,7 @@ let rec to_string_prec parent_prec typ =
       let prec = 2 in
       let text = to_string_prec 3 left ^ " + " ^ to_string_prec 2 right in
       if prec < parent_prec then "(" ^ text ^ ")" else text
+  | List item -> "List<" ^ to_string_prec 0 item ^ ">"
   | Arrow (input, output) ->
       let prec = 1 in
       let text = to_string_prec 2 input ^ " -> " ^ to_string_prec 1 output in

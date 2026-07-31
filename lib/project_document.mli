@@ -34,6 +34,9 @@ type element_kind =
       right_type : Core_type.t;
       result_type : Core_type.t;
     }
+  | Nil of Core_type.t
+  | Cons of Core_type.t
+  | ListRec of { item_type : Core_type.t; result_type : Core_type.t }
   | Function of {
       template_id : string;
       parameter_type : Core_type.t;

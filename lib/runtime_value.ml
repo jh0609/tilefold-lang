@@ -21,6 +21,10 @@ module Instance_id = struct
         node_id : Core_graph.Node_id.t;
         iteration : Nat.t;
       }
+    | ListRec_step of {
+        node_id : Core_graph.Node_id.t;
+        index : int;
+      }
 
   type t =
     | Root
@@ -47,6 +51,9 @@ module Instance_id = struct
         NatRec_step_accumulator { node_id = right_node; iteration = right_iteration } ) ->
         Core_graph.Node_id.equal left_node right_node
         && Nat.equal left_iteration right_iteration
+    | ( ListRec_step { node_id = left_node; index = left_index },
+        ListRec_step { node_id = right_node; index = right_index } ) ->
+        Core_graph.Node_id.equal left_node right_node && left_index = right_index
     | _ -> false
 
   let call_site_to_string = function
@@ -63,6 +70,9 @@ module Instance_id = struct
     | NatRec_step_accumulator { node_id; iteration } ->
         "NatRecStepAccumulator(" ^ Core_graph.Node_id.to_string node_id ^ ","
         ^ Nat.to_string iteration ^ ")"
+    | ListRec_step { node_id; index } ->
+        "ListRecStep(" ^ Core_graph.Node_id.to_string node_id ^ ","
+        ^ string_of_int index ^ ")"
 
   let rec equal left right =
     match (left, right) with
@@ -125,6 +135,7 @@ and payload =
   | Product of payload * payload
   | Left of payload * Core_type.t
   | Right of Core_type.t * payload
+  | List of Core_type.t * payload list
   | Closure of closure
 
 let create ~id ~payload ~origin = { id; payload; origin }
@@ -152,6 +163,7 @@ let rec payload_type = function
       Core_type.Product (payload_type left, payload_type right)
   | Left (payload, right_type) -> Core_type.Sum (payload_type payload, right_type)
   | Right (left_type, payload) -> Core_type.Sum (left_type, payload_type payload)
+  | List (item_type, _items) -> Core_type.List item_type
   | Closure closure -> Core_type.Arrow (closure.parameter_type, closure.result_type)
 
 let typ value = payload_type value.payload
@@ -169,6 +181,10 @@ let rec payload_equal left right =
   | Right (left_left_type, left_payload), Right (right_left_type, right_payload) ->
       Core_type.equal left_left_type right_left_type
       && payload_equal left_payload right_payload
+  | List (left_type, left_items), List (right_type, right_items) ->
+      Core_type.equal left_type right_type
+      && List.length left_items = List.length right_items
+      && List.for_all2 payload_equal left_items right_items
   | Closure left, Closure right -> closure_equal left right
   | _ -> false
 
@@ -197,6 +213,8 @@ let rec payload_to_string = function
       "Product(" ^ payload_to_string left ^ ", " ^ payload_to_string right ^ ")"
   | Left (payload, _) -> "Left(" ^ payload_to_string payload ^ ")"
   | Right (_, payload) -> "Right(" ^ payload_to_string payload ^ ")"
+  | List (_item_type, items) ->
+      "List[" ^ String.concat ", " (List.map payload_to_string items) ^ "]"
   | Closure closure ->
       "Closure("
       ^ Core_graph.Function_template_id.to_string closure.template_id

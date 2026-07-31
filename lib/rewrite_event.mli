@@ -11,6 +11,13 @@ type rule =
   | ApplyReturn
   | CaseLeft
   | CaseRight
+  | Nil
+  | Cons
+  | ListRecNil
+  | ListRecCons
+  | ListRecStepEnter
+  | ListRecStepReturn
+  | ListRecComplete
   | NatRecZero
   | NatRecStart
   | NatRecUnfold

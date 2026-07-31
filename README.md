@@ -89,6 +89,33 @@ Entry keeps the shape `Unit -> B`, so a Sum can be an entry result just like a
 Nat, Bool, function, or Product value. For example, an entry with result type
 `Nat + Bool` can return `Left(Nat(3))` or `Right(Bool(True))`.
 
+### List Values
+
+Tilefold Core supports finite homogeneous Lists written as `List<A>` and stored
+structurally in Project JSON as `{ "list": A }`.
+
+Use `Nil<A>` for the empty list and `Cons<A>` to prepend one `head : A` to a
+`tail : List<A>`. The editor does not add list literal syntax yet; lists are
+ordinary explicit Core graphs:
+
+```text
+Cons(1, Cons(2, Cons(3, Nil))) -> List[Nat(1), Nat(2), Nat(3)]
+```
+
+`ListRec<A, B>` is the structural recursor for finite lists:
+
+```text
+list   : List<A>
+base   : B
+step   : A × (List<A> × B) -> B
+result : B
+```
+
+The step receives the current head, the structurally smaller tail, and the
+recursive result for that tail. `Nil` returns `base` without running `step`;
+each `Cons` cell runs `step` exactly once. This preserves totality without
+general recursion, fixpoints, or cyclic runtime lists.
+
 ### Standard Library Canvas Symbols
 
 Folded Standard Library calls use familiar mathematical symbols on the canvas
@@ -124,4 +151,7 @@ raising a runtime error.
 The editor's **Example** picker includes executable natural-number projects for
 `Succ(2) = 3`, `2 + 3 = 5`, and `3 × 4 = 12`. Addition and multiplication are
 defined with Tilefold's total `NatRec` primitive recursion; multiplication
-reuses its included addition template.
+reuses its included addition template. Sum/Product examples such as
+`safePred : Nat -> Unit + Nat` and
+`getOrElse : (Unit + Nat) × Nat -> Nat` are covered by regression tests and are
+kept as canonical authoring patterns for Option-like flows.

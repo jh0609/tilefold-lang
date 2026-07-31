@@ -181,6 +181,49 @@ let product_swap_entry () =
   Function_template.create ~id:(template_id "serialization-product-swap")
     ~parameter_type:Core_type.Unit ~result_type:bool_nat ~captures:[] ~body ()
 
+let list_nat_entry () =
+  let list_nat = Core_type.List Core_type.Nat in
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop-param" (Drop Core_type.Unit);
+      node "nil" (Nil Core_type.Nat);
+      node "three" (Nat_literal (nat "3"));
+      node "cons-three" (Cons Core_type.Nat);
+      node "two" (Nat_literal (nat "2"));
+      node "cons-two" (Cons Core_type.Nat);
+      node "one" (Nat_literal (nat "1"));
+      node "cons-one" (Cons Core_type.Nat);
+      node "result" (Result list_nat);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop-param" "input");
+      edge "e-three-head" (pref "three" "value") (pref "cons-three" "head");
+      edge "e-nil-tail" (pref "nil" "value") (pref "cons-three" "tail");
+      edge "e-two-head" (pref "two" "value") (pref "cons-two" "head");
+      edge "e-three-tail" (pref "cons-three" "value") (pref "cons-two" "tail");
+      edge "e-one-head" (pref "one" "value") (pref "cons-one" "head");
+      edge "e-two-tail" (pref "cons-two" "value") (pref "cons-one" "tail");
+      edge "e-list-result" (pref "cons-one" "value") (pref "result" "value");
+    ]
+  in
+  let body =
+    Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:
+        [
+          node_id "nil";
+          node_id "cons-three";
+          node_id "cons-two";
+          node_id "cons-one";
+          node_id "drop-param";
+        ]
+    |> validate_graph
+  in
+  Function_template.create ~id:(template_id "serialization-list-nat")
+    ~parameter_type:Core_type.Unit ~result_type:list_nat ~captures:[] ~body ()
+
 let unit_to_nat_template () =
   let nodes =
     [
@@ -301,6 +344,8 @@ let rec payload_to_string = function
       "Product(" ^ payload_to_string left ^ ", " ^ payload_to_string right ^ ")"
   | Left (payload, _) -> "Left(" ^ payload_to_string payload ^ ")"
   | Right (_, payload) -> "Right(" ^ payload_to_string payload ^ ")"
+  | List (_item_type, items) ->
+      "List[" ^ String.concat ", " (List.map payload_to_string items) ^ "]"
   | Closure closure -> "Closure(" ^ Function_template_id.to_string closure.template_id ^ ")"
 
 let payload_string value = payload_to_string (Runtime_value.payload value)
@@ -337,6 +382,10 @@ let () =
   assert_roundtrip "product-swap"
     (package_of_entry (product_swap_entry ())
        (Core_type.Product (Core_type.Bool, Core_type.Nat)))
+
+let () =
+  assert_roundtrip "list-nat"
+    (package_of_entry (list_nat_entry ()) (Core_type.List Core_type.Nat))
 
 let () =
   let target = unit_to_nat_template () in

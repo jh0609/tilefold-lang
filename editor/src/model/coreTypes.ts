@@ -12,6 +12,7 @@ export const CORE_TYPE_PRESETS: Array<{ label: string; value: CoreType }> = [
   { label: "Nat -> Nat", value: { arrow: ["nat", "nat"] } },
   { label: "Nat * Bool", value: { product: ["nat", "bool"] } },
   { label: "Nat + Bool", value: { sum: ["nat", "bool"] } },
+  { label: "List<Nat>", value: { list: "nat" } },
   {
     label: "Nat * Bool * Unit",
     value: { product: ["nat", { product: ["bool", "unit"] }] },
@@ -42,6 +43,10 @@ function isSumType(type: CoreType): type is Extract<CoreType, { sum: readonly [C
   return typeof type !== "string" && "sum" in type;
 }
 
+function isListType(type: CoreType): type is Extract<CoreType, { list: CoreType }> {
+  return typeof type !== "string" && "list" in type;
+}
+
 export function coreTypeEqual(left: CoreType, right: CoreType): boolean {
   if (typeof left === "string" || typeof right === "string") {
     return left === right;
@@ -60,6 +65,13 @@ export function coreTypeEqual(left: CoreType, right: CoreType): boolean {
       isSumType(right) &&
       coreTypeEqual(left.sum[0], right.sum[0]) &&
       coreTypeEqual(left.sum[1], right.sum[1])
+    );
+  }
+  if (isListType(left) || isListType(right)) {
+    return (
+      isListType(left) &&
+      isListType(right) &&
+      coreTypeEqual(left.list, right.list)
     );
   }
   return (
@@ -86,9 +98,12 @@ export function formatCoreType(type: CoreType): string {
       isArrowType(type.sum[1]) ? `(${right})` : right
     }`;
   }
+  if (isListType(type)) {
+    return `List<${formatCoreType(type.list)}>`;
+  }
   const left = formatCoreType(type.arrow[0]);
   const right = formatCoreType(type.arrow[1]);
-  return `${typeof type.arrow[0] === "string" || isProductType(type.arrow[0]) || isSumType(type.arrow[0]) ? left : `(${left})`} -> ${
+  return `${typeof type.arrow[0] === "string" || isProductType(type.arrow[0]) || isSumType(type.arrow[0]) || isListType(type.arrow[0]) ? left : `(${left})`} -> ${
     typeof type.arrow[1] === "string" ? right : `(${right})`
   }`;
 }
@@ -132,6 +147,9 @@ export function normalizeCoreType(type: CoreType): CoreType {
         normalizeCoreType(type.sum[1]),
       ],
     };
+  }
+  if (isListType(type)) {
+    return { list: normalizeCoreType(type.list) };
   }
   return {
     arrow: [

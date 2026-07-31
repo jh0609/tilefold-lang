@@ -22,6 +22,8 @@ let rec result_payload_to_string = function
       ^ result_payload_to_string right ^ ")"
   | Runtime_value.Left (payload, _) -> "Left(" ^ result_payload_to_string payload ^ ")"
   | Runtime_value.Right (_, payload) -> "Right(" ^ result_payload_to_string payload ^ ")"
+  | Runtime_value.List (_item_type, items) ->
+      "List[" ^ String.concat ", " (List.map result_payload_to_string items) ^ "]"
   | Runtime_value.Closure closure ->
       "Closure("
       ^ Core_graph.Function_template_id.to_string closure.template_id
@@ -53,6 +55,7 @@ module Fast = struct
     | Product of value * value
     | Left of value * Core_type.t
     | Right of Core_type.t * value
+    | List of Core_type.t * value list
     | Project_closure of {
         template_id : string;
         args : value list;
@@ -116,6 +119,14 @@ module Fast = struct
     | Right (left_type, payload) ->
         let* payload = runtime_payload payload in
         Ok (Runtime_value.Right (left_type, payload))
+    | List (item_type, items) ->
+        let rec loop acc = function
+          | [] -> Ok (Runtime_value.List (item_type, List.rev acc))
+          | item :: rest ->
+              let* item = runtime_payload item in
+              loop (item :: acc) rest
+        in
+        loop [] items
     | Project_closure _ ->
         fail "Fast execution cannot pass a partially-applied Project function as a Standard Library argument yet."
     | Std_closure _ -> fail "Fast execution cannot pass a partially-applied function as a Standard Library argument yet."
@@ -134,6 +145,14 @@ module Fast = struct
     | Runtime_value.Right (left_type, payload) ->
         let* payload = value_of_payload payload in
         Ok (Right (left_type, payload))
+    | Runtime_value.List (item_type, items) ->
+        let rec loop acc = function
+          | [] -> Ok (List (item_type, List.rev acc))
+          | item :: rest ->
+              let* item = value_of_payload item in
+              loop (item :: acc) rest
+        in
+        loop [] items
     | Runtime_value.Closure _ -> fail "Fast Standard Library evaluator produced a function value."
 
   let rec function_argument_types typ acc =
@@ -160,6 +179,9 @@ module Fast = struct
         type_matches left_type payload && Core_type.equal right_type payload_right_type
     | Core_type.Sum (left_type, right_type), Right (payload_left_type, payload) ->
         Core_type.equal left_type payload_left_type && type_matches right_type payload
+    | Core_type.List item_type, List (actual_item_type, items) ->
+        Core_type.equal item_type actual_item_type
+        && List.for_all (type_matches item_type) items
     | Core_type.Arrow _, Std_closure _ | Core_type.Arrow _, Project_closure _ -> true
     | _ -> false
 
@@ -171,6 +193,8 @@ module Fast = struct
         "Product(" ^ value_to_string left ^ ", " ^ value_to_string right ^ ")"
     | Left (payload, _) -> "Left(" ^ value_to_string payload ^ ")"
     | Right (_, payload) -> "Right(" ^ value_to_string payload ^ ")"
+    | List (_item_type, items) ->
+        "List[" ^ String.concat ", " (List.map value_to_string items) ^ "]"
     | Project_closure { template_id; _ } -> "Closure(" ^ template_id ^ ")"
     | Std_closure { function_id; _ } ->
         let info =
@@ -383,6 +407,51 @@ module Fast = struct
             | Ok (Right (_, payload)), Ok _on_left, Ok on_right ->
                 apply_function_value state document on_right payload
             | Ok _, Ok _, Ok _ -> fail "Case scrutinee must be Sum"
+            | Error message, _, _ | _, Error message, _ | _, _, Error message ->
+                fail message)
+        | P.Nil item_type, "value" -> Ok (List (item_type, []))
+        | P.Cons item_type, "value" -> (
+            match
+              ( eval_input state document env element_id "head",
+                eval_input state document env element_id "tail" )
+            with
+            | Ok head, Ok (List (tail_item_type, tail_items))
+              when type_matches item_type head && Core_type.equal item_type tail_item_type ->
+                Ok (List (item_type, head :: tail_items))
+            | Ok _, Ok _ -> fail "Cons inputs must match its List item type."
+            | Error message, _ | _, Error message -> fail message)
+        | P.ListRec { item_type; result_type }, "result" -> (
+            match
+              ( eval_input state document env element_id "list",
+                eval_input state document env element_id "base",
+                eval_input state document env element_id "step" )
+            with
+            | Ok (List (actual_item_type, items)), Ok base, Ok step
+              when Core_type.equal item_type actual_item_type
+                   && type_matches result_type base ->
+                let rec tails = function
+                  | [] -> []
+                  | _head :: tail -> tail :: tails tail
+                in
+                let tail_values = tails items in
+                let frames =
+                  List.combine items tail_values |> List.rev
+                in
+                let rec loop accumulator = function
+                  | [] -> Ok accumulator
+                  | (head, tail) :: rest ->
+                      let argument =
+                        Product
+                          (head, Product (List (item_type, tail), accumulator))
+                      in
+                      (match apply_function_value state document step argument with
+                      | Ok next when type_matches result_type next ->
+                          loop next rest
+                      | Ok _ -> fail "ListRec step result type mismatch."
+                      | Error _ as error -> error)
+                in
+                loop base frames
+            | Ok _, Ok _, Ok _ -> fail "ListRec inputs do not match its declared types."
             | Error message, _, _ | _, Error message, _ | _, _, Error message ->
                 fail message)
         | P.Unpair _, "left" -> (

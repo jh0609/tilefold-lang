@@ -70,7 +70,16 @@ type runtime_error =
       expected : Core_type.t;
       actual : Core_type.t;
     }
+  | Invalid_listrec_runtime_payload of {
+      node_id : CG.Node_id.t;
+      expected : Core_type.t;
+      actual : Core_type.t;
+    }
   | NatRec_lifecycle_error of {
+      node_id : CG.Node_id.t;
+      message : string;
+    }
+  | ListRec_lifecycle_error of {
       node_id : CG.Node_id.t;
       message : string;
     }
@@ -101,10 +110,32 @@ type natrec_state = {
   phase : natrec_phase;
 }
 
+type listrec_phase =
+  | ListRec_need_step
+  | ListRec_waiting_for_step of Instance_id.t
+  | ListRec_ready_to_complete
+
+type listrec_frame = {
+  index : int;
+  head : Runtime_value.payload;
+  tail : Runtime_value.payload list;
+}
+
+type listrec_state = {
+  item_type : Core_type.t;
+  result_type : Core_type.t;
+  step : Runtime_value.t;
+  accumulator : Runtime_value.t;
+  remaining : listrec_frame list;
+  current_argument : Runtime_value.t option;
+  phase : listrec_phase;
+}
+
 type node_state =
   | Pending
   | Waiting_for_return of Instance_id.t
   | NatRec_active of natrec_state
+  | ListRec_active of listrec_state
   | Completed
 
 type instance = {
@@ -133,6 +164,11 @@ type return_target =
       node_id : CG.Node_id.t;
       iteration : Nat.t;
       stage : natrec_stage;
+      expected_result_type : Core_type.t;
+    }
+  | ListRec_step of {
+      node_id : CG.Node_id.t;
+      index : int;
       expected_result_type : Core_type.t;
     }
 
@@ -191,6 +227,14 @@ module Machine = struct
       ]
       |> List.filter_map (fun value -> value)
     in
+    let listrec_state_values state =
+      [
+        Some state.step;
+        Some state.accumulator;
+        state.current_argument;
+      ]
+      |> List.filter_map (fun value -> value)
+    in
     let instance_values =
       machine.instances
       |> List.concat_map (fun instance ->
@@ -199,6 +243,7 @@ module Machine = struct
                instance.node_states
                |> List.concat_map (function
                     | _, NatRec_active state -> natrec_state_values state
+                    | _, ListRec_active state -> listrec_state_values state
                     | _ -> [])
              in
              let result_values =
@@ -328,7 +373,7 @@ let set_node_state instance node_id state =
 
 let is_ready instance node_id =
   match node_state instance node_id with
-  | Completed | Waiting_for_return _ | NatRec_active _ -> false
+  | Completed | Waiting_for_return _ | NatRec_active _ | ListRec_active _ -> false
   | Pending ->
     match node_by_id instance.graph node_id with
     | None -> false
@@ -383,6 +428,33 @@ let is_ready instance node_id =
             && Core_type.equal (Runtime_value.typ on_right)
                  (Core_type.Arrow
                     (signature.case_right_type, signature.case_result_type))
+        | _ -> false)
+    | Some { kind = CG.Nil _; _ } -> true
+    | Some { kind = CG.Cons item_type; _ } -> (
+        match
+          ( binding_for instance.bindings node_id CG.Port_key.head,
+            binding_for instance.bindings node_id CG.Port_key.tail )
+        with
+        | Some head, Some tail ->
+            Core_type.equal (Runtime_value.typ head) item_type
+            && Core_type.equal (Runtime_value.typ tail) (Core_type.List item_type)
+        | _ -> false)
+    | Some { kind = CG.ListRec signature; _ } -> (
+        let item_type = signature.list_item_type in
+        let result_type = signature.list_result_type in
+        match
+          ( binding_for instance.bindings node_id CG.Port_key.list,
+            binding_for instance.bindings node_id CG.Port_key.base,
+            binding_for instance.bindings node_id CG.Port_key.step )
+        with
+        | Some list, Some base, Some step ->
+            Core_type.equal (Runtime_value.typ list) (Core_type.List item_type)
+            && Core_type.equal (Runtime_value.typ base) result_type
+            && Core_type.equal (Runtime_value.typ step)
+                 (Core_type.Arrow
+                    ( Core_type.Product
+                        (item_type, Core_type.Product (Core_type.List item_type, result_type)),
+                      result_type ))
         | _ -> false)
     | Some { kind = CG.Function signature; _ } ->
         List.for_all
@@ -606,7 +678,7 @@ let materialize_input graph input =
   match expected with
   | Core_type.Arrow _ -> Error (Unsupported_runtime_input_type expected)
   | Core_type.Unit | Core_type.Bool | Core_type.Nat | Core_type.Product _
-  | Core_type.Sum _ ->
+  | Core_type.Sum _ | Core_type.List _ ->
       if payload_matches_type input expected then
         Ok
           (Runtime_value.create ~id:Runtime_value.execution_input_id ~payload:input
@@ -722,7 +794,7 @@ let unexecuted_nodes instance =
   |> List.filter (fun node_id ->
          match node_state instance node_id with
          | Completed -> false
-         | Pending | Waiting_for_return _ | NatRec_active _ -> true)
+         | Pending | Waiting_for_return _ | NatRec_active _ | ListRec_active _ -> true)
 
 let stuck_reason instance =
   {
@@ -759,7 +831,8 @@ let rewrite_succ machine instance candidate =
               let instance = refresh_after_event instance machine.Machine.next_event_index in
               Rewritten { machine = update_instance machine instance; event })
       | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Product _
-      | Runtime_value.Left _ | Runtime_value.Right _ | Runtime_value.Closure _ ->
+      | Runtime_value.Left _ | Runtime_value.Right _ | Runtime_value.List _
+      | Runtime_value.Closure _ ->
           Stuck (stuck_reason instance))
   | None -> Stuck (stuck_reason instance)
 
@@ -780,6 +853,12 @@ let copy_payload candidate expected input_value =
     when Core_type.equal left_type expected_left
          && Core_type.equal (Runtime_value.payload_type payload) expected_right ->
       Ok (Runtime_value.Right (left_type, payload))
+  | Core_type.List expected_item, Runtime_value.List (item_type, items)
+    when Core_type.equal expected_item item_type
+         && List.for_all
+              (fun item -> Core_type.equal (Runtime_value.payload_type item) expected_item)
+              items ->
+      Ok (Runtime_value.List (item_type, items))
   | Core_type.Arrow _, Runtime_value.Closure closure
     when Core_type.equal (Core_type.Arrow (closure.parameter_type, closure.result_type)) expected ->
       Ok (Runtime_value.Closure closure)
@@ -947,6 +1026,74 @@ let rewrite_right machine instance candidate signature =
           ^ CG.Node_id.to_string candidate.node_id))
   | None -> Stuck (stuck_reason instance)
 
+let rewrite_nil machine instance candidate item_type =
+  let event_index = machine.Machine.next_event_index in
+  let created =
+    Runtime_value.create
+      ~id:(rewrite_output_id instance event_index candidate.node_id CG.Port_key.value)
+      ~payload:(Runtime_value.List (item_type, []))
+      ~origin:(rewrite_output_origin instance event_index candidate.node_id CG.Port_key.value)
+  in
+  let event =
+    make_event machine instance candidate Rewrite_event.Nil [] [ created ] ()
+  in
+  let instance =
+    remove_ready instance candidate.node_id |> fun i ->
+    mark_completed i candidate.node_id
+  in
+  let machine = append_event (update_instance machine instance) event in
+  let instance = Machine.instance_by_id machine instance.id |> Option.get in
+  match deliver_output instance.graph instance candidate.node_id CG.Port_key.value created with
+  | Error message -> Runtime_error (Runtime_invariant_violation message)
+  | Ok instance ->
+      let instance = refresh_after_event instance machine.Machine.next_event_index in
+      Rewritten { machine = update_instance machine instance; event }
+
+let rewrite_cons machine instance candidate item_type =
+  match
+    ( binding_for instance.bindings candidate.node_id CG.Port_key.head,
+      binding_for instance.bindings candidate.node_id CG.Port_key.tail )
+  with
+  | Some head, Some tail
+    when Core_type.equal (Runtime_value.typ head) item_type
+         && Core_type.equal (Runtime_value.typ tail) (Core_type.List item_type) -> (
+      match Runtime_value.payload tail with
+      | Runtime_value.List (tail_item_type, tail_items)
+        when Core_type.equal tail_item_type item_type ->
+          let event_index = machine.Machine.next_event_index in
+          let created =
+            Runtime_value.create
+              ~id:(rewrite_output_id instance event_index candidate.node_id CG.Port_key.value)
+              ~payload:(Runtime_value.List (item_type, Runtime_value.payload head :: tail_items))
+              ~origin:(rewrite_output_origin instance event_index candidate.node_id CG.Port_key.value)
+          in
+          let event =
+            make_event machine instance candidate Rewrite_event.Cons
+              [ Runtime_value.id head; Runtime_value.id tail ] [ created ] ()
+          in
+          let instance =
+            remove_ready instance candidate.node_id |> fun i ->
+            mark_completed i candidate.node_id
+          in
+          let machine = append_event (update_instance machine instance) event in
+          let instance = Machine.instance_by_id machine instance.id |> Option.get in
+          (match deliver_output instance.graph instance candidate.node_id CG.Port_key.value created with
+          | Error message -> Runtime_error (Runtime_invariant_violation message)
+          | Ok instance ->
+              let instance = refresh_after_event instance machine.Machine.next_event_index in
+              Rewritten { machine = update_instance machine instance; event })
+      | _ ->
+          Runtime_error
+            (Runtime_invariant_violation
+               ("Cons tail payload does not match declared type at "
+              ^ CG.Node_id.to_string candidate.node_id)))
+  | Some _, Some _ ->
+      Runtime_error
+        (Runtime_invariant_violation
+           ("Cons input payload does not match declared type at "
+          ^ CG.Node_id.to_string candidate.node_id))
+  | _ -> Stuck (stuck_reason instance)
+
 let copy_created_value instance event_index node_id port_key payload =
   Runtime_value.create
     ~id:(rewrite_output_id instance event_index node_id port_key)
@@ -1078,7 +1225,8 @@ let rewrite_drop machine instance candidate =
         | Core_type.Unit, Runtime_value.Unit
         | Core_type.Nat, Runtime_value.Nat _
         | Core_type.Product _, Runtime_value.Product _
-        | Core_type.Sum _, (Runtime_value.Left _ | Runtime_value.Right _) ->
+        | Core_type.Sum _, (Runtime_value.Left _ | Runtime_value.Right _)
+        | Core_type.List _, Runtime_value.List _ ->
             let event =
               make_event machine instance candidate Rewrite_event.Drop
                 [ Runtime_value.id input_value ] [] ()
@@ -1241,7 +1389,8 @@ let rewrite_case_enter machine caller candidate signature =
                   in
                   Rewritten { machine = append_event machine event; event })
         | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Nat _
-        | Runtime_value.Product _ | Runtime_value.Left _ | Runtime_value.Right _ ->
+        | Runtime_value.Product _ | Runtime_value.Left _ | Runtime_value.Right _
+        | Runtime_value.List _ ->
             Runtime_error
               (Invalid_case_runtime_payload
                  { node_id = candidate.node_id; expected = expected_left; actual = Runtime_value.typ selected })))
@@ -1320,7 +1469,8 @@ let rewrite_apply_enter machine caller candidate signature =
                 in
                 Rewritten { machine = append_event machine event; event })
       | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Nat _
-      | Runtime_value.Product _ | Runtime_value.Left _ | Runtime_value.Right _ ->
+      | Runtime_value.Product _ | Runtime_value.Left _ | Runtime_value.Right _
+      | Runtime_value.List _ ->
           Runtime_error
             (Invalid_apply_runtime_payload
                {
@@ -1349,7 +1499,7 @@ let rewrite_apply_return machine callee frame apply_node_id expected_result_type
           (match node_state caller apply_node_id with
           | Waiting_for_return waiting ->
               Instance_id.equal waiting frame.callee_instance_id
-          | Pending | NatRec_active _ | Completed -> false)
+          | Pending | NatRec_active _ | ListRec_active _ | Completed -> false)
       then
         Runtime_error
           (Runtime_invariant_violation
@@ -1416,7 +1566,7 @@ let rewrite_case_return machine callee frame case_node_id expected_result_type =
           (match node_state caller case_node_id with
           | Waiting_for_return waiting ->
               Instance_id.equal waiting frame.callee_instance_id
-          | Pending | NatRec_active _ | Completed -> false)
+          | Pending | NatRec_active _ | ListRec_active _ | Completed -> false)
       then
         Runtime_error
           (Runtime_invariant_violation
@@ -1483,11 +1633,125 @@ let natrec_state_for instance node_id =
   | NatRec_active state -> Some state
   | _ -> None
 
+let listrec_state_for instance node_id =
+  match node_state instance node_id with
+  | ListRec_active state -> Some state
+  | _ -> None
+
 let natrec_created_value instance machine node_id port_key payload =
   Runtime_value.create
     ~id:(rewrite_output_id instance machine.Machine.next_event_index node_id port_key)
     ~payload
     ~origin:(rewrite_output_origin instance machine.Machine.next_event_index node_id port_key)
+
+let listrec_created_value instance machine node_id port_key payload =
+  Runtime_value.create
+    ~id:(rewrite_output_id instance machine.Machine.next_event_index node_id port_key)
+    ~payload
+    ~origin:(rewrite_output_origin instance machine.Machine.next_event_index node_id port_key)
+
+let listrec_candidate machine instance node_id =
+  {
+    instance_id = instance.id;
+    node_id;
+    ready_epoch = machine.Machine.next_event_index;
+    priority_spine_rank = None;
+    default_order_rank = 0;
+  }
+
+let listrec_error node_id message =
+  Runtime_error (ListRec_lifecycle_error { node_id; message })
+
+let listrec_frames items =
+  let rec tails index = function
+    | [] -> []
+    | head :: tail ->
+        { index; head; tail } :: tails (index + 1) tail
+  in
+  tails 0 items |> List.rev
+
+let rewrite_listrec_nil machine instance candidate base list_value =
+  let created =
+    listrec_created_value instance machine candidate.node_id CG.Port_key.result
+      (Runtime_value.payload base)
+  in
+  let event =
+    make_event machine instance candidate Rewrite_event.ListRecNil
+      [ Runtime_value.id list_value; Runtime_value.id base ] [ created ] ()
+  in
+  let instance =
+    remove_ready instance candidate.node_id
+    |> fun instance -> mark_completed instance candidate.node_id
+  in
+  let machine = append_event (update_instance machine instance) event in
+  let instance = Machine.instance_by_id machine instance.id |> Option.get in
+  match deliver_output instance.graph instance candidate.node_id CG.Port_key.result created with
+  | Error message -> Runtime_error (Runtime_invariant_violation message)
+  | Ok instance ->
+      let instance = refresh_after_event instance machine.Machine.next_event_index in
+      Rewritten { machine = update_instance machine instance; event }
+
+let rewrite_listrec_start machine instance candidate signature list_value base step items =
+  let state =
+    {
+      item_type = signature.CG.list_item_type;
+      result_type = signature.list_result_type;
+      step;
+      accumulator = base;
+      remaining = listrec_frames items;
+      current_argument = None;
+      phase = ListRec_need_step;
+    }
+  in
+  let event =
+    make_event machine instance candidate Rewrite_event.ListRecCons
+      [ Runtime_value.id list_value; Runtime_value.id base; Runtime_value.id step ]
+      [] ()
+  in
+  let instance =
+    remove_ready instance candidate.node_id
+    |> fun instance -> set_node_state instance candidate.node_id (ListRec_active state)
+  in
+  Rewritten { machine = append_event (update_instance machine instance) event; event }
+
+let rewrite_listrec_initial machine instance candidate signature =
+  match
+    ( binding_for instance.bindings candidate.node_id CG.Port_key.list,
+      binding_for instance.bindings candidate.node_id CG.Port_key.base,
+      binding_for instance.bindings candidate.node_id CG.Port_key.step )
+  with
+  | Some list_value, Some base, Some step -> (
+      let expected_list = Core_type.List signature.CG.list_item_type in
+      let expected_step =
+        Core_type.Arrow
+          ( Core_type.Product
+              ( signature.list_item_type,
+                Core_type.Product (expected_list, signature.list_result_type) ),
+            signature.list_result_type )
+      in
+      if not (Core_type.equal (Runtime_value.typ list_value) expected_list) then
+        Runtime_error
+          (Invalid_listrec_runtime_payload
+             { node_id = candidate.node_id; expected = expected_list; actual = Runtime_value.typ list_value })
+      else if not (Core_type.equal (Runtime_value.typ base) signature.list_result_type) then
+        Runtime_error
+          (Invalid_listrec_runtime_payload
+             { node_id = candidate.node_id; expected = signature.list_result_type; actual = Runtime_value.typ base })
+      else if not (Core_type.equal (Runtime_value.typ step) expected_step) then
+        Runtime_error
+          (Invalid_listrec_runtime_payload
+             { node_id = candidate.node_id; expected = expected_step; actual = Runtime_value.typ step })
+      else
+        match Runtime_value.payload list_value with
+        | Runtime_value.List (item_type, items)
+          when Core_type.equal item_type signature.list_item_type ->
+            if items = [] then rewrite_listrec_nil machine instance candidate base list_value
+            else rewrite_listrec_start machine instance candidate signature list_value base step items
+        | _ ->
+            Runtime_error
+              (Invalid_listrec_runtime_payload
+                 { node_id = candidate.node_id; expected = expected_list; actual = Runtime_value.typ list_value }))
+  | _ -> Stuck (stuck_reason instance)
 
 let rewrite_natrec_zero machine instance candidate base step count =
   let created =
@@ -1569,7 +1833,8 @@ let rewrite_natrec_initial machine instance candidate result_type =
               rewrite_natrec_zero machine instance candidate base step count
             else rewrite_natrec_start machine instance candidate result_type base step count total_count
         | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Product _
-        | Runtime_value.Left _ | Runtime_value.Right _ | Runtime_value.Closure _ ->
+        | Runtime_value.Left _ | Runtime_value.Right _ | Runtime_value.List _
+        | Runtime_value.Closure _ ->
             Runtime_error
               (Invalid_natrec_runtime_payload
                  { node_id = candidate.node_id; expected = Core_type.Nat; actual = Runtime_value.typ count }))
@@ -1633,7 +1898,8 @@ let rewrite_boolrec machine instance candidate result_type =
                 let instance = refresh_after_event instance machine.Machine.next_event_index in
                 Rewritten { machine = update_instance machine instance; event })
         | Runtime_value.Unit | Runtime_value.Nat _ | Runtime_value.Product _
-        | Runtime_value.Left _ | Runtime_value.Right _ | Runtime_value.Closure _ ->
+        | Runtime_value.Left _ | Runtime_value.Right _ | Runtime_value.List _
+        | Runtime_value.Closure _ ->
             Runtime_error
               (Invalid_boolrec_runtime_payload
                  { node_id = candidate.node_id; expected = Core_type.Bool; actual = Runtime_value.typ condition }))
@@ -1673,7 +1939,8 @@ let closure_payload node_id expected value =
         (Invalid_natrec_runtime_payload
            { node_id; expected; actual = Runtime_value.typ value })
   | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Nat _
-  | Runtime_value.Product _ | Runtime_value.Left _ | Runtime_value.Right _ ->
+  | Runtime_value.Product _ | Runtime_value.Left _ | Runtime_value.Right _
+  | Runtime_value.List _ ->
       Error
         (Invalid_natrec_runtime_payload
            { node_id; expected; actual = Runtime_value.typ value })
@@ -1808,7 +2075,7 @@ let rewrite_natrec_step_accumulator_enter machine instance node_id state =
               in
               Rewritten { machine = append_event machine event; event }))
 
-let rewrite_natrec_complete machine instance node_id state =
+let rewrite_natrec_complete machine instance node_id (state : natrec_state) =
   let candidate = natrec_candidate machine instance node_id in
   let created =
     natrec_created_value instance machine node_id CG.Port_key.result
@@ -1832,7 +2099,7 @@ let rewrite_natrec_complete machine instance node_id state =
         let instance = refresh_after_event instance machine.Machine.next_event_index in
         Rewritten { machine = update_instance machine instance; event }
 
-let rewrite_natrec_active machine instance node_id state =
+let rewrite_natrec_active machine instance node_id (state : natrec_state) =
   match state.phase with
   | Need_unfold -> rewrite_natrec_unfold machine instance node_id state
   | Predecessor_ready -> rewrite_natrec_step_function_enter machine instance node_id state
@@ -1840,6 +2107,173 @@ let rewrite_natrec_active machine instance node_id state =
   | Ready_to_complete -> rewrite_natrec_complete machine instance node_id state
   | Waiting_for_step_function _ | Waiting_for_step_accumulator _ ->
       natrec_error node_id "NatRec is waiting for a callee return"
+
+let rewrite_listrec_step_enter machine instance node_id (state : listrec_state) =
+  match state.remaining with
+  | [] ->
+      listrec_error node_id "ListRec step phase has no remaining frame"
+  | frame :: rest -> (
+      let expected_step =
+        Core_type.Arrow
+          ( Core_type.Product
+              ( state.item_type,
+                Core_type.Product
+                  (Core_type.List state.item_type, state.result_type) ),
+            state.result_type )
+      in
+      match closure_payload node_id expected_step state.step with
+      | Error
+          (Invalid_natrec_runtime_payload { node_id; expected; actual }) ->
+          Runtime_error
+            (Invalid_listrec_runtime_payload { node_id; expected; actual })
+      | Error error -> Runtime_error error
+      | Ok closure -> (
+          let argument_payload =
+            Runtime_value.Product
+              ( frame.head,
+                Runtime_value.Product
+                  (Runtime_value.List (state.item_type, frame.tail),
+                   Runtime_value.payload state.accumulator) )
+          in
+          let argument =
+            listrec_created_value instance machine node_id CG.Port_key.argument
+              argument_payload
+          in
+          let call_site =
+            Instance_id.ListRec_step { node_id; index = frame.index }
+          in
+          match
+            instantiate_closure_callee machine instance ~node_id ~call_site closure
+              argument
+          with
+          | Error error -> Runtime_error error
+          | Ok (_template, callee_id, callee) ->
+              let candidate = listrec_candidate machine instance node_id in
+              let event =
+                make_event machine instance candidate Rewrite_event.ListRecStepEnter
+                  [ Runtime_value.id state.step; Runtime_value.id state.accumulator ]
+                  [ argument ] ~callee_instance_id:callee_id ()
+              in
+              let state =
+                {
+                  state with
+                  remaining = rest;
+                  current_argument = Some argument;
+                  phase = ListRec_waiting_for_step callee_id;
+                }
+              in
+              let caller = set_node_state instance node_id (ListRec_active state) in
+              let frame =
+                {
+                  caller_instance_id = caller.id;
+                  callee_instance_id = callee_id;
+                  return_target =
+                    ListRec_step
+                      {
+                        node_id;
+                        index = frame.index;
+                        expected_result_type = state.result_type;
+                      };
+                }
+              in
+              let machine =
+                {
+                  machine with
+                  Machine.instances =
+                    callee
+                    :: List.map
+                         (fun existing ->
+                           if Instance_id.equal existing.id caller.id then caller
+                           else existing)
+                         machine.Machine.instances;
+                  active_instance_id = callee_id;
+                  call_stack = frame :: machine.Machine.call_stack;
+                }
+              in
+              Rewritten { machine = append_event machine event; event }))
+
+let rewrite_listrec_complete machine instance node_id (state : listrec_state) =
+  let candidate = listrec_candidate machine instance node_id in
+  let created =
+    listrec_created_value instance machine node_id CG.Port_key.result
+      (Runtime_value.payload state.accumulator)
+  in
+  let event =
+    make_event machine instance candidate Rewrite_event.ListRecComplete
+      [ Runtime_value.id state.accumulator ] [ created ] ()
+  in
+  let instance = mark_completed instance node_id in
+  let machine = append_event (update_instance machine instance) event in
+  let instance = Machine.instance_by_id machine instance.id |> Option.get in
+  match deliver_output instance.graph instance node_id CG.Port_key.result created with
+  | Error message -> Runtime_error (Runtime_invariant_violation message)
+  | Ok instance ->
+      let instance = refresh_after_event instance machine.Machine.next_event_index in
+      Rewritten { machine = update_instance machine instance; event }
+
+let rewrite_listrec_active machine instance node_id (state : listrec_state) =
+  match state.phase with
+  | ListRec_need_step -> rewrite_listrec_step_enter machine instance node_id state
+  | ListRec_ready_to_complete -> rewrite_listrec_complete machine instance node_id state
+  | ListRec_waiting_for_step _ ->
+      listrec_error node_id "ListRec is waiting for a callee return"
+
+let rewrite_listrec_step_return machine callee frame node_id _index expected_result_type =
+  match (callee.result_value, Machine.instance_by_id machine frame.caller_instance_id) with
+  | Some result_value, Some caller -> (
+      match listrec_state_for caller node_id with
+      | None -> listrec_error node_id "ListRec state missing for step return"
+      | Some state -> (
+          match state.phase with
+          | ListRec_waiting_for_step waiting
+            when Instance_id.equal waiting frame.callee_instance_id ->
+              if not (Core_type.equal (Runtime_value.typ result_value) expected_result_type)
+              then
+                Runtime_error
+                  (Invalid_listrec_runtime_payload
+                     {
+                       node_id;
+                       expected = expected_result_type;
+                       actual = Runtime_value.typ result_value;
+                     })
+              else
+                let candidate = listrec_candidate machine caller node_id in
+                let next_accumulator =
+                  listrec_created_value caller machine node_id CG.Port_key.accumulator
+                    (Runtime_value.payload result_value)
+                in
+                let phase =
+                  match state.remaining with
+                  | [] -> ListRec_ready_to_complete
+                  | _ :: _ -> ListRec_need_step
+                in
+                let event =
+                  make_event machine caller candidate Rewrite_event.ListRecStepReturn
+                    [ Runtime_value.id result_value ] [ next_accumulator ]
+                    ~callee_instance_id:callee.id ()
+                in
+                let state =
+                  {
+                    state with
+                    accumulator = next_accumulator;
+                    current_argument = None;
+                    phase;
+                  }
+                in
+                let caller = set_node_state caller node_id (ListRec_active state) in
+                let machine =
+                  {
+                    (append_event (update_instance machine caller) event) with
+                    Machine.active_instance_id = caller.id;
+                    call_stack = List.tl machine.Machine.call_stack;
+                  }
+                in
+                Rewritten { machine; event }
+          | ListRec_waiting_for_step _ ->
+              listrec_error node_id "ListRec step return instance mismatch"
+          | _ -> listrec_error node_id "ListRec is not waiting for step return"))
+  | None, _ -> Stuck (stuck_reason callee)
+  | _, None -> Runtime_error (Runtime_invariant_violation "caller instance missing")
 
 let rewrite_natrec_step_function_return machine callee frame node_id iteration
     expected_result_type =
@@ -1976,7 +2410,10 @@ let step machine =
                 iteration expected_result_type
           | NatRec_step { node_id; iteration; stage = Step_accumulator; expected_result_type } ->
               rewrite_natrec_step_accumulator_return machine active frame node_id
-                iteration expected_result_type)
+                iteration expected_result_type
+          | ListRec_step { node_id; index; expected_result_type } ->
+              rewrite_listrec_step_return machine active frame node_id index
+                expected_result_type)
       | [] when Instance_id.equal active.id root_instance_id -> (
           match active.result_value with
           | Some value -> Completed value
@@ -1986,11 +2423,13 @@ let step machine =
       match
         active.node_states
         |> List.find_opt (function
-             | _, NatRec_active _ -> true
+             | _, NatRec_active _ | _, ListRec_active _ -> true
              | _ -> false)
       with
       | Some (node_id, NatRec_active state) ->
           rewrite_natrec_active machine active node_id state
+      | Some (node_id, ListRec_active state) ->
+          rewrite_listrec_active machine active node_id state
       | _ -> (
       match select_ready active.ready_candidates with
       | None -> Stuck (stuck_reason active)
@@ -2009,6 +2448,10 @@ let step machine =
               rewrite_right machine active candidate signature
           | Some { kind = CG.Case signature; _ } ->
               rewrite_case_enter machine active candidate signature
+          | Some { kind = CG.Nil item_type; _ } ->
+              rewrite_nil machine active candidate item_type
+          | Some { kind = CG.Cons item_type; _ } ->
+              rewrite_cons machine active candidate item_type
           | Some { kind = CG.Function signature; _ } ->
               rewrite_function machine active candidate signature
           | Some { kind = CG.Apply signature; _ } ->
@@ -2017,6 +2460,8 @@ let step machine =
               rewrite_natrec_initial machine active candidate result_type
           | Some { kind = CG.BoolRec result_type; _ } ->
               rewrite_boolrec machine active candidate result_type
+          | Some { kind = CG.ListRec signature; _ } ->
+              rewrite_listrec_initial machine active candidate signature
           | _ -> Stuck (stuck_reason active))))
 
 let run machine =
@@ -2075,7 +2520,14 @@ let runtime_error_to_string = function
       "invalid Case runtime payload at " ^ CG.Node_id.to_string node_id
       ^ ": expected " ^ Core_type.to_string expected ^ ", actual "
       ^ Core_type.to_string actual
+  | Invalid_listrec_runtime_payload { node_id; expected; actual } ->
+      "invalid ListRec runtime payload at " ^ CG.Node_id.to_string node_id
+      ^ ": expected " ^ Core_type.to_string expected ^ ", actual "
+      ^ Core_type.to_string actual
   | NatRec_lifecycle_error { node_id; message } ->
       "NatRec lifecycle error at " ^ CG.Node_id.to_string node_id ^ ": "
+      ^ message
+  | ListRec_lifecycle_error { node_id; message } ->
+      "ListRec lifecycle error at " ^ CG.Node_id.to_string node_id ^ ": "
       ^ message
   | Runtime_invariant_violation message -> "runtime invariant violation: " ^ message

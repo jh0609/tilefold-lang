@@ -40,10 +40,32 @@ type natrec_state = {
   phase : natrec_phase;
 }
 
+type listrec_phase =
+  | ListRec_need_step
+  | ListRec_waiting_for_step of Runtime_value.Instance_id.t
+  | ListRec_ready_to_complete
+
+type listrec_frame = {
+  index : int;
+  head : Runtime_value.payload;
+  tail : Runtime_value.payload list;
+}
+
+type listrec_state = {
+  item_type : Core_type.t;
+  result_type : Core_type.t;
+  step : Runtime_value.t;
+  accumulator : Runtime_value.t;
+  remaining : listrec_frame list;
+  current_argument : Runtime_value.t option;
+  phase : listrec_phase;
+}
+
 type node_state =
   | Pending
   | Waiting_for_return of Runtime_value.Instance_id.t
   | NatRec_active of natrec_state
+  | ListRec_active of listrec_state
   | Completed
 
 type runtime_error =
@@ -93,7 +115,16 @@ type runtime_error =
       expected : Core_type.t;
       actual : Core_type.t;
     }
+  | Invalid_listrec_runtime_payload of {
+      node_id : Core_graph.Node_id.t;
+      expected : Core_type.t;
+      actual : Core_type.t;
+    }
   | NatRec_lifecycle_error of {
+      node_id : Core_graph.Node_id.t;
+      message : string;
+    }
+  | ListRec_lifecycle_error of {
       node_id : Core_graph.Node_id.t;
       message : string;
     }

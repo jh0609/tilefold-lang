@@ -43,21 +43,31 @@ let init_ok graph input =
 let run_completed machine =
   match Engine.run machine with
   | Engine.Run_completed { value; trace } -> (value, trace)
-  | Engine.Run_stuck _ -> assert false
-  | Engine.Run_error _ -> assert false
+  | Engine.Run_stuck { reason; _ } ->
+      failwith
+        ("execution stuck in "
+        ^ Runtime_value.Instance_id.to_string reason.Engine.instance_id
+        ^ " nodes=["
+        ^ String.concat ", " (List.map Node_id.to_string reason.unexecuted_nodes)
+        ^ "] result_missing="
+        ^ string_of_bool reason.result_missing)
+  | Engine.Run_error { error; _ } ->
+      failwith (Engine.runtime_error_to_string error)
 
 let payload_nat_string value =
   match Runtime_value.payload value with
   | Runtime_value.Nat nat -> Nat.to_string nat
   | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Product _
-  | Runtime_value.Left _ | Runtime_value.Right _ | Runtime_value.Closure _ ->
+  | Runtime_value.Left _ | Runtime_value.Right _ | Runtime_value.List _
+  | Runtime_value.Closure _ ->
       assert false
 
 let payload_product_pair value =
   match Runtime_value.payload value with
   | Runtime_value.Product (left, right) -> (left, right)
   | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Nat _
-  | Runtime_value.Left _ | Runtime_value.Right _ | Runtime_value.Closure _ ->
+  | Runtime_value.Left _ | Runtime_value.Right _ | Runtime_value.List _
+  | Runtime_value.Closure _ ->
       assert false
 
 let entry_unit_to_nat ?(order = [ "succ"; "drop" ]) ?(literal = "3") () =
@@ -1146,7 +1156,8 @@ let () =
         Function_template_id.equal closure.template_id
           (Function_template.id base_template))
   | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Nat _
-  | Runtime_value.Product _ | Runtime_value.Left _ | Runtime_value.Right _ ->
+  | Runtime_value.Product _ | Runtime_value.Left _ | Runtime_value.Right _
+  | Runtime_value.List _ ->
       assert false);
   assert (
     trace
@@ -1356,6 +1367,7 @@ let () =
         | Runtime_value.Nat _ -> "Nat"
         | Runtime_value.Product _ -> "Product"
         | Runtime_value.Left _ | Runtime_value.Right _ -> "Sum"
+        | Runtime_value.List _ -> "List"
         | Runtime_value.Closure _ -> "Closure")
       copy_event.Rewrite_event.created
     = [ "Unit"; "Unit" ])
@@ -1577,6 +1589,278 @@ let () =
     trace
     |> List.exists (fun event -> event.Rewrite_event.rule = Rewrite_event.CaseLeft)
     |> not)
+
+let safe_pred_templates () =
+  let option_nat = Core_type.Sum (Core_type.Unit, Core_type.Nat) in
+  let index_capture = capture "index" Core_type.Nat in
+  let inner_nodes =
+    [
+      node "inner-param" (Parameter option_nat);
+      node "inner-drop-param" (Drop option_nat);
+      node "inner-index" (Capture index_capture);
+      node "inner-right"
+        (Right { sum_left_type = Core_type.Unit; sum_right_type = Core_type.Nat });
+      node "inner-result" (Result option_nat);
+    ]
+  in
+  let inner_edges =
+    [
+      edge "inner-e-param-drop" (pref "inner-param" "value")
+        (pref "inner-drop-param" "input");
+      edge "inner-e-index-right" (pref "inner-index" "value")
+        (pref "inner-right" "input");
+      edge "inner-e-right-result" (pref "inner-right" "value")
+        (pref "inner-result" "value");
+    ]
+  in
+  let inner_body =
+    Raw_graph.of_lists ~nodes:inner_nodes ~edges:inner_edges
+      ~default_node_order:[ node_id "inner-right"; node_id "inner-drop-param" ]
+    |> validate_ok
+  in
+  let inner =
+    Function_template.create ~id:(template_id "safe-pred-step-accumulator")
+      ~parameter_type:option_nat ~result_type:option_nat
+      ~captures:[ index_capture ] ~body:inner_body ()
+  in
+  let step_result = Core_type.Arrow (option_nat, option_nat) in
+  let outer_nodes =
+    [
+      node "outer-index" (Parameter Core_type.Nat);
+      node "outer-function" (Function (function_signature inner [ index_capture ]));
+      node "outer-result" (Result step_result);
+    ]
+  in
+  let outer_edges =
+    [
+      edge "outer-e-index-capture" (pref "outer-index" "value")
+        { node_id = node_id "outer-function"; port_key = Port_key.capture "index" };
+      edge "outer-e-function-result" (pref "outer-function" "value")
+        (pref "outer-result" "value");
+    ]
+  in
+  let outer_body =
+    Raw_graph.of_lists ~nodes:outer_nodes ~edges:outer_edges
+      ~default_node_order:[ node_id "outer-function" ]
+    |> validate_with_templates_ok [ inner ]
+  in
+  let outer =
+    Function_template.create ~id:(template_id "safe-pred-step-index")
+      ~parameter_type:Core_type.Nat ~result_type:step_result ~captures:[]
+      ~dependencies:[ Function_template.id inner ] ~body:outer_body ()
+  in
+  (inner, outer)
+
+let safe_pred_graph count =
+  let option_nat = Core_type.Sum (Core_type.Unit, Core_type.Nat) in
+  let inner, outer = safe_pred_templates () in
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop-param" (Drop Core_type.Unit);
+      node "count" (Nat_literal (nat count));
+      node "none" Unit_literal;
+      node "base"
+        (Left { sum_left_type = Core_type.Unit; sum_right_type = Core_type.Nat });
+      node "step" (Function (function_signature outer []));
+      node "natrec" (NatRec option_nat);
+      node "result" (Result option_nat);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop-param" "input");
+      edge "e-none-base" (pref "none" "value") (pref "base" "input");
+      edge "e-base-natrec" (pref "base" "value") (pref "natrec" "base");
+      edge "e-step-natrec" (pref "step" "value") (pref "natrec" "step");
+      edge "e-count-natrec" (pref "count" "value") (pref "natrec" "count");
+      edge "e-natrec-result" (pref "natrec" "result") (pref "result" "value");
+    ]
+  in
+  let graph =
+    Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:
+        (List.map node_id [ "base"; "step"; "natrec"; "drop-param" ])
+    |> validate_with_templates_ok [ inner; outer ]
+  in
+  (graph, [ inner; outer ])
+
+let assert_safe_pred count expected =
+  let graph, templates = safe_pred_graph count in
+  let value, _trace =
+    run_completed (init_with_templates_ok templates graph Runtime_value.Unit)
+  in
+  match (expected, Runtime_value.payload value) with
+  | None, Runtime_value.Left (payload, right_type) ->
+      assert (Runtime_value.payload_equal payload Runtime_value.Unit);
+      assert (Core_type.equal right_type Core_type.Nat)
+  | Some expected_nat, Runtime_value.Right (left_type, payload) ->
+      assert (Core_type.equal left_type Core_type.Unit);
+      assert (Runtime_value.payload_equal payload (Runtime_value.Nat (nat expected_nat)))
+  | _ -> assert false
+
+let () =
+  assert_safe_pred "0" None;
+  assert_safe_pred "1" (Some "0");
+  assert_safe_pred "5" (Some "4")
+
+let get_or_else_templates () =
+  let option_nat = Core_type.Sum (Core_type.Unit, Core_type.Nat) in
+  let input_type = Core_type.Product (option_nat, Core_type.Nat) in
+  let fallback_capture = capture "fallback" Core_type.Nat in
+  let left_nodes =
+    [
+      node "left-param" (Parameter Core_type.Unit);
+      node "left-drop-param" (Drop Core_type.Unit);
+      node "left-fallback" (Capture fallback_capture);
+      node "left-result" (Result Core_type.Nat);
+    ]
+  in
+  let left_edges =
+    [
+      edge "left-e-param-drop" (pref "left-param" "value")
+        (pref "left-drop-param" "input");
+      edge "left-e-fallback-result" (pref "left-fallback" "value")
+        (pref "left-result" "value");
+    ]
+  in
+  let left_body =
+    Raw_graph.of_lists ~nodes:left_nodes ~edges:left_edges
+      ~default_node_order:[ node_id "left-drop-param" ]
+    |> validate_ok
+  in
+  let left_template =
+    Function_template.create ~id:(template_id "get-or-else-left")
+      ~parameter_type:Core_type.Unit ~result_type:Core_type.Nat
+      ~captures:[ fallback_capture ] ~body:left_body ()
+  in
+  let right_nodes =
+    [
+      node "right-param" (Parameter Core_type.Nat);
+      node "right-result" (Result Core_type.Nat);
+    ]
+  in
+  let right_edges =
+    [
+      edge "right-e-param-result" (pref "right-param" "value")
+        (pref "right-result" "value");
+    ]
+  in
+  let right_body =
+    Raw_graph.of_lists ~nodes:right_nodes ~edges:right_edges ~default_node_order:[]
+    |> validate_ok
+  in
+  let right_template =
+    Function_template.create ~id:(template_id "get-or-else-right")
+      ~parameter_type:Core_type.Nat ~result_type:Core_type.Nat ~captures:[]
+      ~body:right_body ()
+  in
+  let nodes =
+    [
+      node "input" (Parameter input_type);
+      node "unpair"
+        (Unpair { left_type = option_nat; right_type = Core_type.Nat });
+      node "left-function"
+        (Function (function_signature left_template [ fallback_capture ]));
+      node "right-function" (Function (function_signature right_template []));
+      node "case"
+        (Case
+           {
+             case_left_type = Core_type.Unit;
+             case_right_type = Core_type.Nat;
+             case_result_type = Core_type.Nat;
+           });
+      node "result" (Result Core_type.Nat);
+    ]
+  in
+  let edges =
+    [
+      edge "e-input-unpair" (pref "input" "value") (pref "unpair" "value");
+      edge "e-option-case" (pref "unpair" "left") (pref "case" "scrutinee");
+      edge "e-fallback-capture" (pref "unpair" "right")
+        { node_id = node_id "left-function"; port_key = Port_key.capture "fallback" };
+      edge "e-left-function-case" (pref "left-function" "value")
+        (pref "case" "onLeft");
+      edge "e-right-function-case" (pref "right-function" "value")
+        (pref "case" "onRight");
+      edge "e-case-result" (pref "case" "result") (pref "result" "value");
+    ]
+  in
+  let body =
+    Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:
+        (List.map node_id [ "unpair"; "left-function"; "right-function"; "case" ])
+    |> validate_with_templates_ok [ left_template; right_template ]
+  in
+  let get_or_else =
+    Function_template.create ~id:(template_id "get-or-else")
+      ~parameter_type:input_type ~result_type:Core_type.Nat ~captures:[]
+      ~dependencies:
+        [ Function_template.id left_template; Function_template.id right_template ]
+      ~body ()
+  in
+  (left_template, right_template, get_or_else)
+
+let get_or_else_entry_graph ~right_payload =
+  let option_nat = Core_type.Sum (Core_type.Unit, Core_type.Nat) in
+  let input_type = Core_type.Product (option_nat, Core_type.Nat) in
+  let left_template, right_template, get_or_else = get_or_else_templates () in
+  let payload_node =
+    if right_payload then node "payload" (Nat_literal (nat "4"))
+    else node "payload" Unit_literal
+  in
+  let option_node =
+    if right_payload then
+      node "option"
+        (Right { sum_left_type = Core_type.Unit; sum_right_type = Core_type.Nat })
+    else
+      node "option"
+        (Left { sum_left_type = Core_type.Unit; sum_right_type = Core_type.Nat })
+  in
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop-param" (Drop Core_type.Unit);
+      payload_node;
+      option_node;
+      node "fallback" (Nat_literal (nat "7"));
+      node "pair"
+        (Pair { left_type = option_nat; right_type = Core_type.Nat });
+      node "function" (Function (function_signature get_or_else []));
+      node "apply" (Apply { apply_parameter_type = input_type; apply_result_type = Core_type.Nat });
+      node "result" (Result Core_type.Nat);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop-param" "input");
+      edge "e-payload-option" (pref "payload" "value") (pref "option" "input");
+      edge "e-option-pair" (pref "option" "value") (pref "pair" "left");
+      edge "e-fallback-pair" (pref "fallback" "value") (pref "pair" "right");
+      edge "e-function-apply" (pref "function" "value") (pref "apply" "function");
+      edge "e-pair-apply" (pref "pair" "value") (pref "apply" "argument");
+      edge "e-apply-result" (pref "apply" "result") (pref "result" "value");
+    ]
+  in
+  let templates = [ left_template; right_template; get_or_else ] in
+  let graph =
+    Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:
+        (List.map node_id [ "option"; "pair"; "function"; "apply"; "drop-param" ])
+    |> validate_with_templates_ok templates
+  in
+  (graph, templates)
+
+let assert_get_or_else ~right_payload expected =
+  let graph, templates = get_or_else_entry_graph ~right_payload in
+  let value, _trace =
+    run_completed (init_with_templates_ok templates graph Runtime_value.Unit)
+  in
+  assert (Runtime_value.payload_equal (Runtime_value.payload value) (Runtime_value.Nat (nat expected)))
+
+let () =
+  assert_get_or_else ~right_payload:false "7";
+  assert_get_or_else ~right_payload:true "4"
 
 let product_swap_graph () =
   let nat_bool = Core_type.Product (Core_type.Nat, Core_type.Bool) in
@@ -1868,7 +2152,8 @@ let closure_of_value value =
   match Runtime_value.payload value with
   | Runtime_value.Closure closure -> closure
   | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Nat _
-  | Runtime_value.Product _ | Runtime_value.Left _ | Runtime_value.Right _ ->
+  | Runtime_value.Product _ | Runtime_value.Left _ | Runtime_value.Right _
+  | Runtime_value.List _ ->
       assert false
 
 let () =
@@ -2362,3 +2647,138 @@ let () =
           List.map Runtime_value.Value_id.to_string event.Rewrite_event.consumed,
           List.map Runtime_value.to_string event.Rewrite_event.created ))
       trace_b)
+
+let length_step_template () =
+  let list_nat = Core_type.List Core_type.Nat in
+  let parameter_type =
+    Core_type.Product (Core_type.Nat, Core_type.Product (list_nat, Core_type.Nat))
+  in
+  let nodes =
+    [
+      node "length_step_param" (Parameter parameter_type);
+      node "length_step_unpair_outer"
+        (Unpair
+           {
+             left_type = Core_type.Nat;
+             right_type = Core_type.Product (list_nat, Core_type.Nat);
+           });
+      node "length_step_drop_head" (Drop Core_type.Nat);
+      node "length_step_unpair_inner"
+        (Unpair { left_type = list_nat; right_type = Core_type.Nat });
+      node "length_step_drop_tail" (Drop list_nat);
+      node "length_step_succ" Succ;
+      node "length_step_result" (Result Core_type.Nat);
+    ]
+  in
+  let edges =
+    [
+      edge "length_step_e_param_outer" (pref "length_step_param" "value")
+        (pref "length_step_unpair_outer" "value");
+      edge "length_step_e_head_drop" (pref "length_step_unpair_outer" "left")
+        (pref "length_step_drop_head" "input");
+      edge "length_step_e_inner" (pref "length_step_unpair_outer" "right")
+        (pref "length_step_unpair_inner" "value");
+      edge "length_step_e_tail_drop" (pref "length_step_unpair_inner" "left")
+        (pref "length_step_drop_tail" "input");
+      edge "length_step_e_recursive_succ" (pref "length_step_unpair_inner" "right")
+        (pref "length_step_succ" "input");
+      edge "length_step_e_result" (pref "length_step_succ" "result")
+        (pref "length_step_result" "value");
+    ]
+  in
+  let graph =
+    Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:
+        [
+          node_id "length_step_unpair_outer";
+          node_id "length_step_drop_head";
+          node_id "length_step_unpair_inner";
+          node_id "length_step_drop_tail";
+          node_id "length_step_succ";
+        ]
+    |> validate_ok
+  in
+  Function_template.create ~id:(template_id "length_step")
+    ~parameter_type ~result_type:Core_type.Nat ~captures:[] ~body:graph ()
+
+let list_length_graph () =
+  let list_nat = Core_type.List Core_type.Nat in
+  let step_parameter =
+    Core_type.Product (Core_type.Nat, Core_type.Product (list_nat, Core_type.Nat))
+  in
+  let nodes =
+    [
+      node "list_param" (Parameter Core_type.Unit);
+      node "list_drop_unit" (Drop Core_type.Unit);
+      node "list_nil" (Nil Core_type.Nat);
+      node "list_one" (Nat_literal (nat "1"));
+      node "list_two" (Nat_literal (nat "2"));
+      node "list_three" (Nat_literal (nat "3"));
+      node "list_cons_three" (Cons Core_type.Nat);
+      node "list_cons_two" (Cons Core_type.Nat);
+      node "list_cons_one" (Cons Core_type.Nat);
+      node "list_zero" (Nat_literal (nat "0"));
+      node "list_step"
+        (Function
+           {
+             template_id = template_id "length_step";
+             parameter_type = step_parameter;
+             result_type = Core_type.Nat;
+             captures = [];
+           });
+      node "list_rec"
+        (ListRec
+           { list_item_type = Core_type.Nat; list_result_type = Core_type.Nat });
+      node "list_result" (Result Core_type.Nat);
+    ]
+  in
+  let edges =
+    [
+      edge "list_e_drop" (pref "list_param" "value") (pref "list_drop_unit" "input");
+      edge "list_e_three_head" (pref "list_three" "value") (pref "list_cons_three" "head");
+      edge "list_e_three_tail" (pref "list_nil" "value") (pref "list_cons_three" "tail");
+      edge "list_e_two_head" (pref "list_two" "value") (pref "list_cons_two" "head");
+      edge "list_e_two_tail" (pref "list_cons_three" "value") (pref "list_cons_two" "tail");
+      edge "list_e_one_head" (pref "list_one" "value") (pref "list_cons_one" "head");
+      edge "list_e_one_tail" (pref "list_cons_two" "value") (pref "list_cons_one" "tail");
+      edge "list_e_list" (pref "list_cons_one" "value") (pref "list_rec" "list");
+      edge "list_e_base" (pref "list_zero" "value") (pref "list_rec" "base");
+      edge "list_e_step" (pref "list_step" "value") (pref "list_rec" "step");
+      edge "list_e_result" (pref "list_rec" "result") (pref "list_result" "value");
+    ]
+  in
+  Raw_graph.of_lists ~nodes ~edges
+    ~default_node_order:
+      [
+        node_id "list_drop_unit";
+        node_id "list_nil";
+        node_id "list_cons_three";
+        node_id "list_cons_two";
+        node_id "list_cons_one";
+        node_id "list_step";
+        node_id "list_rec";
+      ]
+  |> validate_with_templates [ length_step_template () ]
+  |> function
+  | Ok graph -> graph
+  | Error errors ->
+      failwith
+        ("validation failed: "
+        ^ String.concat "; " (List.map validation_error_to_string errors))
+
+let () =
+  let step_template = length_step_template () in
+  let graph = list_length_graph () in
+  let value, trace =
+    run_completed (init_with_templates_ok [ step_template ] graph Runtime_value.Unit)
+  in
+  let count_rule rule =
+    trace
+    |> List.filter (fun event -> event.Rewrite_event.rule = rule)
+    |> List.length
+  in
+  assert (payload_nat_string value = "3");
+  assert (count_rule Rewrite_event.Nil = 1);
+  assert (count_rule Rewrite_event.Cons = 3);
+  assert (count_rule Rewrite_event.ListRecStepEnter = 3);
+  assert (count_rule Rewrite_event.ListRecStepReturn = 3)

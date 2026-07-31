@@ -21,6 +21,10 @@ module Instance_id : sig
         node_id : Core_graph.Node_id.t;
         iteration : Nat.t;
       }
+    | ListRec_step of {
+        node_id : Core_graph.Node_id.t;
+        index : int;
+      }
 
   type t =
     | Root
@@ -61,6 +65,7 @@ type payload =
   | Product of payload * payload
   | Left of payload * Core_type.t
   | Right of Core_type.t * payload
+  | List of Core_type.t * payload list
   | Closure of closure
 
 type origin =

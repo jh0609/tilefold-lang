@@ -1,0 +1,427 @@
+{
+  "format": "tilefold-project",
+  "version": 2,
+  "geometry": {
+    "snapTolerance": 8,
+    "elements": [
+      {
+        "id": "unit-drop",
+        "kind": "drop",
+        "bounds": {
+          "x": 80,
+          "y": 80,
+          "width": 88,
+          "height": 56
+        },
+        "properties": {
+          "type": "unit"
+        },
+        "portAnchors": [
+          {
+            "port": "input",
+            "x": 80,
+            "y": 108
+          }
+        ]
+      },
+      {
+        "id": "nil",
+        "kind": "nil",
+        "bounds": {
+          "x": 80,
+          "y": 220,
+          "width": 96,
+          "height": 56
+        },
+        "properties": {
+          "itemType": "nat"
+        },
+        "portAnchors": [
+          {
+            "port": "value",
+            "x": 176,
+            "y": 248
+          }
+        ]
+      },
+      {
+        "id": "nat-three",
+        "kind": "nat_literal",
+        "bounds": {
+          "x": 80,
+          "y": 300,
+          "width": 96,
+          "height": 56
+        },
+        "properties": {
+          "value": "3"
+        },
+        "portAnchors": [
+          {
+            "port": "value",
+            "x": 176,
+            "y": 328
+          }
+        ]
+      },
+      {
+        "id": "cons-three",
+        "kind": "cons",
+        "bounds": {
+          "x": 250,
+          "y": 260,
+          "width": 120,
+          "height": 84
+        },
+        "properties": {
+          "itemType": "nat"
+        },
+        "portAnchors": [
+          {
+            "port": "head",
+            "x": 250,
+            "y": 288
+          },
+          {
+            "port": "tail",
+            "x": 250,
+            "y": 316
+          },
+          {
+            "port": "value",
+            "x": 370,
+            "y": 302
+          }
+        ]
+      },
+      {
+        "id": "nat-two",
+        "kind": "nat_literal",
+        "bounds": {
+          "x": 250,
+          "y": 150,
+          "width": 96,
+          "height": 56
+        },
+        "properties": {
+          "value": "2"
+        },
+        "portAnchors": [
+          {
+            "port": "value",
+            "x": 346,
+            "y": 178
+          }
+        ]
+      },
+      {
+        "id": "cons-two",
+        "kind": "cons",
+        "bounds": {
+          "x": 430,
+          "y": 205,
+          "width": 120,
+          "height": 84
+        },
+        "properties": {
+          "itemType": "nat"
+        },
+        "portAnchors": [
+          {
+            "port": "head",
+            "x": 430,
+            "y": 233
+          },
+          {
+            "port": "tail",
+            "x": 430,
+            "y": 261
+          },
+          {
+            "port": "value",
+            "x": 550,
+            "y": 247
+          }
+        ]
+      },
+      {
+        "id": "nat-one",
+        "kind": "nat_literal",
+        "bounds": {
+          "x": 430,
+          "y": 90,
+          "width": 96,
+          "height": 56
+        },
+        "properties": {
+          "value": "1"
+        },
+        "portAnchors": [
+          {
+            "port": "value",
+            "x": 526,
+            "y": 118
+          }
+        ]
+      },
+      {
+        "id": "cons-one",
+        "kind": "cons",
+        "bounds": {
+          "x": 610,
+          "y": 150,
+          "width": 120,
+          "height": 84
+        },
+        "properties": {
+          "itemType": "nat"
+        },
+        "portAnchors": [
+          {
+            "port": "head",
+            "x": 610,
+            "y": 178
+          },
+          {
+            "port": "tail",
+            "x": 610,
+            "y": 206
+          },
+          {
+            "port": "value",
+            "x": 730,
+            "y": 192
+          }
+        ]
+      }
+    ],
+    "containers": [
+      {
+        "id": "entry",
+        "kind": {
+          "kind": "entry",
+          "templateId": "entry_template",
+          "resultType": {
+            "list": "nat"
+          },
+          "dependencies": []
+        },
+        "bounds": {
+          "x": 0,
+          "y": 0,
+          "width": 900,
+          "height": 440
+        },
+        "boundaryPorts": [
+          {
+            "id": "entry-parameter",
+            "role": "parameter",
+            "type": "unit",
+            "anchor": {
+              "x": 0,
+              "y": 108
+            }
+          },
+          {
+            "id": "entry-result",
+            "role": "result",
+            "type": {
+              "list": "nat"
+            },
+            "anchor": {
+              "x": 900,
+              "y": 192
+            }
+          }
+        ]
+      }
+    ],
+    "wires": [
+      {
+        "id": "w-unit-drop",
+        "points": [
+          {
+            "x": 0,
+            "y": 108
+          },
+          {
+            "x": 80,
+            "y": 108
+          }
+        ],
+        "sourceHint": {
+          "kind": "boundary_port",
+          "containerId": "entry",
+          "boundaryId": "entry-parameter"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "unit-drop",
+          "port": "input"
+        }
+      },
+      {
+        "id": "w-three-head",
+        "points": [
+          {
+            "x": 176,
+            "y": 328
+          },
+          {
+            "x": 250,
+            "y": 288
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "nat-three",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "cons-three",
+          "port": "head"
+        }
+      },
+      {
+        "id": "w-nil-tail",
+        "points": [
+          {
+            "x": 176,
+            "y": 248
+          },
+          {
+            "x": 250,
+            "y": 316
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "nil",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "cons-three",
+          "port": "tail"
+        }
+      },
+      {
+        "id": "w-two-head",
+        "points": [
+          {
+            "x": 346,
+            "y": 178
+          },
+          {
+            "x": 430,
+            "y": 233
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "nat-two",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "cons-two",
+          "port": "head"
+        }
+      },
+      {
+        "id": "w-three-tail",
+        "points": [
+          {
+            "x": 370,
+            "y": 302
+          },
+          {
+            "x": 430,
+            "y": 261
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "cons-three",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "cons-two",
+          "port": "tail"
+        }
+      },
+      {
+        "id": "w-one-head",
+        "points": [
+          {
+            "x": 526,
+            "y": 118
+          },
+          {
+            "x": 610,
+            "y": 178
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "nat-one",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "cons-one",
+          "port": "head"
+        }
+      },
+      {
+        "id": "w-two-tail",
+        "points": [
+          {
+            "x": 550,
+            "y": 247
+          },
+          {
+            "x": 610,
+            "y": 206
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "cons-two",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "cons-one",
+          "port": "tail"
+        }
+      },
+      {
+        "id": "w-result",
+        "points": [
+          {
+            "x": 730,
+            "y": 192
+          },
+          {
+            "x": 900,
+            "y": 192
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "cons-one",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "boundary_port",
+          "containerId": "entry",
+          "boundaryId": "entry-result"
+        }
+      }
+    ],
+    "junctions": []
+  }
+}

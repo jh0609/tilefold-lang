@@ -152,6 +152,9 @@ const NEW_ELEMENT_SIZE: Record<
   left: { width: 104, height: 64 },
   right: { width: 104, height: 64 },
   case: { width: 136, height: 112 },
+  nil: { width: 96, height: 56 },
+  cons: { width: 120, height: 84 },
+  list_rec: { width: 152, height: 120 },
   apply: { width: 120, height: 90 },
   bool_rec: { width: 136, height: 112 },
   nat_rec: { width: 128, height: 112 },
@@ -4009,6 +4012,9 @@ export function addElement(
     left: "node_left_",
     right: "node_right_",
     case: "node_case_",
+    nil: "node_nil_",
+    cons: "node_cons_",
+    list_rec: "node_list_rec_",
     apply: "node_apply_",
     bool_rec: "node_bool_rec_",
     nat_rec: "node_nat_rec_",
@@ -4150,6 +4156,42 @@ export function addElement(
           { port: "scrutinee", x, y: anchorY(1, 4) },
           { port: "onLeft", x, y: anchorY(1, 2) },
           { port: "onRight", x, y: anchorY(3, 4) },
+          { port: "result", x: x + width, y: anchorY(1, 2) },
+        ],
+      };
+      break;
+    case "nil":
+      element = {
+        id,
+        kind,
+        bounds,
+        properties: { itemType: "nat" },
+        portAnchors: [{ port: "value", x: x + width, y: anchorY(1, 2) }],
+      };
+      break;
+    case "cons":
+      element = {
+        id,
+        kind,
+        bounds,
+        properties: { itemType: "nat" },
+        portAnchors: [
+          { port: "head", x, y: anchorY(1, 3) },
+          { port: "tail", x, y: anchorY(2, 3) },
+          { port: "value", x: x + width, y: anchorY(1, 2) },
+        ],
+      };
+      break;
+    case "list_rec":
+      element = {
+        id,
+        kind,
+        bounds,
+        properties: { itemType: "nat", resultType: "nat" },
+        portAnchors: [
+          { port: "list", x, y: anchorY(1, 4) },
+          { port: "base", x, y: anchorY(1, 2) },
+          { port: "step", x, y: anchorY(3, 4) },
           { port: "result", x: x + width, y: anchorY(1, 2) },
         ],
       };
@@ -5160,6 +5202,82 @@ export function updateCaseTypes(
             ? {
                 ...candidate,
                 properties: { leftType, rightType, resultType },
+              }
+            : candidate,
+        ),
+      },
+    },
+  };
+}
+
+export function updateListItemType(
+  document: ProjectDocument,
+  id: string,
+  itemType: CoreType,
+): { document: ProjectDocument; error?: string } {
+  const element = document.geometry.elements.find(
+    (candidate) => candidate.id === id,
+  );
+  if (!element) return { document, error: `Element ${id} does not exist.` };
+  if (element.kind !== "nil" && element.kind !== "cons") {
+    return { document, error: `${element.kind} is not a Nil or Cons element.` };
+  }
+  const references = elementReferences(document, id);
+  if (references.length > 0) {
+    return {
+      document,
+      error: `Disconnect wire(s) before changing ${id} list type: ${references.join(", ")}`,
+    };
+  }
+  return {
+    document: {
+      ...document,
+      geometry: {
+        ...document.geometry,
+        elements: document.geometry.elements.map((candidate) =>
+          candidate.id === id &&
+          (candidate.kind === "nil" || candidate.kind === "cons")
+            ? {
+                ...candidate,
+                properties: { itemType },
+              }
+            : candidate,
+        ),
+      },
+    },
+  };
+}
+
+export function updateListRecTypes(
+  document: ProjectDocument,
+  id: string,
+  itemType: CoreType,
+  resultType: CoreType,
+): { document: ProjectDocument; error?: string } {
+  const element = document.geometry.elements.find(
+    (candidate) => candidate.id === id,
+  );
+  if (!element) return { document, error: `Element ${id} does not exist.` };
+  if (element.kind !== "list_rec") {
+    return { document, error: `${element.kind} is not a ListRec element.` };
+  }
+  const references = elementReferences(document, id);
+  if (references.length > 0) {
+    return {
+      document,
+      error: `Disconnect wire(s) before changing ${id} ListRec types: ${references.join(", ")}`,
+    };
+  }
+  return {
+    document: {
+      ...document,
+      geometry: {
+        ...document.geometry,
+        elements: document.geometry.elements.map((candidate) =>
+          candidate.id === id && candidate.kind === "list_rec"
+            ? {
+                ...candidate,
+                properties: { itemType, resultType },
               }
             : candidate,
         ),

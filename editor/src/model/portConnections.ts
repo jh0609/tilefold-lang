@@ -141,6 +141,46 @@ function elementPortType(
       return port === "result"
         ? { direction: "output", type: element.properties.resultType }
         : null;
+    case "nil":
+      return port === "value"
+        ? { direction: "output", type: { list: element.properties.itemType } }
+        : null;
+    case "cons":
+      if (port === "head")
+        return { direction: "input", type: element.properties.itemType };
+      if (port === "tail")
+        return { direction: "input", type: { list: element.properties.itemType } };
+      return port === "value"
+        ? { direction: "output", type: { list: element.properties.itemType } }
+        : null;
+    case "list_rec":
+      if (port === "list")
+        return { direction: "input", type: { list: element.properties.itemType } };
+      if (port === "base")
+        return { direction: "input", type: element.properties.resultType };
+      if (port === "step")
+        return {
+          direction: "input",
+          type: {
+            arrow: [
+              {
+                product: [
+                  element.properties.itemType,
+                  {
+                    product: [
+                      { list: element.properties.itemType },
+                      element.properties.resultType,
+                    ],
+                  },
+                ],
+              },
+              element.properties.resultType,
+            ],
+          },
+        };
+      return port === "result"
+        ? { direction: "output", type: element.properties.resultType }
+        : null;
     case "apply":
       if (port === "function")
         return {

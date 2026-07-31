@@ -24,6 +24,8 @@ import {
   updatePairTypes,
   updateCaseTypes,
   updateSumTypes,
+  updateListItemType,
+  updateListRecTypes,
   type AddableElementKind,
   type FunctionTemplateDraft,
   type SurfaceFunctionSignatureEdit,
@@ -165,6 +167,18 @@ export type EditorCommand =
       id: string;
       before: { leftType: CoreType; rightType: CoreType; resultType: CoreType };
       after: { leftType: CoreType; rightType: CoreType; resultType: CoreType };
+    }
+  | {
+      type: "set_list_item_type";
+      id: string;
+      before: CoreType;
+      after: CoreType;
+    }
+  | {
+      type: "set_list_rec_types";
+      id: string;
+      before: { itemType: CoreType; resultType: CoreType };
+      after: { itemType: CoreType; resultType: CoreType };
     }
   | {
       type: "set_entry_result_type";
@@ -464,6 +478,15 @@ export function applyEditorCommand(
         command.after.rightType,
         command.after.resultType,
       );
+    case "set_list_item_type":
+      return updateListItemType(document, command.id, command.after);
+    case "set_list_rec_types":
+      return updateListRecTypes(
+        document,
+        command.id,
+        command.after.itemType,
+        command.after.resultType,
+      );
     case "set_entry_result_type":
       return updateEntryResultType(document, command.containerId, command.after);
   }
@@ -481,6 +504,9 @@ const ELEMENT_LABELS: Record<AddableElementKind, string> = {
   left: "Left",
   right: "Right",
   case: "Case",
+  nil: "Nil",
+  cons: "Cons",
+  list_rec: "ListRec",
   apply: "Apply",
   bool_rec: "BoolRec",
   nat_rec: "NatRec",
@@ -529,6 +555,8 @@ export function editorCommandLabel(command: EditorCommand): string {
     case "set_pair_types":
     case "set_sum_types":
     case "set_case_types":
+    case "set_list_item_type":
+    case "set_list_rec_types":
       return `Edit types for ${command.id}`;
     case "set_entry_result_type":
       return "Edit entry result type";
@@ -576,6 +604,13 @@ export function isNoOpCommand(command: EditorCommand): boolean {
       return (
         coreTypeEqual(command.before.leftType, command.after.leftType) &&
         coreTypeEqual(command.before.rightType, command.after.rightType) &&
+        coreTypeEqual(command.before.resultType, command.after.resultType)
+      );
+    case "set_list_item_type":
+      return coreTypeEqual(command.before, command.after);
+    case "set_list_rec_types":
+      return (
+        coreTypeEqual(command.before.itemType, command.after.itemType) &&
         coreTypeEqual(command.before.resultType, command.after.resultType)
       );
     case "set_entry_result_type":

@@ -379,6 +379,7 @@ let rec render_type = function
       tagged "Product" [ render_type left; render_type right ]
   | Core_type.Sum (left, right) ->
       tagged "Sum" [ render_type left; render_type right ]
+  | Core_type.List item -> tagged "List" [ render_type item ]
   | Core_type.Arrow (input, output) ->
       tagged "Arrow" [ render_type input; render_type output ]
 
@@ -536,6 +537,7 @@ let rec supported_value_type = function
   | Core_type.Unit | Core_type.Bool | Core_type.Nat -> true
   | Core_type.Product (left, right) | Core_type.Sum (left, right) ->
       supported_value_type left && supported_value_type right
+  | Core_type.List item -> supported_value_type item
   | Core_type.Arrow _ -> false
 
 let rec parameter_use_count parameter = function

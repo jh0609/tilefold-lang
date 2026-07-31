@@ -65,6 +65,7 @@ let rec render_type = function
   | Product (left, right) ->
       tagged "Product" [ render_type left; render_type right ]
   | Sum (left, right) -> tagged "Sum" [ render_type left; render_type right ]
+  | List item -> tagged "List" [ render_type item ]
   | Arrow (input, output) -> tagged "Arrow" [ render_type input; render_type output ]
 
 let render_capture (capture : CG.capture) =
@@ -119,6 +120,14 @@ let render_node_kind = function
           render_type signature.case_right_type;
           render_type signature.case_result_type;
         ]
+  | Nil item_type -> tagged "Nil" [ render_type item_type ]
+  | Cons item_type -> tagged "Cons" [ render_type item_type ]
+  | ListRec signature ->
+      tagged "ListRec"
+        [
+          render_type signature.list_item_type;
+          render_type signature.list_result_type;
+        ]
   | Function signature -> render_function_signature signature
   | Apply signature -> render_apply_signature signature
   | NatRec typ -> tagged "NatRec" [ render_type typ ]
@@ -145,6 +154,8 @@ let rec render_payload = function
       tagged "Left" [ render_payload payload; render_type right_type ]
   | Right (left_type, payload) ->
       tagged "Right" [ render_type left_type; render_payload payload ]
+  | List (item_type, items) ->
+      tagged "List" (render_type item_type :: List.map render_payload items)
   | Closure _ -> tagged "Closure" []
 
 let sorted_nodes graph =
@@ -335,6 +346,9 @@ let rec parse_type sexp =
       let* left = parse_type left in
       let* right = parse_type right in
       Ok (Core_type.Sum (left, right))
+  | List [ Atom "List"; item ] ->
+      let* item = parse_type item in
+      Ok (Core_type.List item)
   | List [ Atom "Arrow"; input; output ] ->
       let* input = parse_type input in
       let* output = parse_type output in
@@ -414,6 +428,16 @@ let parse_node_kind sexp =
       let* case_right_type = parse_type right_type in
       let* case_result_type = parse_type result_type in
       Ok (CG.Case { case_left_type; case_right_type; case_result_type })
+  | List [ Atom "Nil"; item_type ] ->
+      let* item_type = parse_type item_type in
+      Ok (CG.Nil item_type)
+  | List [ Atom "Cons"; item_type ] ->
+      let* item_type = parse_type item_type in
+      Ok (CG.Cons item_type)
+  | List [ Atom "ListRec"; item_type; result_type ] ->
+      let* list_item_type = parse_type item_type in
+      let* list_result_type = parse_type result_type in
+      Ok (CG.ListRec { list_item_type; list_result_type })
   | List [ Atom "Function"; template_id; parameter_type; result_type; captures ] ->
       let* template_id = as_atom "template id" template_id >>= parse_template_id in
       let* parameter_type = parse_type parameter_type in
@@ -602,6 +626,15 @@ let rec parse_payload = function
       let* left_type = parse_type left_type in
       let* payload = parse_payload payload in
       Ok (Runtime_value.Right (left_type, payload))
+  | List (Atom "List" :: item_type :: items) ->
+      let* item_type = parse_type item_type in
+      let rec loop acc = function
+        | [] -> Ok (Runtime_value.List (item_type, List.rev acc))
+        | item :: rest ->
+            let* item = parse_payload item in
+            loop (item :: acc) rest
+      in
+      loop [] items
   | List [ Atom "Closure" ] -> Error Unsupported_program_literal_payload
   | _ -> Error Invalid_payload
 
