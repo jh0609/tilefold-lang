@@ -20,6 +20,8 @@ let rec result_payload_to_string = function
   | Runtime_value.Product (left, right) ->
       "Product(" ^ result_payload_to_string left ^ ", "
       ^ result_payload_to_string right ^ ")"
+  | Runtime_value.Left (payload, _) -> "Left(" ^ result_payload_to_string payload ^ ")"
+  | Runtime_value.Right (_, payload) -> "Right(" ^ result_payload_to_string payload ^ ")"
   | Runtime_value.Closure closure ->
       "Closure("
       ^ Core_graph.Function_template_id.to_string closure.template_id
@@ -49,6 +51,8 @@ module Fast = struct
     | Bool of bool
     | Nat of Nat.t
     | Product of value * value
+    | Left of value * Core_type.t
+    | Right of Core_type.t * value
     | Project_closure of {
         template_id : string;
         args : value list;
@@ -106,6 +110,12 @@ module Fast = struct
         let* left = runtime_payload left in
         let* right = runtime_payload right in
         Ok (Runtime_value.Product (left, right))
+    | Left (payload, right_type) ->
+        let* payload = runtime_payload payload in
+        Ok (Runtime_value.Left (payload, right_type))
+    | Right (left_type, payload) ->
+        let* payload = runtime_payload payload in
+        Ok (Runtime_value.Right (left_type, payload))
     | Project_closure _ ->
         fail "Fast execution cannot pass a partially-applied Project function as a Standard Library argument yet."
     | Std_closure _ -> fail "Fast execution cannot pass a partially-applied function as a Standard Library argument yet."
@@ -118,6 +128,12 @@ module Fast = struct
         let* left = value_of_payload left in
         let* right = value_of_payload right in
         Ok (Product (left, right))
+    | Runtime_value.Left (payload, right_type) ->
+        let* payload = value_of_payload payload in
+        Ok (Left (payload, right_type))
+    | Runtime_value.Right (left_type, payload) ->
+        let* payload = value_of_payload payload in
+        Ok (Right (left_type, payload))
     | Runtime_value.Closure _ -> fail "Fast Standard Library evaluator produced a function value."
 
   let rec function_argument_types typ acc =
@@ -140,6 +156,10 @@ module Fast = struct
     | Core_type.Nat, Nat _ -> true
     | Core_type.Product (left_type, right_type), Product (left, right) ->
         type_matches left_type left && type_matches right_type right
+    | Core_type.Sum (left_type, right_type), Left (payload, payload_right_type) ->
+        type_matches left_type payload && Core_type.equal right_type payload_right_type
+    | Core_type.Sum (left_type, right_type), Right (payload_left_type, payload) ->
+        Core_type.equal left_type payload_left_type && type_matches right_type payload
     | Core_type.Arrow _, Std_closure _ | Core_type.Arrow _, Project_closure _ -> true
     | _ -> false
 
@@ -149,6 +169,8 @@ module Fast = struct
     | Nat value -> "Nat(" ^ Nat.to_string value ^ ")"
     | Product (left, right) ->
         "Product(" ^ value_to_string left ^ ", " ^ value_to_string right ^ ")"
+    | Left (payload, _) -> "Left(" ^ value_to_string payload ^ ")"
+    | Right (_, payload) -> "Right(" ^ value_to_string payload ^ ")"
     | Project_closure { template_id; _ } -> "Closure(" ^ template_id ^ ")"
     | Std_closure { function_id; _ } ->
         let info =
@@ -311,6 +333,14 @@ module Fast = struct
           then completed_call state subject function_id args
           else Ok (Std_closure { function_id; subject; args })
 
+  and apply_function_value state document function_value argument =
+    match function_value with
+    | Std_closure { function_id; subject; args } ->
+        apply_standard_closure state ~function_id ~subject ~args argument
+    | Project_closure { template_id; args } ->
+        apply_project_function state document ~template_id ~args argument
+    | _ -> fail "Case branch input must be a function."
+
   and eval_element_port state document env element_id port =
     match element_by_id document element_id with
     | None -> fail ("Unknown element " ^ element_id)
@@ -334,6 +364,27 @@ module Fast = struct
             with
             | Ok left, Ok right -> Ok (Product (left, right))
             | Error message, _ | _, Error message -> fail message)
+        | P.Left { right_type; _ }, "value" -> (
+            match eval_input state document env element_id "input" with
+            | Ok payload -> Ok (Left (payload, right_type))
+            | Error _ as error -> error)
+        | P.Right { left_type; _ }, "value" -> (
+            match eval_input state document env element_id "input" with
+            | Ok payload -> Ok (Right (left_type, payload))
+            | Error _ as error -> error)
+        | P.Case _, "result" -> (
+            match
+              ( eval_input state document env element_id "scrutinee",
+                eval_input state document env element_id "onLeft",
+                eval_input state document env element_id "onRight" )
+            with
+            | Ok (Left (payload, _)), Ok on_left, Ok _on_right ->
+                apply_function_value state document on_left payload
+            | Ok (Right (_, payload)), Ok _on_left, Ok on_right ->
+                apply_function_value state document on_right payload
+            | Ok _, Ok _, Ok _ -> fail "Case scrutinee must be Sum"
+            | Error message, _, _ | _, Error message, _ | _, _, Error message ->
+                fail message)
         | P.Unpair _, "left" -> (
             match eval_input state document env element_id "value" with
             | Ok (Product (left, _right)) -> Ok left

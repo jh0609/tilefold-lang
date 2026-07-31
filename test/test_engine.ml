@@ -50,14 +50,14 @@ let payload_nat_string value =
   match Runtime_value.payload value with
   | Runtime_value.Nat nat -> Nat.to_string nat
   | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Product _
-  | Runtime_value.Closure _ ->
+  | Runtime_value.Left _ | Runtime_value.Right _ | Runtime_value.Closure _ ->
       assert false
 
 let payload_product_pair value =
   match Runtime_value.payload value with
   | Runtime_value.Product (left, right) -> (left, right)
   | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Nat _
-  | Runtime_value.Closure _ ->
+  | Runtime_value.Left _ | Runtime_value.Right _ | Runtime_value.Closure _ ->
       assert false
 
 let entry_unit_to_nat ?(order = [ "succ"; "drop" ]) ?(literal = "3") () =
@@ -1146,7 +1146,7 @@ let () =
         Function_template_id.equal closure.template_id
           (Function_template.id base_template))
   | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Nat _
-  | Runtime_value.Product _ ->
+  | Runtime_value.Product _ | Runtime_value.Left _ | Runtime_value.Right _ ->
       assert false);
   assert (
     trace
@@ -1355,6 +1355,7 @@ let () =
         | Runtime_value.Bool _ -> "Bool"
         | Runtime_value.Nat _ -> "Nat"
         | Runtime_value.Product _ -> "Product"
+        | Runtime_value.Left _ | Runtime_value.Right _ -> "Sum"
         | Runtime_value.Closure _ -> "Closure")
       copy_event.Rewrite_event.created
     = [ "Unit"; "Unit" ])
@@ -1389,6 +1390,193 @@ let () =
   assert (Runtime_value.payload_equal left (Runtime_value.Nat (nat "3")));
   assert (Runtime_value.payload_equal right (Runtime_value.Bool true));
   assert_rules [ "Pair"; "Drop" ] trace
+
+let left_sum_graph () =
+  let sum_type = Core_type.Sum (Core_type.Nat, Core_type.Bool) in
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop" (Drop Core_type.Unit);
+      node "nat" (Nat_literal (nat "3"));
+      node "left" (Left { sum_left_type = Core_type.Nat; sum_right_type = Core_type.Bool });
+      node "result" (Result sum_type);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop" "input");
+      edge "e-nat-left" (pref "nat" "value") (pref "left" "input");
+      edge "e-left-result" (pref "left" "value") (pref "result" "value");
+    ]
+  in
+  Raw_graph.of_lists ~nodes ~edges
+    ~default_node_order:(List.map node_id [ "left"; "drop" ])
+  |> validate_ok
+
+let () =
+  let value, trace = run_completed (init_ok (left_sum_graph ()) Runtime_value.Unit) in
+  (match Runtime_value.payload value with
+  | Runtime_value.Left (payload, right_type) ->
+      assert (Core_type.equal right_type Core_type.Bool);
+      assert (Runtime_value.payload_equal payload (Runtime_value.Nat (nat "3")))
+  | _ -> assert false);
+  assert_rules [ "Left"; "Drop" ] trace
+
+let right_sum_graph () =
+  let sum_type = Core_type.Sum (Core_type.Nat, Core_type.Bool) in
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop" (Drop Core_type.Unit);
+      node "bool" (Bool_literal true);
+      node "right" (Right { sum_left_type = Core_type.Nat; sum_right_type = Core_type.Bool });
+      node "result" (Result sum_type);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop" "input");
+      edge "e-bool-right" (pref "bool" "value") (pref "right" "input");
+      edge "e-right-result" (pref "right" "value") (pref "result" "value");
+    ]
+  in
+  Raw_graph.of_lists ~nodes ~edges
+    ~default_node_order:(List.map node_id [ "right"; "drop" ])
+  |> validate_ok
+
+let () =
+  let value, trace = run_completed (init_ok (right_sum_graph ()) Runtime_value.Unit) in
+  (match Runtime_value.payload value with
+  | Runtime_value.Right (left_type, payload) ->
+      assert (Core_type.equal left_type Core_type.Nat);
+      assert (Runtime_value.payload_equal payload (Runtime_value.Bool true))
+  | _ -> assert false);
+  assert_rules [ "Right"; "Drop" ] trace
+
+let case_left_template () =
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Nat);
+      node "succ" Succ;
+      node "result" (Result Core_type.Nat);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-succ" (pref "param" "value") (pref "succ" "input");
+      edge "e-succ-result" (pref "succ" "result") (pref "result" "value");
+    ]
+  in
+  let body =
+    Raw_graph.of_lists ~nodes ~edges ~default_node_order:[ node_id "succ" ]
+    |> validate_ok
+  in
+  Function_template.create ~id:(template_id "case-left-branch")
+    ~parameter_type:Core_type.Nat ~result_type:Core_type.Nat ~captures:[] ~body ()
+
+let case_right_template () =
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Bool);
+      node "drop" (Drop Core_type.Bool);
+      node "zero" (Nat_literal (nat "0"));
+      node "result" (Result Core_type.Nat);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop" "input");
+      edge "e-zero-result" (pref "zero" "value") (pref "result" "value");
+    ]
+  in
+  let body =
+    Raw_graph.of_lists ~nodes ~edges ~default_node_order:[ node_id "drop" ]
+    |> validate_ok
+  in
+  Function_template.create ~id:(template_id "case-right-branch")
+    ~parameter_type:Core_type.Bool ~result_type:Core_type.Nat ~captures:[] ~body ()
+
+let case_graph ~right_input =
+  let left_template = case_left_template () in
+  let right_template = case_right_template () in
+  let sum_node =
+    if right_input then
+      node "sum" (Right { sum_left_type = Core_type.Nat; sum_right_type = Core_type.Bool })
+    else node "sum" (Left { sum_left_type = Core_type.Nat; sum_right_type = Core_type.Bool })
+  in
+  let payload_node =
+    if right_input then node "payload" (Bool_literal true)
+    else node "payload" (Nat_literal (nat "3"))
+  in
+  let left_function =
+    Function
+      (function_signature left_template
+         [])
+  in
+  let right_function =
+    Function
+      (function_signature right_template
+         [])
+  in
+  let nodes =
+    [
+      node "param" (Parameter Core_type.Unit);
+      node "drop" (Drop Core_type.Unit);
+      payload_node;
+      sum_node;
+      node "left-fn" left_function;
+      node "right-fn" right_function;
+      node "case"
+        (Case
+           {
+             case_left_type = Core_type.Nat;
+             case_right_type = Core_type.Bool;
+             case_result_type = Core_type.Nat;
+           });
+      node "result" (Result Core_type.Nat);
+    ]
+  in
+  let edges =
+    [
+      edge "e-param-drop" (pref "param" "value") (pref "drop" "input");
+      edge "e-payload-sum" (pref "payload" "value") (pref "sum" "input");
+      edge "e-sum-case" (pref "sum" "value") (pref "case" "scrutinee");
+      edge "e-left-fn-case" (pref "left-fn" "value") (pref "case" "onLeft");
+      edge "e-right-fn-case" (pref "right-fn" "value") (pref "case" "onRight");
+      edge "e-case-result" (pref "case" "result") (pref "result" "value");
+    ]
+  in
+  let graph =
+    Raw_graph.of_lists ~nodes ~edges
+      ~default_node_order:
+        (List.map node_id [ "sum"; "left-fn"; "right-fn"; "case"; "drop" ])
+    |> validate_with_templates_ok [ left_template; right_template ]
+  in
+  (graph, [ left_template; right_template ])
+
+let () =
+  let graph, templates = case_graph ~right_input:false in
+  let value, trace =
+    run_completed (init_with_templates_ok templates graph Runtime_value.Unit)
+  in
+  assert (Runtime_value.payload_equal (Runtime_value.payload value) (Runtime_value.Nat (nat "4")));
+  assert_rules [ "Left"; "Function"; "Function"; "Drop"; "CaseLeft"; "Succ"; "ApplyReturn" ] trace;
+  assert (
+    trace
+    |> List.exists (fun event -> event.Rewrite_event.rule = Rewrite_event.CaseRight)
+    |> not)
+
+let () =
+  let graph, templates = case_graph ~right_input:true in
+  let value, trace =
+    run_completed (init_with_templates_ok templates graph Runtime_value.Unit)
+  in
+  assert (Runtime_value.payload_equal (Runtime_value.payload value) (Runtime_value.Nat (nat "0")));
+  assert_rules [ "Right"; "Function"; "Function"; "Drop"; "CaseRight"; "Drop"; "ApplyReturn" ] trace;
+  assert (
+    trace
+    |> List.exists (fun event -> event.Rewrite_event.rule = Rewrite_event.CaseLeft)
+    |> not)
 
 let product_swap_graph () =
   let nat_bool = Core_type.Product (Core_type.Nat, Core_type.Bool) in
@@ -1680,7 +1868,7 @@ let closure_of_value value =
   match Runtime_value.payload value with
   | Runtime_value.Closure closure -> closure
   | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Nat _
-  | Runtime_value.Product _ ->
+  | Runtime_value.Product _ | Runtime_value.Left _ | Runtime_value.Right _ ->
       assert false
 
 let () =

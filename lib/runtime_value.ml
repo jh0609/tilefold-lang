@@ -9,6 +9,10 @@ end
 module Instance_id = struct
   type call_site =
     | Apply_node of Core_graph.Node_id.t
+    | Case_branch of {
+        node_id : Core_graph.Node_id.t;
+        branch : [ `Left | `Right ];
+      }
     | NatRec_step_function of {
         node_id : Core_graph.Node_id.t;
         iteration : Nat.t;
@@ -34,6 +38,9 @@ module Instance_id = struct
   let call_site_equal left right =
     match (left, right) with
     | Apply_node left, Apply_node right -> Core_graph.Node_id.equal left right
+    | ( Case_branch { node_id = left_node; branch = left_branch },
+        Case_branch { node_id = right_node; branch = right_branch } ) ->
+        Core_graph.Node_id.equal left_node right_node && left_branch = right_branch
     | ( NatRec_step_function { node_id = left_node; iteration = left_iteration },
         NatRec_step_function { node_id = right_node; iteration = right_iteration } )
     | ( NatRec_step_accumulator { node_id = left_node; iteration = left_iteration },
@@ -44,6 +51,12 @@ module Instance_id = struct
 
   let call_site_to_string = function
     | Apply_node node_id -> "Apply(" ^ Core_graph.Node_id.to_string node_id ^ ")"
+    | Case_branch { node_id; branch } ->
+        "Case("
+        ^ Core_graph.Node_id.to_string node_id
+        ^ ","
+        ^ (match branch with `Left -> "Left" | `Right -> "Right")
+        ^ ")"
     | NatRec_step_function { node_id; iteration } ->
         "NatRecStepFunction(" ^ Core_graph.Node_id.to_string node_id ^ ","
         ^ Nat.to_string iteration ^ ")"
@@ -110,6 +123,8 @@ and payload =
   | Bool of bool
   | Nat of Nat.t
   | Product of payload * payload
+  | Left of payload * Core_type.t
+  | Right of Core_type.t * payload
   | Closure of closure
 
 let create ~id ~payload ~origin = { id; payload; origin }
@@ -135,6 +150,8 @@ let rec payload_type = function
   | Nat _ -> Core_type.Nat
   | Product (left, right) ->
       Core_type.Product (payload_type left, payload_type right)
+  | Left (payload, right_type) -> Core_type.Sum (payload_type payload, right_type)
+  | Right (left_type, payload) -> Core_type.Sum (left_type, payload_type payload)
   | Closure closure -> Core_type.Arrow (closure.parameter_type, closure.result_type)
 
 let typ value = payload_type value.payload
@@ -146,6 +163,12 @@ let rec payload_equal left right =
   | Nat left, Nat right -> Nat.equal left right
   | Product (left_a, left_b), Product (right_a, right_b) ->
       payload_equal left_a right_a && payload_equal left_b right_b
+  | Left (left_payload, left_right_type), Left (right_payload, right_right_type) ->
+      payload_equal left_payload right_payload
+      && Core_type.equal left_right_type right_right_type
+  | Right (left_left_type, left_payload), Right (right_left_type, right_payload) ->
+      Core_type.equal left_left_type right_left_type
+      && payload_equal left_payload right_payload
   | Closure left, Closure right -> closure_equal left right
   | _ -> false
 
@@ -172,6 +195,8 @@ let rec payload_to_string = function
   | Nat value -> "Nat(" ^ Nat.to_string value ^ ")"
   | Product (left, right) ->
       "Product(" ^ payload_to_string left ^ ", " ^ payload_to_string right ^ ")"
+  | Left (payload, _) -> "Left(" ^ payload_to_string payload ^ ")"
+  | Right (_, payload) -> "Right(" ^ payload_to_string payload ^ ")"
   | Closure closure ->
       "Closure("
       ^ Core_graph.Function_template_id.to_string closure.template_id

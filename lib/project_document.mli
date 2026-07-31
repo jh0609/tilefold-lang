@@ -21,6 +21,19 @@ type element_kind =
       left_type : Core_type.t;
       right_type : Core_type.t;
     }
+  | Left of {
+      left_type : Core_type.t;
+      right_type : Core_type.t;
+    }
+  | Right of {
+      left_type : Core_type.t;
+      right_type : Core_type.t;
+    }
+  | Case of {
+      left_type : Core_type.t;
+      right_type : Core_type.t;
+      result_type : Core_type.t;
+    }
   | Function of {
       template_id : string;
       parameter_type : Core_type.t;

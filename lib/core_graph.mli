@@ -28,6 +28,9 @@ module Port_key : sig
   val true_case : t
   val left : t
   val right : t
+  val scrutinee : t
+  val on_left : t
+  val on_right : t
   val function_input : t
   val argument : t
   val base : t
@@ -72,6 +75,9 @@ type node_kind =
   | Copy of Core_type.t
   | Pair of pair_signature
   | Unpair of pair_signature
+  | Left of sum_signature
+  | Right of sum_signature
+  | Case of case_signature
   | Function of function_signature
   | Apply of apply_signature
   | NatRec of Core_type.t
@@ -85,6 +91,17 @@ and capture = {
 and pair_signature = {
   left_type : Core_type.t;
   right_type : Core_type.t;
+}
+
+and sum_signature = {
+  sum_left_type : Core_type.t;
+  sum_right_type : Core_type.t;
+}
+
+and case_signature = {
+  case_left_type : Core_type.t;
+  case_right_type : Core_type.t;
+  case_result_type : Core_type.t;
 }
 
 and function_signature = {

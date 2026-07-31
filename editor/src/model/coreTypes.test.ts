@@ -20,6 +20,27 @@ describe("Core type utilities", () => {
       "Nat × Bool -> Nat",
       { arrow: [{ product: ["nat", "bool"] }, "nat"] } satisfies CoreType,
     ],
+    ["Nat + Bool", { sum: ["nat", "bool"] } satisfies CoreType],
+    [
+      "Nat + Bool + Unit",
+      { sum: ["nat", { sum: ["bool", "unit"] }] } satisfies CoreType,
+    ],
+    [
+      "(Nat + Bool) + Unit",
+      { sum: [{ sum: ["nat", "bool"] }, "unit"] } satisfies CoreType,
+    ],
+    [
+      "Nat × (Bool + Unit)",
+      { product: ["nat", { sum: ["bool", "unit"] }] } satisfies CoreType,
+    ],
+    [
+      "(Nat -> Bool) + Nat",
+      { sum: [{ arrow: ["nat", "bool"] }, "nat"] } satisfies CoreType,
+    ],
+    [
+      "Nat -> (Bool + Nat)",
+      { arrow: ["nat", { sum: ["bool", "nat"] }] } satisfies CoreType,
+    ],
     [
       "(Nat -> Nat) -> Nat",
       { arrow: [{ arrow: ["nat", "nat"] }, "nat"] } satisfies CoreType,
@@ -62,6 +83,14 @@ describe("Core type utilities", () => {
     const left: CoreType = { product: ["nat", { product: ["bool", "unit"] }] };
     const same: CoreType = { product: ["nat", { product: ["bool", "unit"] }] };
     const different: CoreType = { product: [{ product: ["nat", "bool"] }, "unit"] };
+    expect(coreTypeEqual(left, same)).toBe(true);
+    expect(coreTypeEqual(left, different)).toBe(false);
+  });
+
+  it("compares Sum types structurally", () => {
+    const left: CoreType = { sum: ["nat", { sum: ["bool", "unit"] }] };
+    const same: CoreType = { sum: ["nat", { sum: ["bool", "unit"] }] };
+    const different: CoreType = { sum: [{ sum: ["nat", "bool"] }, "unit"] };
     expect(coreTypeEqual(left, same)).toBe(true);
     expect(coreTypeEqual(left, different)).toBe(false);
   });

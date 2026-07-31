@@ -29,6 +29,8 @@ let rec render_payload = function
   | Nat nat -> "Nat(" ^ Nat.to_string nat ^ ")"
   | Product (left, right) ->
       "Product(" ^ render_payload left ^ ", " ^ render_payload right ^ ")"
+  | Left (payload, _) -> "Left(" ^ render_payload payload ^ ")"
+  | Right (_, payload) -> "Right(" ^ render_payload payload ^ ")"
   | Closure closure ->
       "Closure(template=" ^ render_template_id closure.template_id
       ^ ",parameter=" ^ render_type closure.parameter_type
@@ -72,6 +74,10 @@ let render_call_site = function
   | NatRec_step_accumulator { node_id; iteration } ->
       "NatRecStepAccumulator(node=" ^ render_node_id node_id
       ^ ",iteration=" ^ Nat.to_string iteration ^ ")"
+  | Case_branch { node_id; branch } ->
+      "Case(node=" ^ render_node_id node_id ^ ",branch="
+      ^ (match branch with `Left -> "Left" | `Right -> "Right")
+      ^ ")"
 
 let rec render_instance = function
   | Runtime_value.Instance_id.Root -> "Root"

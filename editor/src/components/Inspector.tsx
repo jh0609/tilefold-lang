@@ -40,6 +40,17 @@ interface InspectorProps {
     leftType: CoreType,
     rightType: CoreType,
   ) => void;
+  onSumTypesChange: (
+    id: string,
+    leftType: CoreType,
+    rightType: CoreType,
+  ) => void;
+  onCaseTypesChange: (
+    id: string,
+    leftType: CoreType,
+    rightType: CoreType,
+    resultType: CoreType,
+  ) => void;
   onEntryResultTypeChange: (containerId: string, resultType: CoreType) => void;
   canDelete: boolean;
   onDelete: () => void;
@@ -591,6 +602,8 @@ function ElementInspector({
   onElementTypeChange,
   onApplyTypesChange,
   onPairTypesChange,
+  onSumTypesChange,
+  onCaseTypesChange,
   onFocusTemplate,
   onOpenStandardLibraryDefinition,
   onError,
@@ -611,6 +624,17 @@ function ElementInspector({
     id: string,
     leftType: CoreType,
     rightType: CoreType,
+  ) => void;
+  onSumTypesChange: (
+    id: string,
+    leftType: CoreType,
+    rightType: CoreType,
+  ) => void;
+  onCaseTypesChange: (
+    id: string,
+    leftType: CoreType,
+    rightType: CoreType,
+    resultType: CoreType,
   ) => void;
   onFocusTemplate: (templateId: string) => void;
   onOpenStandardLibraryDefinition: (definition: StandardLibraryFunction) => void;
@@ -770,6 +794,85 @@ function ElementInspector({
           <p className="limitation">
             Product nodes preserve both components explicitly. Use Unpair and
             Drop any component that is not needed.
+          </p>
+        </>
+      )}
+      {(element.kind === "left" || element.kind === "right") && (
+        <>
+          <CoreTypeField
+            label="Left alternative"
+            value={element.properties.leftType}
+            disabled={connectedWires.length > 0}
+            onChange={(leftType) =>
+              onSumTypesChange(
+                element.id,
+                leftType,
+                element.properties.rightType,
+              )
+            }
+          />
+          <CoreTypeField
+            label="Right alternative"
+            value={element.properties.rightType}
+            disabled={connectedWires.length > 0}
+            onChange={(rightType) =>
+              onSumTypesChange(
+                element.id,
+                element.properties.leftType,
+                rightType,
+              )
+            }
+          />
+          <p className="limitation">
+            Sum nodes preserve the selected Left or Right tag. Use Case to
+            choose a branch.
+          </p>
+        </>
+      )}
+      {element.kind === "case" && (
+        <>
+          <CoreTypeField
+            label="Left alternative"
+            value={element.properties.leftType}
+            disabled={connectedWires.length > 0}
+            onChange={(leftType) =>
+              onCaseTypesChange(
+                element.id,
+                leftType,
+                element.properties.rightType,
+                element.properties.resultType,
+              )
+            }
+          />
+          <CoreTypeField
+            label="Right alternative"
+            value={element.properties.rightType}
+            disabled={connectedWires.length > 0}
+            onChange={(rightType) =>
+              onCaseTypesChange(
+                element.id,
+                element.properties.leftType,
+                rightType,
+                element.properties.resultType,
+              )
+            }
+          />
+          <CoreTypeField
+            label="Result type"
+            value={element.properties.resultType}
+            disabled={connectedWires.length > 0}
+            onChange={(resultType) =>
+              onCaseTypesChange(
+                element.id,
+                element.properties.leftType,
+                element.properties.rightType,
+                resultType,
+              )
+            }
+          />
+          <p className="limitation">
+            Case applies only the selected branch closure. Both branch closures
+            must return the same result type.
           </p>
         </>
       )}
@@ -939,6 +1042,8 @@ export function Inspector({
   onElementTypeChange,
   onApplyTypesChange,
   onPairTypesChange,
+  onSumTypesChange,
+  onCaseTypesChange,
   onEntryResultTypeChange,
   canDelete,
   onDelete,
@@ -1032,6 +1137,8 @@ export function Inspector({
           onElementTypeChange={onElementTypeChange}
           onApplyTypesChange={onApplyTypesChange}
           onPairTypesChange={onPairTypesChange}
+          onSumTypesChange={onSumTypesChange}
+          onCaseTypesChange={onCaseTypesChange}
           onFocusTemplate={onFocusTemplate}
           onOpenStandardLibraryDefinition={onOpenStandardLibraryDefinition}
           onError={onError}

@@ -997,6 +997,44 @@ export function App() {
               after: { leftType, rightType },
             });
           }}
+          onSumTypesChange={(id, leftType: CoreType, rightType: CoreType) => {
+            const element = document.geometry.elements.find(
+              (candidate) => candidate.id === id,
+            );
+            if (!element || (element.kind !== "left" && element.kind !== "right")) {
+              return;
+            }
+            runCommand({
+              type: "set_sum_types",
+              id,
+              before: {
+                leftType: element.properties.leftType,
+                rightType: element.properties.rightType,
+              },
+              after: { leftType, rightType },
+            });
+          }}
+          onCaseTypesChange={(
+            id,
+            leftType: CoreType,
+            rightType: CoreType,
+            resultType: CoreType,
+          ) => {
+            const element = document.geometry.elements.find(
+              (candidate) => candidate.id === id,
+            );
+            if (!element || element.kind !== "case") return;
+            runCommand({
+              type: "set_case_types",
+              id,
+              before: {
+                leftType: element.properties.leftType,
+                rightType: element.properties.rightType,
+                resultType: element.properties.resultType,
+              },
+              after: { leftType, rightType, resultType },
+            });
+          }}
           onEntryResultTypeChange={(containerId, resultType: CoreType) => {
             const container = document.geometry.containers.find(
               (candidate) => candidate.id === containerId,

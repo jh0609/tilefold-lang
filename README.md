@@ -67,6 +67,28 @@ meaning. Product is a value-bundling feature only. It does not provide Repeat
 early termination, hidden control flow, multiple function results, or an
 execution shortcut.
 
+### Sum Values
+
+Tilefold Core supports binary Sum values written in the editor as `A + B` and
+stored structurally in Project JSON as `{ "sum": [A, B] }`. Sum is
+right-associative. Product binds more tightly than Sum, and Sum binds more
+tightly than function arrow.
+
+Use `Left` to inject an `A` value into `A + B`, `Right` to inject a `B` value,
+and `Case` to branch on the tag:
+
+```text
+Case : A + B -> (A -> C) -> (B -> C) -> C
+```
+
+`Case` evaluates the scrutinee and branch closures as values, then runs only the
+selected branch body. The unselected branch body is not executed and does not
+produce rewrite events. Both branch closures must return the same result type.
+
+Entry keeps the shape `Unit -> B`, so a Sum can be an entry result just like a
+Nat, Bool, function, or Product value. For example, an entry with result type
+`Nat + Bool` can return `Left(Nat(3))` or `Right(Bool(True))`.
+
 ### Standard Library Canvas Symbols
 
 Folded Standard Library calls use familiar mathematical symbols on the canvas

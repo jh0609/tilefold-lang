@@ -6,17 +6,19 @@ import {
   normalizeCoreType,
 } from "../model/coreTypes";
 
-type TypeKind = "unit" | "bool" | "nat" | "product" | "function";
+type TypeKind = "unit" | "bool" | "nat" | "product" | "sum" | "function";
 
 function typeKind(type: CoreType): TypeKind {
   if (type === "unit" || type === "bool" || type === "nat") return type;
   if ("product" in type) return "product";
+  if ("sum" in type) return "sum";
   return "function";
 }
 
 function defaultTypeForKind(kind: TypeKind): CoreType {
   if (kind === "unit" || kind === "bool" || kind === "nat") return kind;
   if (kind === "product") return { product: ["nat", "bool"] };
+  if (kind === "sum") return { sum: ["nat", "bool"] };
   return { arrow: ["nat", "nat"] };
 }
 
@@ -38,6 +40,7 @@ export function CoreTypeEditor({
   const normalized = normalizeCoreType(value);
   const isArrow = typeof normalized !== "string" && "arrow" in normalized;
   const isProduct = typeof normalized !== "string" && "product" in normalized;
+  const isSum = typeof normalized !== "string" && "sum" in normalized;
   return (
     <fieldset
       className={`core-type-editor depth-${Math.min(level, 4)}`}
@@ -57,6 +60,7 @@ export function CoreTypeEditor({
           <option value="bool">Bool</option>
           <option value="nat">Nat</option>
           <option value="product">Product</option>
+          <option value="sum">Sum</option>
           <option value="function">Function</option>
         </select>
       </label>
@@ -117,6 +121,26 @@ export function CoreTypeEditor({
             onChange={(right) =>
               onChange({ product: [normalized.product[0], right] })
             }
+            level={level + 1}
+            showPresets={false}
+          />
+        </div>
+      )}
+      {isSum && (
+        <div className="core-type-children">
+          <CoreTypeEditor
+            label={`${label} left alternative`}
+            value={normalized.sum[0]}
+            disabled={disabled}
+            onChange={(left) => onChange({ sum: [left, normalized.sum[1]] })}
+            level={level + 1}
+            showPresets={false}
+          />
+          <CoreTypeEditor
+            label={`${label} right alternative`}
+            value={normalized.sum[1]}
+            disabled={disabled}
+            onChange={(right) => onChange({ sum: [normalized.sum[0], right] })}
             level={level + 1}
             showPresets={false}
           />

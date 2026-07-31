@@ -82,6 +82,25 @@ let () =
          (Core_type.Nat, Core_type.Product (Core_type.Bool, Core_type.Unit)))
     = "Nat * Bool * Unit");
   assert (
+    Core_type.to_string (Core_type.Sum (Core_type.Nat, Core_type.Bool))
+    = "Nat + Bool");
+  assert (
+    Core_type.to_string
+      (Core_type.Sum (Core_type.Nat, Core_type.Sum (Core_type.Bool, Core_type.Unit)))
+    = "Nat + Bool + Unit");
+  assert (
+    Core_type.to_string
+      (Core_type.Product (Core_type.Nat, Core_type.Sum (Core_type.Bool, Core_type.Unit)))
+    = "Nat * (Bool + Unit)");
+  assert (
+    Core_type.to_string
+      (Core_type.Arrow (Core_type.Nat, Core_type.Sum (Core_type.Bool, Core_type.Nat)))
+    = "Nat -> Bool + Nat");
+  assert (
+    Core_type.to_string
+      (Core_type.Sum (Core_type.Arrow (Core_type.Nat, Core_type.Bool), Core_type.Nat))
+    = "(Nat -> Bool) + Nat");
+  assert (
     Core_type.to_string
       (Core_type.Arrow
          (Core_type.Arrow (Core_type.Unit, Core_type.Nat), Core_type.Nat))
@@ -147,7 +166,74 @@ let () =
                 Port_key.equal port.key Port_key.value
                 && Core_type.equal port.typ pair_type)
               ports)
+  | None -> assert false)
+
+let () =
+  let sum_type = Core_type.Sum (Core_type.Nat, Core_type.Bool) in
+  let graph =
+    raw
+      ~nodes:
+        [
+          node "param" (Parameter Core_type.Unit);
+          node "drop" (Drop Core_type.Unit);
+          node "payload" (Nat_literal (nat "3"));
+          node "left" (Left { sum_left_type = Core_type.Nat; sum_right_type = Core_type.Bool });
+          node "result" (Result sum_type);
+        ]
+      ~edges:
+        [
+          edge "e-param-drop" (pref "param" "value") (pref "drop" "input");
+          edge "e-payload-left" (pref "payload" "value") (pref "left" "input");
+          edge "e-left-result" (pref "left" "value") (pref "result" "value");
+        ]
+      ~default_node_order:[ node_id "left"; node_id "drop" ]
+      ()
+  in
+  match validate graph with
+  | Error errors ->
+      failwith
+        ("expected Sum Left graph to validate, got: "
+        ^ String.concat "; " (List.map validation_error_to_string errors))
+  | Ok graph -> (
+      match Validated_graph.port_schema graph (node_id "left") with
+      | Some ports ->
+          assert (
+            List.exists
+              (fun port ->
+                Port_key.equal port.key Port_key.value
+                && Core_type.equal port.typ sum_type)
+              ports)
       | None -> assert false)
+
+let () =
+  let errors =
+    validate_errors
+      (raw
+         ~nodes:
+           [
+             node "param" (Parameter Core_type.Unit);
+             node "drop" (Drop Core_type.Unit);
+             node "payload" (Bool_literal true);
+             node "left" (Left { sum_left_type = Core_type.Nat; sum_right_type = Core_type.Bool });
+             node "result" (Result (Core_type.Sum (Core_type.Nat, Core_type.Bool)));
+           ]
+         ~edges:
+           [
+             edge "e-param-drop" (pref "param" "value") (pref "drop" "input");
+             edge "e-payload-left" (pref "payload" "value") (pref "left" "input");
+             edge "e-left-result" (pref "left" "value") (pref "result" "value");
+           ]
+         ~default_node_order:[ node_id "left"; node_id "drop" ]
+         ())
+  in
+  has_error
+    (function
+      | Type_mismatch { edge_id = edge; source_type; target_type } ->
+          Edge_id.equal edge (edge_id "e-payload-left")
+          && Core_type.equal source_type Core_type.Bool
+          && Core_type.equal target_type Core_type.Nat
+      | _ -> false)
+    errors
 
 let () =
   let errors =
@@ -931,7 +1017,7 @@ let function_graph ?(function_captures : capture list option) ?(template = fn_te
           | Core_type.Bool -> node ("capture-lit-" ^ string_of_int index) (Bool_literal true)
           | Core_type.Nat ->
               node ("capture-lit-" ^ string_of_int index) (Nat_literal (nat "1"))
-          | Core_type.Product _ ->
+          | Core_type.Product _ | Core_type.Sum _ ->
               node ("capture-lit-" ^ string_of_int index) Unit_literal
           | Core_type.Arrow _ ->
               node ("capture-lit-" ^ string_of_int index) Unit_literal)

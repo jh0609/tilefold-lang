@@ -64,6 +64,7 @@ let rec render_type = function
   | Nat -> tagged "Nat" []
   | Product (left, right) ->
       tagged "Product" [ render_type left; render_type right ]
+  | Sum (left, right) -> tagged "Sum" [ render_type left; render_type right ]
   | Arrow (input, output) -> tagged "Arrow" [ render_type input; render_type output ]
 
 let render_capture (capture : CG.capture) =
@@ -107,6 +108,17 @@ let render_node_kind = function
       tagged "Pair" [ render_type signature.left_type; render_type signature.right_type ]
   | Unpair signature ->
       tagged "Unpair" [ render_type signature.left_type; render_type signature.right_type ]
+  | Left signature ->
+      tagged "Left" [ render_type signature.sum_left_type; render_type signature.sum_right_type ]
+  | Right signature ->
+      tagged "Right" [ render_type signature.sum_left_type; render_type signature.sum_right_type ]
+  | Case signature ->
+      tagged "Case"
+        [
+          render_type signature.case_left_type;
+          render_type signature.case_right_type;
+          render_type signature.case_result_type;
+        ]
   | Function signature -> render_function_signature signature
   | Apply signature -> render_apply_signature signature
   | NatRec typ -> tagged "NatRec" [ render_type typ ]
@@ -129,6 +141,10 @@ let rec render_payload = function
   | Nat nat -> tagged "Nat" [ atom (Nat.to_string nat) ]
   | Product (left, right) ->
       tagged "Product" [ render_payload left; render_payload right ]
+  | Left (payload, right_type) ->
+      tagged "Left" [ render_payload payload; render_type right_type ]
+  | Right (left_type, payload) ->
+      tagged "Right" [ render_type left_type; render_payload payload ]
   | Closure _ -> tagged "Closure" []
 
 let sorted_nodes graph =
@@ -315,6 +331,10 @@ let rec parse_type sexp =
       let* left = parse_type left in
       let* right = parse_type right in
       Ok (Core_type.Product (left, right))
+  | List [ Atom "Sum"; left; right ] ->
+      let* left = parse_type left in
+      let* right = parse_type right in
+      Ok (Core_type.Sum (left, right))
   | List [ Atom "Arrow"; input; output ] ->
       let* input = parse_type input in
       let* output = parse_type output in
@@ -381,6 +401,19 @@ let parse_node_kind sexp =
       let* left_type = parse_type left_type in
       let* right_type = parse_type right_type in
       Ok (CG.Unpair { left_type; right_type })
+  | List [ Atom "Left"; left_type; right_type ] ->
+      let* sum_left_type = parse_type left_type in
+      let* sum_right_type = parse_type right_type in
+      Ok (CG.Left { sum_left_type; sum_right_type })
+  | List [ Atom "Right"; left_type; right_type ] ->
+      let* sum_left_type = parse_type left_type in
+      let* sum_right_type = parse_type right_type in
+      Ok (CG.Right { sum_left_type; sum_right_type })
+  | List [ Atom "Case"; left_type; right_type; result_type ] ->
+      let* case_left_type = parse_type left_type in
+      let* case_right_type = parse_type right_type in
+      let* case_result_type = parse_type result_type in
+      Ok (CG.Case { case_left_type; case_right_type; case_result_type })
   | List [ Atom "Function"; template_id; parameter_type; result_type; captures ] ->
       let* template_id = as_atom "template id" template_id >>= parse_template_id in
       let* parameter_type = parse_type parameter_type in
@@ -561,6 +594,14 @@ let rec parse_payload = function
       let* left = parse_payload left in
       let* right = parse_payload right in
       Ok (Runtime_value.Product (left, right))
+  | List [ Atom "Left"; payload; right_type ] ->
+      let* payload = parse_payload payload in
+      let* right_type = parse_type right_type in
+      Ok (Runtime_value.Left (payload, right_type))
+  | List [ Atom "Right"; left_type; payload ] ->
+      let* left_type = parse_type left_type in
+      let* payload = parse_payload payload in
+      Ok (Runtime_value.Right (left_type, payload))
   | List [ Atom "Closure" ] -> Error Unsupported_program_literal_payload
   | _ -> Error Invalid_payload
 

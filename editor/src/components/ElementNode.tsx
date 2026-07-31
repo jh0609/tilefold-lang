@@ -48,6 +48,9 @@ const KIND_LABELS: Record<ProjectElement["kind"], string> = {
   copy: "Copy",
   pair: "Pair",
   unpair: "Unpair",
+  left: "Left",
+  right: "Right",
+  case: "Case",
   function: "Function",
   library_call: "Library Call",
   project_call: "Call",
@@ -102,6 +105,29 @@ function nodeSignature(element: ProjectElement, ports: ConnectablePort[]) {
       const right = output("right");
       return product && left && right
         ? `${formatCoreType(product)} -> ${formatCoreType(left)} · ${formatCoreType(right)}`
+        : "";
+    }
+    case "left": {
+      const value = input("input");
+      const sum = output("value");
+      return value && sum
+        ? `${formatCoreType(value)} -> ${formatCoreType(sum)}`
+        : "";
+    }
+    case "right": {
+      const value = input("input");
+      const sum = output("value");
+      return value && sum
+        ? `${formatCoreType(value)} -> ${formatCoreType(sum)}`
+        : "";
+    }
+    case "case": {
+      const scrutinee = input("scrutinee");
+      const onLeft = input("onLeft");
+      const onRight = input("onRight");
+      const result = output("result");
+      return scrutinee && onLeft && onRight && result
+        ? `${formatCoreType(scrutinee)} · ${formatCoreType(onLeft)} · ${formatCoreType(onRight)} -> ${formatCoreType(result)}`
         : "";
     }
     case "apply": {

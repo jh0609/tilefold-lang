@@ -22,6 +22,8 @@ import {
   updateEntryResultType,
   updateNatValue,
   updatePairTypes,
+  updateCaseTypes,
+  updateSumTypes,
   type AddableElementKind,
   type FunctionTemplateDraft,
   type SurfaceFunctionSignatureEdit,
@@ -150,6 +152,18 @@ export type EditorCommand =
       id: string;
       before: { leftType: CoreType; rightType: CoreType };
       after: { leftType: CoreType; rightType: CoreType };
+    }
+  | {
+      type: "set_sum_types";
+      id: string;
+      before: { leftType: CoreType; rightType: CoreType };
+      after: { leftType: CoreType; rightType: CoreType };
+    }
+  | {
+      type: "set_case_types";
+      id: string;
+      before: { leftType: CoreType; rightType: CoreType; resultType: CoreType };
+      after: { leftType: CoreType; rightType: CoreType; resultType: CoreType };
     }
   | {
       type: "set_entry_result_type";
@@ -428,6 +442,21 @@ export function applyEditorCommand(
         command.after.leftType,
         command.after.rightType,
       );
+    case "set_sum_types":
+      return updateSumTypes(
+        document,
+        command.id,
+        command.after.leftType,
+        command.after.rightType,
+      );
+    case "set_case_types":
+      return updateCaseTypes(
+        document,
+        command.id,
+        command.after.leftType,
+        command.after.rightType,
+        command.after.resultType,
+      );
     case "set_entry_result_type":
       return updateEntryResultType(document, command.containerId, command.after);
   }
@@ -442,6 +471,9 @@ const ELEMENT_LABELS: Record<AddableElementKind, string> = {
   copy: "Copy",
   pair: "Pair",
   unpair: "Unpair",
+  left: "Left",
+  right: "Right",
+  case: "Case",
   apply: "Apply",
   bool_rec: "BoolRec",
   nat_rec: "NatRec",
@@ -488,6 +520,8 @@ export function editorCommandLabel(command: EditorCommand): string {
       return `Edit type for ${command.id}`;
     case "set_apply_types":
     case "set_pair_types":
+    case "set_sum_types":
+    case "set_case_types":
       return `Edit types for ${command.id}`;
     case "set_entry_result_type":
       return "Edit entry result type";
@@ -525,6 +559,17 @@ export function isNoOpCommand(command: EditorCommand): boolean {
       return (
         coreTypeEqual(command.before.leftType, command.after.leftType) &&
         coreTypeEqual(command.before.rightType, command.after.rightType)
+      );
+    case "set_sum_types":
+      return (
+        coreTypeEqual(command.before.leftType, command.after.leftType) &&
+        coreTypeEqual(command.before.rightType, command.after.rightType)
+      );
+    case "set_case_types":
+      return (
+        coreTypeEqual(command.before.leftType, command.after.leftType) &&
+        coreTypeEqual(command.before.rightType, command.after.rightType) &&
+        coreTypeEqual(command.before.resultType, command.after.resultType)
       );
     case "set_entry_result_type":
       return coreTypeEqual(command.before, command.after);

@@ -94,6 +94,53 @@ function elementPortType(
       return port === "right"
         ? { direction: "output", type: element.properties.rightType }
         : null;
+    case "left":
+      if (port === "input")
+        return { direction: "input", type: element.properties.leftType };
+      return port === "value"
+        ? {
+            direction: "output",
+            type: {
+              sum: [element.properties.leftType, element.properties.rightType],
+            },
+          }
+        : null;
+    case "right":
+      if (port === "input")
+        return { direction: "input", type: element.properties.rightType };
+      return port === "value"
+        ? {
+            direction: "output",
+            type: {
+              sum: [element.properties.leftType, element.properties.rightType],
+            },
+          }
+        : null;
+    case "case":
+      if (port === "scrutinee")
+        return {
+          direction: "input",
+          type: {
+            sum: [element.properties.leftType, element.properties.rightType],
+          },
+        };
+      if (port === "onLeft")
+        return {
+          direction: "input",
+          type: {
+            arrow: [element.properties.leftType, element.properties.resultType],
+          },
+        };
+      if (port === "onRight")
+        return {
+          direction: "input",
+          type: {
+            arrow: [element.properties.rightType, element.properties.resultType],
+          },
+        };
+      return port === "result"
+        ? { direction: "output", type: element.properties.resultType }
+        : null;
     case "apply":
       if (port === "function")
         return {

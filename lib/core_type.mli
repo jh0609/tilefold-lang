@@ -3,6 +3,7 @@ type t =
   | Bool
   | Nat
   | Product of t * t
+  | Sum of t * t
   | Arrow of t * t
 
 val equal : t -> t -> bool

@@ -228,6 +228,8 @@ let rec payload_to_string = function
   | Nat nat -> "Nat(" ^ Nat.to_string nat ^ ")"
   | Product (left, right) ->
       "Product(" ^ payload_to_string left ^ ", " ^ payload_to_string right ^ ")"
+  | Left (payload, _) -> "Left(" ^ payload_to_string payload ^ ")"
+  | Right (_, payload) -> "Right(" ^ payload_to_string payload ^ ")"
   | Closure closure ->
       "Closure(" ^ Function_template_id.to_string closure.template_id ^ ")"
 

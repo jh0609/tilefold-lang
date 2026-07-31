@@ -3,6 +3,7 @@ type t =
   | Bool
   | Nat
   | Product of t * t
+  | Sum of t * t
   | Arrow of t * t
 
 let equal = ( = )
@@ -14,8 +15,12 @@ let rec to_string_prec parent_prec typ =
   | Bool -> "Bool"
   | Nat -> "Nat"
   | Product (left, right) ->
+      let prec = 3 in
+      let text = to_string_prec 4 left ^ " * " ^ to_string_prec 3 right in
+      if prec < parent_prec then "(" ^ text ^ ")" else text
+  | Sum (left, right) ->
       let prec = 2 in
-      let text = to_string_prec 3 left ^ " * " ^ to_string_prec 2 right in
+      let text = to_string_prec 3 left ^ " + " ^ to_string_prec 2 right in
       if prec < parent_prec then "(" ^ text ^ ")" else text
   | Arrow (input, output) ->
       let prec = 1 in

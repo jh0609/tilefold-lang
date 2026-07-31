@@ -88,6 +88,11 @@ type runtime_error =
       expected : Core_type.t;
       actual : Core_type.t;
     }
+  | Invalid_case_runtime_payload of {
+      node_id : Core_graph.Node_id.t;
+      expected : Core_type.t;
+      actual : Core_type.t;
+    }
   | NatRec_lifecycle_error of {
       node_id : Core_graph.Node_id.t;
       message : string;

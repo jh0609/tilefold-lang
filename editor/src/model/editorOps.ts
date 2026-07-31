@@ -149,6 +149,9 @@ const NEW_ELEMENT_SIZE: Record<
   copy: { width: 104, height: 72 },
   pair: { width: 112, height: 80 },
   unpair: { width: 112, height: 80 },
+  left: { width: 104, height: 64 },
+  right: { width: 104, height: 64 },
+  case: { width: 136, height: 112 },
   apply: { width: 120, height: 90 },
   bool_rec: { width: 136, height: 112 },
   nat_rec: { width: 128, height: 112 },
@@ -4003,6 +4006,9 @@ export function addElement(
     copy: "node_copy_",
     pair: "node_pair_",
     unpair: "node_unpair_",
+    left: "node_left_",
+    right: "node_right_",
+    case: "node_case_",
     apply: "node_apply_",
     bool_rec: "node_bool_rec_",
     nat_rec: "node_nat_rec_",
@@ -4107,6 +4113,44 @@ export function addElement(
           { port: "value", x, y: anchorY(1, 2) },
           { port: "left", x: x + width, y: anchorY(1, 3) },
           { port: "right", x: x + width, y: anchorY(2, 3) },
+        ],
+      };
+      break;
+    case "left":
+      element = {
+        id,
+        kind,
+        bounds,
+        properties: { leftType: "nat", rightType: "bool" },
+        portAnchors: [
+          { port: "input", x, y: anchorY(1, 2) },
+          { port: "value", x: x + width, y: anchorY(1, 2) },
+        ],
+      };
+      break;
+    case "right":
+      element = {
+        id,
+        kind,
+        bounds,
+        properties: { leftType: "nat", rightType: "bool" },
+        portAnchors: [
+          { port: "input", x, y: anchorY(1, 2) },
+          { port: "value", x: x + width, y: anchorY(1, 2) },
+        ],
+      };
+      break;
+    case "case":
+      element = {
+        id,
+        kind,
+        bounds,
+        properties: { leftType: "nat", rightType: "bool", resultType: "nat" },
+        portAnchors: [
+          { port: "scrutinee", x, y: anchorY(1, 4) },
+          { port: "onLeft", x, y: anchorY(1, 2) },
+          { port: "onRight", x, y: anchorY(3, 4) },
+          { port: "result", x: x + width, y: anchorY(1, 2) },
         ],
       };
       break;
@@ -5038,6 +5082,84 @@ export function updatePairTypes(
             ? {
                 ...candidate,
                 properties: { leftType, rightType },
+              }
+            : candidate,
+        ),
+      },
+    },
+  };
+}
+
+export function updateSumTypes(
+  document: ProjectDocument,
+  id: string,
+  leftType: CoreType,
+  rightType: CoreType,
+): { document: ProjectDocument; error?: string } {
+  const element = document.geometry.elements.find(
+    (candidate) => candidate.id === id,
+  );
+  if (!element) return { document, error: `Element ${id} does not exist.` };
+  if (element.kind !== "left" && element.kind !== "right") {
+    return { document, error: `${element.kind} is not a Left or Right element.` };
+  }
+  const references = elementReferences(document, id);
+  if (references.length > 0) {
+    return {
+      document,
+      error: `Disconnect wire(s) before changing ${id} sum types: ${references.join(", ")}`,
+    };
+  }
+  return {
+    document: {
+      ...document,
+      geometry: {
+        ...document.geometry,
+        elements: document.geometry.elements.map((candidate) =>
+          candidate.id === id &&
+          (candidate.kind === "left" || candidate.kind === "right")
+            ? {
+                ...candidate,
+                properties: { leftType, rightType },
+              }
+            : candidate,
+        ),
+      },
+    },
+  };
+}
+
+export function updateCaseTypes(
+  document: ProjectDocument,
+  id: string,
+  leftType: CoreType,
+  rightType: CoreType,
+  resultType: CoreType,
+): { document: ProjectDocument; error?: string } {
+  const element = document.geometry.elements.find(
+    (candidate) => candidate.id === id,
+  );
+  if (!element) return { document, error: `Element ${id} does not exist.` };
+  if (element.kind !== "case") {
+    return { document, error: `${element.kind} is not a Case element.` };
+  }
+  const references = elementReferences(document, id);
+  if (references.length > 0) {
+    return {
+      document,
+      error: `Disconnect wire(s) before changing ${id} case types: ${references.join(", ")}`,
+    };
+  }
+  return {
+    document: {
+      ...document,
+      geometry: {
+        ...document.geometry,
+        elements: document.geometry.elements.map((candidate) =>
+          candidate.id === id && candidate.kind === "case"
+            ? {
+                ...candidate,
+                properties: { leftType, rightType, resultType },
               }
             : candidate,
         ),

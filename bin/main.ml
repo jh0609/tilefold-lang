@@ -9,6 +9,8 @@ let rec payload_to_string_payload = function
   | Product (left, right) ->
       "Product(" ^ payload_to_string_payload left ^ ", "
       ^ payload_to_string_payload right ^ ")"
+  | Left (payload, _) -> "Left(" ^ payload_to_string_payload payload ^ ")"
+  | Right (_, payload) -> "Right(" ^ payload_to_string_payload payload ^ ")"
   | Closure closure ->
       "Closure("
       ^ Tilefold.Core_graph.Function_template_id.to_string closure.template_id

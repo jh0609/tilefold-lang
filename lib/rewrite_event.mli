@@ -4,9 +4,13 @@ type rule =
   | Copy
   | Pair
   | Unpair
+  | Left
+  | Right
   | Function
   | ApplyEnter
   | ApplyReturn
+  | CaseLeft
+  | CaseRight
   | NatRecZero
   | NatRecStart
   | NatRecUnfold

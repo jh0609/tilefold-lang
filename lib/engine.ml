@@ -65,6 +65,11 @@ type runtime_error =
       expected : Core_type.t;
       actual : Core_type.t;
     }
+  | Invalid_case_runtime_payload of {
+      node_id : CG.Node_id.t;
+      expected : Core_type.t;
+      actual : Core_type.t;
+    }
   | NatRec_lifecycle_error of {
       node_id : CG.Node_id.t;
       message : string;
@@ -118,6 +123,10 @@ type natrec_stage =
 type return_target =
   | Apply_result of {
       apply_node_id : CG.Node_id.t;
+      expected_result_type : Core_type.t;
+    }
+  | Case_result of {
+      case_node_id : CG.Node_id.t;
       expected_result_type : Core_type.t;
     }
   | NatRec_step of {
@@ -350,6 +359,31 @@ let is_ready instance node_id =
             Core_type.equal (Runtime_value.typ value)
               (Core_type.Product (signature.left_type, signature.right_type))
         | None -> false)
+    | Some { kind = CG.Left signature; _ } -> (
+        match binding_for instance.bindings node_id CG.Port_key.input with
+        | Some value -> Core_type.equal (Runtime_value.typ value) signature.sum_left_type
+        | None -> false)
+    | Some { kind = CG.Right signature; _ } -> (
+        match binding_for instance.bindings node_id CG.Port_key.input with
+        | Some value -> Core_type.equal (Runtime_value.typ value) signature.sum_right_type
+        | None -> false)
+    | Some { kind = CG.Case signature; _ } -> (
+        match
+          ( binding_for instance.bindings node_id CG.Port_key.scrutinee,
+            binding_for instance.bindings node_id CG.Port_key.on_left,
+            binding_for instance.bindings node_id CG.Port_key.on_right )
+        with
+        | Some scrutinee, Some on_left, Some on_right ->
+            Core_type.equal (Runtime_value.typ scrutinee)
+              (Core_type.Sum
+                 (signature.case_left_type, signature.case_right_type))
+            && Core_type.equal (Runtime_value.typ on_left)
+                 (Core_type.Arrow
+                    (signature.case_left_type, signature.case_result_type))
+            && Core_type.equal (Runtime_value.typ on_right)
+                 (Core_type.Arrow
+                    (signature.case_right_type, signature.case_result_type))
+        | _ -> false)
     | Some { kind = CG.Function signature; _ } ->
         List.for_all
           (fun (capture : CG.capture) ->
@@ -571,7 +605,8 @@ let materialize_input graph input =
   let expected = CG.Validated_graph.parameter_type graph in
   match expected with
   | Core_type.Arrow _ -> Error (Unsupported_runtime_input_type expected)
-  | Core_type.Unit | Core_type.Bool | Core_type.Nat | Core_type.Product _ ->
+  | Core_type.Unit | Core_type.Bool | Core_type.Nat | Core_type.Product _
+  | Core_type.Sum _ ->
       if payload_matches_type input expected then
         Ok
           (Runtime_value.create ~id:Runtime_value.execution_input_id ~payload:input
@@ -724,7 +759,7 @@ let rewrite_succ machine instance candidate =
               let instance = refresh_after_event instance machine.Machine.next_event_index in
               Rewritten { machine = update_instance machine instance; event })
       | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Product _
-      | Runtime_value.Closure _ ->
+      | Runtime_value.Left _ | Runtime_value.Right _ | Runtime_value.Closure _ ->
           Stuck (stuck_reason instance))
   | None -> Stuck (stuck_reason instance)
 
@@ -737,6 +772,14 @@ let copy_payload candidate expected input_value =
     when Core_type.equal (Runtime_value.payload_type left) expected_left
          && Core_type.equal (Runtime_value.payload_type right) expected_right ->
       Ok (Runtime_value.Product (left, right))
+  | Core_type.Sum (expected_left, expected_right), Runtime_value.Left (payload, right_type)
+    when Core_type.equal (Runtime_value.payload_type payload) expected_left
+         && Core_type.equal right_type expected_right ->
+      Ok (Runtime_value.Left (payload, right_type))
+  | Core_type.Sum (expected_left, expected_right), Runtime_value.Right (left_type, payload)
+    when Core_type.equal left_type expected_left
+         && Core_type.equal (Runtime_value.payload_type payload) expected_right ->
+      Ok (Runtime_value.Right (left_type, payload))
   | Core_type.Arrow _, Runtime_value.Closure closure
     when Core_type.equal (Core_type.Arrow (closure.parameter_type, closure.result_type)) expected ->
       Ok (Runtime_value.Closure closure)
@@ -832,6 +875,76 @@ let rewrite_unpair machine instance candidate signature =
             (Runtime_invariant_violation
                ("Unpair input payload does not match declared type at "
               ^ CG.Node_id.to_string candidate.node_id)))
+  | None -> Stuck (stuck_reason instance)
+
+let rewrite_left machine instance candidate signature =
+  match binding_for instance.bindings candidate.node_id CG.Port_key.input with
+  | Some payload_value
+    when Core_type.equal (Runtime_value.typ payload_value) signature.CG.sum_left_type ->
+      let event_index = machine.Machine.next_event_index in
+      let created =
+        Runtime_value.create
+          ~id:(rewrite_output_id instance event_index candidate.node_id CG.Port_key.value)
+          ~payload:
+            (Runtime_value.Left
+               (Runtime_value.payload payload_value, signature.sum_right_type))
+          ~origin:(rewrite_output_origin instance event_index candidate.node_id CG.Port_key.value)
+      in
+      let event =
+        make_event machine instance candidate Rewrite_event.Left
+          [ Runtime_value.id payload_value ] [ created ] ()
+      in
+      let instance =
+        remove_ready instance candidate.node_id |> fun i ->
+        mark_completed i candidate.node_id
+      in
+      let machine = append_event (update_instance machine instance) event in
+      let instance = Machine.instance_by_id machine instance.id |> Option.get in
+      (match deliver_output instance.graph instance candidate.node_id CG.Port_key.value created with
+      | Error message -> Runtime_error (Runtime_invariant_violation message)
+      | Ok instance ->
+          let instance = refresh_after_event instance machine.Machine.next_event_index in
+          Rewritten { machine = update_instance machine instance; event })
+  | Some _ ->
+      Runtime_error
+        (Runtime_invariant_violation
+           ("Left input payload does not match declared type at "
+          ^ CG.Node_id.to_string candidate.node_id))
+  | None -> Stuck (stuck_reason instance)
+
+let rewrite_right machine instance candidate signature =
+  match binding_for instance.bindings candidate.node_id CG.Port_key.input with
+  | Some payload_value
+    when Core_type.equal (Runtime_value.typ payload_value) signature.CG.sum_right_type ->
+      let event_index = machine.Machine.next_event_index in
+      let created =
+        Runtime_value.create
+          ~id:(rewrite_output_id instance event_index candidate.node_id CG.Port_key.value)
+          ~payload:
+            (Runtime_value.Right
+               (signature.sum_left_type, Runtime_value.payload payload_value))
+          ~origin:(rewrite_output_origin instance event_index candidate.node_id CG.Port_key.value)
+      in
+      let event =
+        make_event machine instance candidate Rewrite_event.Right
+          [ Runtime_value.id payload_value ] [ created ] ()
+      in
+      let instance =
+        remove_ready instance candidate.node_id |> fun i ->
+        mark_completed i candidate.node_id
+      in
+      let machine = append_event (update_instance machine instance) event in
+      let instance = Machine.instance_by_id machine instance.id |> Option.get in
+      (match deliver_output instance.graph instance candidate.node_id CG.Port_key.value created with
+      | Error message -> Runtime_error (Runtime_invariant_violation message)
+      | Ok instance ->
+          let instance = refresh_after_event instance machine.Machine.next_event_index in
+          Rewritten { machine = update_instance machine instance; event })
+  | Some _ ->
+      Runtime_error
+        (Runtime_invariant_violation
+           ("Right input payload does not match declared type at "
+          ^ CG.Node_id.to_string candidate.node_id))
   | None -> Stuck (stuck_reason instance)
 
 let copy_created_value instance event_index node_id port_key payload =
@@ -964,7 +1077,8 @@ let rewrite_drop machine instance candidate =
         | Core_type.Bool, Runtime_value.Bool _
         | Core_type.Unit, Runtime_value.Unit
         | Core_type.Nat, Runtime_value.Nat _
-        | Core_type.Product _, Runtime_value.Product _ ->
+        | Core_type.Product _, Runtime_value.Product _
+        | Core_type.Sum _, (Runtime_value.Left _ | Runtime_value.Right _) ->
             let event =
               make_event machine instance candidate Rewrite_event.Drop
                 [ Runtime_value.id input_value ] [] ()
@@ -1011,6 +1125,127 @@ let instantiate_closure_callee machine caller ~node_id ~call_site closure argume
 let instantiate_callee machine caller candidate closure argument =
   instantiate_closure_callee machine caller ~node_id:candidate.node_id
     ~call_site:(Instance_id.Apply_node candidate.node_id) closure argument
+
+let rewrite_case_enter machine caller candidate signature =
+  match
+    ( binding_for caller.bindings candidate.node_id CG.Port_key.scrutinee,
+      binding_for caller.bindings candidate.node_id CG.Port_key.on_left,
+      binding_for caller.bindings candidate.node_id CG.Port_key.on_right )
+  with
+  | Some scrutinee, Some on_left, Some on_right -> (
+      let expected_sum =
+        Core_type.Sum (signature.CG.case_left_type, signature.case_right_type)
+      in
+      let expected_left =
+        Core_type.Arrow (signature.case_left_type, signature.case_result_type)
+      in
+      let expected_right =
+        Core_type.Arrow (signature.case_right_type, signature.case_result_type)
+      in
+      if not (Core_type.equal (Runtime_value.typ scrutinee) expected_sum) then
+        Runtime_error
+          (Invalid_case_runtime_payload
+             { node_id = candidate.node_id; expected = expected_sum; actual = Runtime_value.typ scrutinee })
+      else if not (Core_type.equal (Runtime_value.typ on_left) expected_left) then
+        Runtime_error
+          (Invalid_case_runtime_payload
+             { node_id = candidate.node_id; expected = expected_left; actual = Runtime_value.typ on_left })
+      else if not (Core_type.equal (Runtime_value.typ on_right) expected_right) then
+        Runtime_error
+          (Invalid_case_runtime_payload
+             { node_id = candidate.node_id; expected = expected_right; actual = Runtime_value.typ on_right })
+      else
+        match
+          match Runtime_value.payload scrutinee with
+          | Runtime_value.Left (payload, right_type)
+            when Core_type.equal (Runtime_value.payload_type payload)
+                   signature.case_left_type
+                 && Core_type.equal right_type signature.case_right_type ->
+              Ok (on_left, payload, `Left, Rewrite_event.CaseLeft)
+          | Runtime_value.Right (left_type, payload)
+            when Core_type.equal left_type signature.case_left_type
+                 && Core_type.equal (Runtime_value.payload_type payload)
+                      signature.case_right_type ->
+              Ok (on_right, payload, `Right, Rewrite_event.CaseRight)
+          | _ ->
+              Error
+                (Runtime_invariant_violation
+                   ("Case scrutinee payload does not match declared type at "
+                  ^ CG.Node_id.to_string candidate.node_id))
+        with
+        | Error error -> Runtime_error error
+        | Ok (selected, payload, branch, rule) -> (
+        match Runtime_value.payload selected with
+        | Runtime_value.Closure closure ->
+            let expected_arrow =
+              match branch with
+              | `Left -> expected_left
+              | `Right -> expected_right
+            in
+            if not (Core_type.equal (Runtime_value.typ selected) expected_arrow) then
+              Runtime_error
+                (Invalid_case_runtime_payload
+                   { node_id = candidate.node_id; expected = expected_arrow; actual = Runtime_value.typ selected })
+            else
+              let argument =
+                Runtime_value.create
+                  ~id:
+                    (rewrite_output_id caller machine.Machine.next_event_index
+                       candidate.node_id CG.Port_key.argument)
+                  ~payload
+                  ~origin:
+                    (rewrite_output_origin caller machine.Machine.next_event_index
+                       candidate.node_id CG.Port_key.argument)
+              in
+              (match
+                 instantiate_closure_callee machine caller ~node_id:candidate.node_id
+                   ~call_site:(Instance_id.Case_branch { node_id = candidate.node_id; branch })
+                   closure argument
+               with
+              | Error error -> Runtime_error error
+              | Ok (_template, callee_id, callee) ->
+                  let event =
+                    make_event machine caller candidate rule
+                      [ Runtime_value.id scrutinee; Runtime_value.id selected ]
+                      [ argument ] ~callee_instance_id:callee_id ()
+                  in
+                  let caller =
+                    remove_ready caller candidate.node_id
+                    |> fun caller ->
+                    mark_waiting_for_return caller candidate.node_id callee_id
+                  in
+                  let frame =
+                    {
+                      caller_instance_id = caller.id;
+                      callee_instance_id = callee_id;
+                      return_target =
+                        Case_result
+                          {
+                            case_node_id = candidate.node_id;
+                            expected_result_type = signature.case_result_type;
+                          };
+                    }
+                  in
+                  let machine =
+                    {
+                      machine with
+                      Machine.instances =
+                        callee
+                        :: List.map
+                             (fun instance ->
+                               if Instance_id.equal instance.id caller.id then caller else instance)
+                             machine.Machine.instances;
+                      active_instance_id = callee_id;
+                      call_stack = frame :: machine.Machine.call_stack;
+                    }
+                  in
+                  Rewritten { machine = append_event machine event; event })
+        | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Nat _
+        | Runtime_value.Product _ | Runtime_value.Left _ | Runtime_value.Right _ ->
+            Runtime_error
+              (Invalid_case_runtime_payload
+                 { node_id = candidate.node_id; expected = expected_left; actual = Runtime_value.typ selected })))
+  | _ -> Stuck (stuck_reason caller)
 
 let rewrite_apply_enter machine caller candidate signature =
   match
@@ -1085,7 +1320,7 @@ let rewrite_apply_enter machine caller candidate signature =
                 in
                 Rewritten { machine = append_event machine event; event })
       | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Nat _
-      | Runtime_value.Product _ ->
+      | Runtime_value.Product _ | Runtime_value.Left _ | Runtime_value.Right _ ->
           Runtime_error
             (Invalid_apply_runtime_payload
                {
@@ -1150,6 +1385,73 @@ let rewrite_apply_return machine callee frame apply_node_id expected_result_type
         let machine = append_event (update_instance machine caller) event in
         let caller = Machine.instance_by_id machine caller.id |> Option.get in
         (match deliver_output caller.graph caller apply_node_id CG.Port_key.result created with
+        | Error message -> Runtime_error (Runtime_invariant_violation message)
+        | Ok caller ->
+            let caller = refresh_after_event caller machine.Machine.next_event_index in
+            let machine =
+              {
+                (update_instance machine caller) with
+                Machine.active_instance_id = caller.id;
+                call_stack = List.tl machine.Machine.call_stack;
+              }
+            in
+            Rewritten { machine; event })
+  | None, _ -> Stuck (stuck_reason callee)
+  | _, None -> Runtime_error (Runtime_invariant_violation "caller instance missing")
+
+let rewrite_case_return machine callee frame case_node_id expected_result_type =
+  match (callee.result_value, Machine.instance_by_id machine frame.caller_instance_id) with
+  | Some result_value, Some caller ->
+      if not (Core_type.equal (Runtime_value.typ result_value) expected_result_type)
+      then
+        Runtime_error
+          (Apply_result_type_mismatch
+             {
+               node_id = case_node_id;
+               expected = expected_result_type;
+               actual = Runtime_value.typ result_value;
+             })
+      else if
+        not
+          (match node_state caller case_node_id with
+          | Waiting_for_return waiting ->
+              Instance_id.equal waiting frame.callee_instance_id
+          | Pending | NatRec_active _ | Completed -> false)
+      then
+        Runtime_error
+          (Runtime_invariant_violation
+             ("Case return frame does not match caller node lifecycle at "
+            ^ CG.Node_id.to_string case_node_id))
+      else
+        let candidate =
+          {
+            instance_id = caller.id;
+            node_id = case_node_id;
+            ready_epoch = machine.Machine.next_event_index;
+            priority_spine_rank = None;
+            default_order_rank =
+              Option.value (default_order_rank caller.graph case_node_id) ~default:0;
+          }
+        in
+        let created =
+          Runtime_value.create
+            ~id:
+              (rewrite_output_id caller machine.Machine.next_event_index
+                 case_node_id CG.Port_key.result)
+            ~payload:(Runtime_value.payload result_value)
+            ~origin:
+              (rewrite_output_origin caller machine.Machine.next_event_index
+                 case_node_id CG.Port_key.result)
+        in
+        let event =
+          make_event machine caller candidate Rewrite_event.ApplyReturn
+            [ Runtime_value.id result_value ] [ created ]
+            ~callee_instance_id:callee.id ()
+        in
+        let caller = mark_completed caller case_node_id in
+        let machine = append_event (update_instance machine caller) event in
+        let caller = Machine.instance_by_id machine caller.id |> Option.get in
+        (match deliver_output caller.graph caller case_node_id CG.Port_key.result created with
         | Error message -> Runtime_error (Runtime_invariant_violation message)
         | Ok caller ->
             let caller = refresh_after_event caller machine.Machine.next_event_index in
@@ -1267,7 +1569,7 @@ let rewrite_natrec_initial machine instance candidate result_type =
               rewrite_natrec_zero machine instance candidate base step count
             else rewrite_natrec_start machine instance candidate result_type base step count total_count
         | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Product _
-        | Runtime_value.Closure _ ->
+        | Runtime_value.Left _ | Runtime_value.Right _ | Runtime_value.Closure _ ->
             Runtime_error
               (Invalid_natrec_runtime_payload
                  { node_id = candidate.node_id; expected = Core_type.Nat; actual = Runtime_value.typ count }))
@@ -1331,7 +1633,7 @@ let rewrite_boolrec machine instance candidate result_type =
                 let instance = refresh_after_event instance machine.Machine.next_event_index in
                 Rewritten { machine = update_instance machine instance; event })
         | Runtime_value.Unit | Runtime_value.Nat _ | Runtime_value.Product _
-        | Runtime_value.Closure _ ->
+        | Runtime_value.Left _ | Runtime_value.Right _ | Runtime_value.Closure _ ->
             Runtime_error
               (Invalid_boolrec_runtime_payload
                  { node_id = candidate.node_id; expected = Core_type.Bool; actual = Runtime_value.typ condition }))
@@ -1371,7 +1673,7 @@ let closure_payload node_id expected value =
         (Invalid_natrec_runtime_payload
            { node_id; expected; actual = Runtime_value.typ value })
   | Runtime_value.Unit | Runtime_value.Bool _ | Runtime_value.Nat _
-  | Runtime_value.Product _ ->
+  | Runtime_value.Product _ | Runtime_value.Left _ | Runtime_value.Right _ ->
       Error
         (Invalid_natrec_runtime_payload
            { node_id; expected; actual = Runtime_value.typ value })
@@ -1666,6 +1968,9 @@ let step machine =
           | Apply_result { apply_node_id; expected_result_type } ->
               rewrite_apply_return machine active frame apply_node_id
                 expected_result_type
+          | Case_result { case_node_id; expected_result_type } ->
+              rewrite_case_return machine active frame case_node_id
+                expected_result_type
           | NatRec_step { node_id; iteration; stage = Step_function; expected_result_type } ->
               rewrite_natrec_step_function_return machine active frame node_id
                 iteration expected_result_type
@@ -1698,6 +2003,12 @@ let step machine =
               rewrite_pair machine active candidate signature
           | Some { kind = CG.Unpair signature; _ } ->
               rewrite_unpair machine active candidate signature
+          | Some { kind = CG.Left signature; _ } ->
+              rewrite_left machine active candidate signature
+          | Some { kind = CG.Right signature; _ } ->
+              rewrite_right machine active candidate signature
+          | Some { kind = CG.Case signature; _ } ->
+              rewrite_case_enter machine active candidate signature
           | Some { kind = CG.Function signature; _ } ->
               rewrite_function machine active candidate signature
           | Some { kind = CG.Apply signature; _ } ->
@@ -1758,6 +2069,10 @@ let runtime_error_to_string = function
       ^ Core_type.to_string actual
   | Invalid_boolrec_runtime_payload { node_id; expected; actual } ->
       "invalid BoolRec runtime payload at " ^ CG.Node_id.to_string node_id
+      ^ ": expected " ^ Core_type.to_string expected ^ ", actual "
+      ^ Core_type.to_string actual
+  | Invalid_case_runtime_payload { node_id; expected; actual } ->
+      "invalid Case runtime payload at " ^ CG.Node_id.to_string node_id
       ^ ": expected " ^ Core_type.to_string expected ^ ", actual "
       ^ Core_type.to_string actual
   | NatRec_lifecycle_error { node_id; message } ->

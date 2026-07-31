@@ -15,6 +15,13 @@ type element_kind =
   | Copy of Core_type.t
   | Pair of { left_type : Core_type.t; right_type : Core_type.t }
   | Unpair of { left_type : Core_type.t; right_type : Core_type.t }
+  | Left of { left_type : Core_type.t; right_type : Core_type.t }
+  | Right of { left_type : Core_type.t; right_type : Core_type.t }
+  | Case of {
+      left_type : Core_type.t;
+      right_type : Core_type.t;
+      result_type : Core_type.t;
+    }
   | Function of {
       template_id : string;
       parameter_type : Core_type.t;
@@ -302,6 +309,16 @@ let rec decode_type path = function
             let* right = decode_type (path ^ ".arrow[1]") right in
             Ok (Core_type.Arrow (left, right))
         | _ -> error (path ^ ".arrow") (Invalid_value "arrow requires two types"))
+      else if List.exists (fun (name, _) -> String.equal name "sum") fields then (
+        let* () = reject_unknown path [ "sum" ] fields in
+        let* sum = field path "sum" fields in
+        let* values = array_at (path ^ ".sum") sum in
+        match values with
+        | [ left; right ] ->
+            let* left = decode_type (path ^ ".sum[0]") left in
+            let* right = decode_type (path ^ ".sum[1]") right in
+            Ok (Core_type.Sum (left, right))
+        | _ -> error (path ^ ".sum") (Invalid_value "sum requires two types"))
       else (
         let* () = reject_unknown path [ "product" ] fields in
         let* product = field path "product" fields in
@@ -460,6 +477,24 @@ let decode_element_kind path json =
       let* left_type = type_field "leftType" in
       let* right_type = type_field "rightType" in
       Ok (Unpair { left_type; right_type })
+  | "left" ->
+      let* () = reject_unknown path [ "kind"; "leftType"; "rightType" ] fields in
+      let* left_type = type_field "leftType" in
+      let* right_type = type_field "rightType" in
+      Ok (Left { left_type; right_type })
+  | "right" ->
+      let* () = reject_unknown path [ "kind"; "leftType"; "rightType" ] fields in
+      let* left_type = type_field "leftType" in
+      let* right_type = type_field "rightType" in
+      Ok (Right { left_type; right_type })
+  | "case" ->
+      let* () =
+        reject_unknown path [ "kind"; "leftType"; "rightType"; "resultType" ] fields
+      in
+      let* left_type = type_field "leftType" in
+      let* right_type = type_field "rightType" in
+      let* result_type = type_field "resultType" in
+      Ok (Case { left_type; right_type; result_type })
   | "nat_rec" ->
       let* () = reject_unknown path [ "kind"; "type" ] fields in
       let* typ = type_field "type" in
@@ -934,6 +969,8 @@ let rec json_type = function
   | Core_type.Nat -> `String "nat"
   | Core_type.Product (left, right) ->
       `Assoc [ ("product", `List [ json_type left; json_type right ]) ]
+  | Core_type.Sum (left, right) ->
+      `Assoc [ ("sum", `List [ json_type left; json_type right ]) ]
   | Core_type.Arrow (left, right) -> `Assoc [ ("arrow", `List [ json_type left; json_type right ]) ]
 
 let json_captures captures =
@@ -962,6 +999,28 @@ let json_element_kind = function
           [
             ("leftType", json_type left_type);
             ("rightType", json_type right_type);
+          ] )
+  | Left { left_type; right_type } ->
+      ( "left",
+        `Assoc
+          [
+            ("leftType", json_type left_type);
+            ("rightType", json_type right_type);
+          ] )
+  | Right { left_type; right_type } ->
+      ( "right",
+        `Assoc
+          [
+            ("leftType", json_type left_type);
+            ("rightType", json_type right_type);
+          ] )
+  | Case { left_type; right_type; result_type } ->
+      ( "case",
+        `Assoc
+          [
+            ("leftType", json_type left_type);
+            ("rightType", json_type right_type);
+            ("resultType", json_type result_type);
           ] )
   | NatRec typ -> ("nat_rec", `Assoc [ ("type", json_type typ) ])
   | BoolRec typ -> ("bool_rec", `Assoc [ ("type", json_type typ) ])
@@ -1253,6 +1312,18 @@ let core_kind = function
   | Copy typ -> Ok (C.Copy typ)
   | Pair { left_type; right_type } -> Ok (C.Pair { left_type; right_type })
   | Unpair { left_type; right_type } -> Ok (C.Unpair { left_type; right_type })
+  | Left { left_type; right_type } ->
+      Ok (C.Left { sum_left_type = left_type; sum_right_type = right_type })
+  | Right { left_type; right_type } ->
+      Ok (C.Right { sum_left_type = left_type; sum_right_type = right_type })
+  | Case { left_type; right_type; result_type } ->
+      Ok
+        (C.Case
+           {
+             case_left_type = left_type;
+             case_right_type = right_type;
+             case_result_type = result_type;
+           })
   | NatRec typ -> Ok (C.NatRec typ)
   | BoolRec typ -> Ok (C.BoolRec typ)
   | Apply { parameter_type; result_type } ->

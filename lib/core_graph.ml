@@ -34,6 +34,9 @@ module Port_key = struct
   let true_case = "true_case"
   let left = "left"
   let right = "right"
+  let scrutinee = "scrutinee"
+  let on_left = "onLeft"
+  let on_right = "onRight"
   let function_input = "function"
   let argument = "argument"
   let base = "base"
@@ -86,6 +89,9 @@ type node_kind =
   | Copy of Core_type.t
   | Pair of pair_signature
   | Unpair of pair_signature
+  | Left of sum_signature
+  | Right of sum_signature
+  | Case of case_signature
   | Function of function_signature
   | Apply of apply_signature
   | NatRec of Core_type.t
@@ -99,6 +105,17 @@ and capture = {
 and pair_signature = {
   left_type : Core_type.t;
   right_type : Core_type.t;
+}
+
+and sum_signature = {
+  sum_left_type : Core_type.t;
+  sum_right_type : Core_type.t;
+}
+
+and case_signature = {
+  case_left_type : Core_type.t;
+  case_right_type : Core_type.t;
+  case_result_type : Core_type.t;
 }
 
 and function_signature = {
@@ -170,6 +187,28 @@ let ports_of_node_kind = function
         port Port_key.left Output signature.left_type;
         port Port_key.right Output signature.right_type;
       ]
+  | Left signature ->
+      [
+        port Port_key.input Input signature.sum_left_type;
+        port Port_key.value Output
+          (Core_type.Sum (signature.sum_left_type, signature.sum_right_type));
+      ]
+  | Right signature ->
+      [
+        port Port_key.input Input signature.sum_right_type;
+        port Port_key.value Output
+          (Core_type.Sum (signature.sum_left_type, signature.sum_right_type));
+      ]
+  | Case signature ->
+      [
+        port Port_key.scrutinee Input
+          (Core_type.Sum (signature.case_left_type, signature.case_right_type));
+        port Port_key.on_left Input
+          (Core_type.Arrow (signature.case_left_type, signature.case_result_type));
+        port Port_key.on_right Input
+          (Core_type.Arrow (signature.case_right_type, signature.case_result_type));
+        port Port_key.result Output signature.case_result_type;
+      ]
   | Function signature ->
       List.map
         (fun (capture : capture) -> port capture.key Input capture.typ)
@@ -204,8 +243,8 @@ let ports_of_node_kind = function
       ]
 
 let is_executable_node_kind = function
-  | Succ | Drop _ | Copy _ | Pair _ | Unpair _ | Function _ | Apply _ | NatRec _
-  | BoolRec _ ->
+  | Succ | Drop _ | Copy _ | Pair _ | Unpair _ | Left _ | Right _ | Case _
+  | Function _ | Apply _ | NatRec _ | BoolRec _ ->
       true
   | Unit_literal | Bool_literal _ | Nat_literal _ | Parameter _ | Capture _ | Result _ -> false
 

@@ -142,6 +142,8 @@ let literal_node_kind payload =
   | Runtime_value.Bool value -> Ok (CG.Bool_literal value)
   | Runtime_value.Nat nat -> Ok (CG.Nat_literal nat)
   | Runtime_value.Product _ -> Error "Product program literals are not supported"
+  | Runtime_value.Left _ | Runtime_value.Right _ ->
+      Error "Sum program literals are not supported"
   | Runtime_value.Closure _ -> Error "closure program literals are not supported"
 
 let unsupported_literal_payload_errors raw =

@@ -11,9 +11,14 @@ export const CORE_TYPE_PRESETS: Array<{ label: string; value: CoreType }> = [
   { label: "Nat -> Unit", value: { arrow: ["nat", "unit"] } },
   { label: "Nat -> Nat", value: { arrow: ["nat", "nat"] } },
   { label: "Nat * Bool", value: { product: ["nat", "bool"] } },
+  { label: "Nat + Bool", value: { sum: ["nat", "bool"] } },
   {
     label: "Nat * Bool * Unit",
     value: { product: ["nat", { product: ["bool", "unit"] }] },
+  },
+  {
+    label: "Nat + Bool + Unit",
+    value: { sum: ["nat", { sum: ["bool", "unit"] }] },
   },
 ];
 
@@ -33,6 +38,10 @@ function isProductType(type: CoreType): type is Extract<CoreType, { product: rea
   return typeof type !== "string" && "product" in type;
 }
 
+function isSumType(type: CoreType): type is Extract<CoreType, { sum: readonly [CoreType, CoreType] }> {
+  return typeof type !== "string" && "sum" in type;
+}
+
 export function coreTypeEqual(left: CoreType, right: CoreType): boolean {
   if (typeof left === "string" || typeof right === "string") {
     return left === right;
@@ -43,6 +52,14 @@ export function coreTypeEqual(left: CoreType, right: CoreType): boolean {
       isProductType(right) &&
       coreTypeEqual(left.product[0], right.product[0]) &&
       coreTypeEqual(left.product[1], right.product[1])
+    );
+  }
+  if (isSumType(left) || isSumType(right)) {
+    return (
+      isSumType(left) &&
+      isSumType(right) &&
+      coreTypeEqual(left.sum[0], right.sum[0]) &&
+      coreTypeEqual(left.sum[1], right.sum[1])
     );
   }
   return (
@@ -58,13 +75,20 @@ export function formatCoreType(type: CoreType): string {
   if (isProductType(type)) {
     const left = formatCoreType(type.product[0]);
     const right = formatCoreType(type.product[1]);
-    return `${isArrowType(type.product[0]) ? `(${left})` : left} × ${
-      isArrowType(type.product[1]) ? `(${right})` : right
+    return `${isArrowType(type.product[0]) || isSumType(type.product[0]) ? `(${left})` : left} × ${
+      isArrowType(type.product[1]) || isSumType(type.product[1]) ? `(${right})` : right
+    }`;
+  }
+  if (isSumType(type)) {
+    const left = formatCoreType(type.sum[0]);
+    const right = formatCoreType(type.sum[1]);
+    return `${isArrowType(type.sum[0]) || isSumType(type.sum[0]) ? `(${left})` : left} + ${
+      isArrowType(type.sum[1]) ? `(${right})` : right
     }`;
   }
   const left = formatCoreType(type.arrow[0]);
   const right = formatCoreType(type.arrow[1]);
-  return `${typeof type.arrow[0] === "string" || isProductType(type.arrow[0]) ? left : `(${left})`} -> ${
+  return `${typeof type.arrow[0] === "string" || isProductType(type.arrow[0]) || isSumType(type.arrow[0]) ? left : `(${left})`} -> ${
     typeof type.arrow[1] === "string" ? right : `(${right})`
   }`;
 }
@@ -98,6 +122,14 @@ export function normalizeCoreType(type: CoreType): CoreType {
       product: [
         normalizeCoreType(type.product[0]),
         normalizeCoreType(type.product[1]),
+      ],
+    };
+  }
+  if (isSumType(type)) {
+    return {
+      sum: [
+        normalizeCoreType(type.sum[0]),
+        normalizeCoreType(type.sum[1]),
       ],
     };
   }

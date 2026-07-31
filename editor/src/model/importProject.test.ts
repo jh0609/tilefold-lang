@@ -237,6 +237,19 @@ describe("Project JSON v2 import and export", () => {
           { port: "right", x: 592, y: 174 },
         ],
       },
+      {
+        id: "node_left_1",
+        kind: "left",
+        bounds: { x: 640, y: 120, width: 104, height: 64 },
+        properties: {
+          leftType: "nat",
+          rightType: { sum: ["bool", "unit"] },
+        },
+        portAnchors: [
+          { port: "input", x: 640, y: 152 },
+          { port: "value", x: 744, y: 152 },
+        ],
+      },
     );
     const parsed = parseProjectJson(JSON.stringify(input));
     expect(
@@ -246,6 +259,14 @@ describe("Project JSON v2 import and export", () => {
       properties: { leftType: "nat", rightType: "bool" },
     });
     expect(parseProjectJson(exportProjectJson(parsed))).toEqual(parsed);
+  });
+
+  it("rejects malformed Sum type JSON", () => {
+    const input = JSON.parse(exampleJson);
+    input.geometry.containers[0].kind.resultType = { sum: ["nat"] };
+    expect(() => parseProjectJson(JSON.stringify(input))).toThrow(
+      "$.geometry.containers[0].kind.resultType.sum",
+    );
   });
 
   it("rejects malformed Product type JSON", () => {

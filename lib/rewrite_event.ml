@@ -4,9 +4,13 @@ type rule =
   | Copy
   | Pair
   | Unpair
+  | Left
+  | Right
   | Function
   | ApplyEnter
   | ApplyReturn
+  | CaseLeft
+  | CaseRight
   | NatRecZero
   | NatRecStart
   | NatRecUnfold
@@ -36,9 +40,13 @@ let rule_to_string = function
   | Copy -> "Copy"
   | Pair -> "Pair"
   | Unpair -> "Unpair"
+  | Left -> "Left"
+  | Right -> "Right"
   | Function -> "Function"
   | ApplyEnter -> "ApplyEnter"
   | ApplyReturn -> "ApplyReturn"
+  | CaseLeft -> "CaseLeft"
+  | CaseRight -> "CaseRight"
   | NatRecZero -> "NatRecZero"
   | NatRecStart -> "NatRecStart"
   | NatRecUnfold -> "NatRecUnfold"

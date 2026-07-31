@@ -108,6 +108,18 @@ function coreTypeAt(value: unknown, path: string): void {
     coreTypeAt(arrow[1], `${path}.arrow[1]`);
     return;
   }
+  if ("sum" in type) {
+    if (Object.keys(type).some((key) => key !== "sum")) {
+      throw new StructureError(path, "unknown type field");
+    }
+    const sum = arrayAt(required(type, "sum", path), `${path}.sum`);
+    if (sum.length !== 2) {
+      throw new StructureError(`${path}.sum`, "expected two type entries");
+    }
+    coreTypeAt(sum[0], `${path}.sum[0]`);
+    coreTypeAt(sum[1], `${path}.sum[1]`);
+    return;
+  }
   if (Object.keys(type).some((key) => key !== "product")) {
     throw new StructureError(path, "unknown type field");
   }
@@ -217,6 +229,8 @@ function elementAt(value: unknown, path: string): ProjectElement {
       break;
     case "pair":
     case "unpair":
+    case "left":
+    case "right":
       coreTypeAt(
         required(properties, "leftType", `${path}.properties`),
         `${path}.properties.leftType`,
@@ -224,6 +238,20 @@ function elementAt(value: unknown, path: string): ProjectElement {
       coreTypeAt(
         required(properties, "rightType", `${path}.properties`),
         `${path}.properties.rightType`,
+      );
+      break;
+    case "case":
+      coreTypeAt(
+        required(properties, "leftType", `${path}.properties`),
+        `${path}.properties.leftType`,
+      );
+      coreTypeAt(
+        required(properties, "rightType", `${path}.properties`),
+        `${path}.properties.rightType`,
+      );
+      coreTypeAt(
+        required(properties, "resultType", `${path}.properties`),
+        `${path}.properties.resultType`,
       );
       break;
     case "nat_rec":

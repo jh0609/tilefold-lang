@@ -9,6 +9,10 @@ end
 module Instance_id : sig
   type call_site =
     | Apply_node of Core_graph.Node_id.t
+    | Case_branch of {
+        node_id : Core_graph.Node_id.t;
+        branch : [ `Left | `Right ];
+      }
     | NatRec_step_function of {
         node_id : Core_graph.Node_id.t;
         iteration : Nat.t;
@@ -55,6 +59,8 @@ type payload =
   | Bool of bool
   | Nat of Nat.t
   | Product of payload * payload
+  | Left of payload * Core_type.t
+  | Right of Core_type.t * payload
   | Closure of closure
 
 type origin =
