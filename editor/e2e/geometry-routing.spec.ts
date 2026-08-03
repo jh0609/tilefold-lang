@@ -1,4 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
 
 type BrowserIssues = {
   consoleErrors: string[];
@@ -93,6 +95,19 @@ async function portAnchor(locator: Locator) {
   }));
 }
 
+async function containerProjectRect(page: Page, id: string) {
+  return page.locator(`g.container-shape[data-container-id="${id}"]`).evaluate((node) => {
+    const rect = node.querySelector("rect");
+    if (!(rect instanceof SVGRectElement)) throw new Error("missing container rect");
+    return {
+      x: Number(rect.getAttribute("x")),
+      y: Number(rect.getAttribute("y")),
+      width: Number(rect.getAttribute("width")),
+      height: Number(rect.getAttribute("height")),
+    };
+  });
+}
+
 async function screenBox(locator: Locator) {
   await expect(locator).toBeVisible();
   const box = await locator.boundingBox();
@@ -110,6 +125,142 @@ function boxesOverlap(
     left.y < right.y + right.height &&
     left.y + left.height > right.y
   );
+}
+
+function boxesOverlapWithGap(
+  left: { x: number; y: number; width: number; height: number },
+  right: { x: number; y: number; width: number; height: number },
+  gap: number,
+) {
+  return (
+    left.x < right.x + right.width + gap &&
+    left.x + left.width + gap > right.x &&
+    left.y < right.y + right.height + gap &&
+    left.y + left.height + gap > right.y
+  );
+}
+
+function scopedOverlapFixture() {
+  const examplePath = path.resolve(process.cwd(), "../examples/nat-succ.tilefold.json");
+  const project = JSON.parse(fs.readFileSync(examplePath, "utf8"));
+  project.geometry.elements = project.geometry.elements.map((element: any, index: number) => {
+    if (index > 2) return element;
+    const x = 80 + index * 8;
+    const y = 90 + index * 8;
+    const dx = x - element.bounds.x;
+    const dy = y - element.bounds.y;
+    return {
+      ...element,
+      bounds: { ...element.bounds, x, y },
+      portAnchors: element.portAnchors.map((anchor: any) => ({
+        ...anchor,
+        x: anchor.x + dx,
+        y: anchor.y + dy,
+      })),
+    };
+  });
+  function templateContainer(id: string, x: number, y: number, width = 220, height = 140) {
+    return {
+      id,
+      kind: {
+        kind: "template",
+        templateId: `${id}_template`,
+        parameterType: "unit",
+        resultType: "unit",
+        dependencies: [],
+      },
+      bounds: { x, y, width, height },
+      boundaryPorts: [
+        {
+          id: `${id}_parameter`,
+          role: "parameter",
+          type: "unit",
+          anchor: { x: 0, y: 44 },
+        },
+        {
+          id: `${id}_result`,
+          role: "result",
+          type: "unit",
+          anchor: { x: width, y: 84 },
+        },
+      ],
+    };
+  }
+  const neighbor = templateContainer("neighbor", 400, 0);
+  const stable = templateContainer("stable", 900, 0);
+  project.geometry.containers.push(neighbor, stable);
+  for (const item of [neighbor, stable]) {
+    project.geometry.elements.push(
+      {
+        id: `${item.id}_drop`,
+        kind: "drop",
+        bounds: { x: item.bounds.x + 40, y: item.bounds.y + 60, width: 20, height: 20 },
+        properties: { type: "unit" },
+        portAnchors: [{ port: "input", x: item.bounds.x + 40, y: item.bounds.y + 70 }],
+      },
+      {
+        id: `${item.id}_unit`,
+        kind: "unit_literal",
+        bounds: { x: item.bounds.x + 130, y: item.bounds.y + 60, width: 20, height: 20 },
+        properties: {},
+        portAnchors: [{ port: "value", x: item.bounds.x + 150, y: item.bounds.y + 70 }],
+      },
+    );
+    project.geometry.wires.push(
+      {
+        id: `${item.id}_parameter_wire`,
+        points: [
+          { x: item.bounds.x, y: item.bounds.y + 44 },
+          { x: item.bounds.x + 40, y: item.bounds.y + 70 },
+        ],
+        sourceHint: {
+          kind: "boundary_port",
+          containerId: item.id,
+          boundaryId: `${item.id}_parameter`,
+        },
+        targetHint: {
+          kind: "element_port",
+          elementId: `${item.id}_drop`,
+          port: "input",
+        },
+      },
+      {
+        id: `${item.id}_result_wire`,
+        points: [
+          { x: item.bounds.x + 150, y: item.bounds.y + 70 },
+          { x: item.bounds.x + item.bounds.width, y: item.bounds.y + 84 },
+        ],
+        sourceHint: {
+          kind: "element_port",
+          elementId: `${item.id}_unit`,
+          port: "value",
+        },
+        targetHint: {
+          kind: "boundary_port",
+          containerId: item.id,
+          boundaryId: `${item.id}_result`,
+        },
+      },
+    );
+  }
+  project.surfaceFunctions = [
+    ...(project.surfaceFunctions ?? []),
+    {
+      name: "neighbor",
+      templateId: "neighbor_template",
+      bodyContainerId: "neighbor",
+      parameters: [{ name: "parameter", type: "unit" }],
+      result: { name: "result", type: "unit" },
+    },
+    {
+      name: "stable",
+      templateId: "stable_template",
+      bodyContainerId: "stable",
+      parameters: [{ name: "parameter", type: "unit" }],
+      result: { name: "result", type: "unit" },
+    },
+  ];
+  return project;
 }
 
 async function expectNoScreenOverlap(left: Locator, right: Locator) {
@@ -634,6 +785,66 @@ test("auto layout arranges a selected container without changing execution", asy
   ).toBe(false);
   await page.getByRole("button", { name: "Run" }).click();
   await expect(page.getByText(/Result:/)).toContainText("Nat(3)");
+
+  await expectNoBrowserIssues(issues);
+});
+
+test("scoped auto layout displaces overlapping top-level sibling containers", async ({
+  page,
+}, testInfo) => {
+  const issues = watchBrowserIssues(page);
+  await page.goto("/");
+  const fixturePath = testInfo.outputPath("scoped-overlap.tilefold.json");
+  fs.writeFileSync(fixturePath, JSON.stringify(scopedOverlapFixture(), null, 2));
+  await page.getByLabel("Open JSON file").setInputFiles(fixturePath);
+
+  const beforeEntry = await containerProjectRect(page, "entry");
+  const beforeNeighbor = await containerProjectRect(page, "neighbor");
+  const beforeStable = await containerProjectRect(page, "stable");
+
+  await page.locator('g.container-shape[data-container-id="entry"]').focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: "Auto Layout entry" }).click();
+
+  const afterEntry = await containerProjectRect(page, "entry");
+  const afterNeighbor = await containerProjectRect(page, "neighbor");
+  const afterStable = await containerProjectRect(page, "stable");
+  expect(afterEntry.x).toBe(beforeEntry.x);
+  expect(afterEntry.y).toBe(beforeEntry.y);
+  expect(afterNeighbor).not.toEqual(beforeNeighbor);
+  expect(afterStable).toEqual(beforeStable);
+  expect(boxesOverlapWithGap(afterEntry, afterNeighbor, 120)).toBe(false);
+  expect(boxesOverlapWithGap(afterEntry, afterStable, 120)).toBe(false);
+  expect(boxesOverlapWithGap(afterNeighbor, afterStable, 120)).toBe(false);
+
+  await page.getByRole("button", { name: "Run" }).click();
+  await expect(page.getByText(/Result:/)).toContainText("Nat(3)");
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  expect(await containerProjectRect(page, "neighbor")).toEqual(beforeNeighbor);
+  await page.getByRole("button", { name: "Redo" }).click();
+  expect(await containerProjectRect(page, "neighbor")).toEqual(afterNeighbor);
+
+  await page.locator('g.container-shape[data-container-id="entry"]').focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: "Auto Layout entry" }).click();
+  expect(await containerProjectRect(page, "neighbor")).toEqual(afterNeighbor);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export JSON" }).click();
+  const download = await downloadPromise;
+  const savedPath = testInfo.outputPath("scoped-overlap-resolved.tilefold.json");
+  await download.saveAs(savedPath);
+  await page.reload();
+  await page.getByLabel("Open JSON file").setInputFiles(savedPath);
+  expect(await containerProjectRect(page, "neighbor")).toEqual(afterNeighbor);
+  expect(
+    boxesOverlapWithGap(
+      await containerProjectRect(page, "entry"),
+      await containerProjectRect(page, "neighbor"),
+      120,
+    ),
+  ).toBe(false);
 
   await expectNoBrowserIssues(issues);
 });

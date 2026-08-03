@@ -24,6 +24,7 @@ const CONTAINER_MIN_HEIGHT = 140;
 const TOP_LEVEL_X_GAP = 120;
 const TOP_LEVEL_Y_GAP = 96;
 const MAX_TOP_LEVEL_ROW_WIDTH = 1800;
+const SCOPED_CONTAINER_CLEARANCE = TOP_LEVEL_X_GAP;
 
 export type AutoLayoutScope =
   | { kind: "project" }
@@ -611,6 +612,181 @@ function packTopLevelContainers(document: ProjectDocument): ProjectDocument {
   return nextDocument;
 }
 
+type CollisionDirection = "right" | "down" | "left" | "up" | "diagonal";
+
+const COLLISION_DIRECTION_PRIORITY: readonly CollisionDirection[] = [
+  "right",
+  "down",
+  "left",
+  "up",
+  "diagonal",
+];
+
+function directionPriority(direction: CollisionDirection): number {
+  return COLLISION_DIRECTION_PRIORITY.indexOf(direction);
+}
+
+function classifyDisplacement(original: Bounds, candidate: Point): CollisionDirection {
+  const dx = candidate.x - original.x;
+  const dy = candidate.y - original.y;
+  if (dx > 0 && Math.abs(dx) >= Math.abs(dy)) return "right";
+  if (dy > 0 && Math.abs(dy) > Math.abs(dx)) return "down";
+  if (dx < 0 && Math.abs(dx) >= Math.abs(dy)) return "left";
+  if (dy < 0 && Math.abs(dy) > Math.abs(dx)) return "up";
+  return "diagonal";
+}
+
+function collisionFree(
+  bounds: Bounds,
+  obstacles: readonly Bounds[],
+  clearance: number,
+  minimum?: Point,
+): boolean {
+  if (minimum && (bounds.x < minimum.x || bounds.y < minimum.y)) return false;
+  return obstacles.every((obstacle) => !boundsOverlap(bounds, obstacle, clearance));
+}
+
+function candidatePositions(
+  moving: Bounds,
+  obstacles: readonly Bounds[],
+  clearance: number,
+  minimum?: Point,
+): Point[] {
+  const xPositions = new Set<number>([moving.x]);
+  const yPositions = new Set<number>([moving.y]);
+  for (const obstacle of obstacles) {
+    xPositions.add(obstacle.x + obstacle.width + clearance);
+    xPositions.add(obstacle.x - moving.width - clearance);
+    yPositions.add(obstacle.y + obstacle.height + clearance);
+    yPositions.add(obstacle.y - moving.height - clearance);
+  }
+  if (minimum) {
+    xPositions.add(minimum.x);
+    yPositions.add(minimum.y);
+  }
+
+  const candidates: Point[] = [];
+  for (const x of xPositions) {
+    for (const y of yPositions) {
+      const point = { x: Math.round(x), y: Math.round(y) };
+      const bounds = { ...moving, ...point };
+      if (collisionFree(bounds, obstacles, clearance, minimum)) {
+        candidates.push(point);
+      }
+    }
+  }
+  return candidates;
+}
+
+function nearestCollisionFreePosition(
+  moving: Bounds,
+  obstacles: readonly Bounds[],
+  clearance: number,
+  minimum?: Point,
+): Point {
+  const candidates = candidatePositions(moving, obstacles, clearance, minimum);
+  if (candidates.length === 0) {
+    const right = Math.max(...obstacles.map((obstacle) => obstacle.x + obstacle.width), moving.x);
+    return {
+      x: Math.round(right + clearance),
+      y: Math.round(Math.max(minimum?.y ?? moving.y, moving.y)),
+    };
+  }
+  return candidates.sort((left, right) => {
+    const leftDx = left.x - moving.x;
+    const leftDy = left.y - moving.y;
+    const rightDx = right.x - moving.x;
+    const rightDy = right.y - moving.y;
+    return (
+      leftDx * leftDx +
+        leftDy * leftDy -
+        (rightDx * rightDx + rightDy * rightDy) ||
+      Math.abs(leftDx) + Math.abs(leftDy) - (Math.abs(rightDx) + Math.abs(rightDy)) ||
+      directionPriority(classifyDisplacement(moving, left)) -
+        directionPriority(classifyDisplacement(moving, right)) ||
+      left.x - right.x ||
+      left.y - right.y
+    );
+  })[0]!;
+}
+
+function resolveSiblingContainerCollisions(
+  document: ProjectDocument,
+  protectedContainerId: StableId,
+  clearance = SCOPED_CONTAINER_CLEARANCE,
+): ProjectDocument {
+  const stableIndex = buildChildIndex(document);
+  const parentId = stableIndex.parentByContainerId.get(protectedContainerId) ?? null;
+  const siblingIds = [
+    ...(stableIndex.directContainerIdsByParentId.get(parentId) ?? []),
+  ].sort((left, right) => left.localeCompare(right));
+  if (siblingIds.length < 2 || !siblingIds.includes(protectedContainerId)) {
+    return document;
+  }
+
+  const parent = parentId
+    ? document.geometry.containers.find((container) => container.id === parentId)
+    : null;
+  const minimum = parent
+    ? {
+        x: parent.bounds.x + CONTAINER_PADDING,
+        y: parent.bounds.y + CONTAINER_HEADER + CONTAINER_PADDING,
+      }
+    : undefined;
+
+  let nextDocument = document;
+  const orderedIds = [
+    protectedContainerId,
+    ...siblingIds.filter((id) => id !== protectedContainerId),
+  ];
+  const placed = new Map<StableId, Bounds>();
+  for (const id of orderedIds) {
+    const current = nextDocument.geometry.containers.find(
+      (container) => container.id === id,
+    );
+    if (!current) continue;
+    if (id === protectedContainerId) {
+      placed.set(id, current.bounds);
+      continue;
+    }
+    const otherSiblingBounds = siblingIds
+      .filter((siblingId) => siblingId !== id)
+      .map(
+        (siblingId) =>
+          placed.get(siblingId) ??
+          nextDocument.geometry.containers.find((container) => container.id === siblingId)
+            ?.bounds,
+      )
+      .filter((bounds): bounds is Bounds => Boolean(bounds));
+    if (collisionFree(current.bounds, otherSiblingBounds, clearance, minimum)) {
+      placed.set(id, current.bounds);
+      continue;
+    }
+    const target = nearestCollisionFreePosition(
+      current.bounds,
+      otherSiblingBounds,
+      clearance,
+      minimum,
+    );
+    nextDocument = shiftContainerSubtree(
+      nextDocument,
+      id,
+      target.x - current.bounds.x,
+      target.y - current.bounds.y,
+      stableIndex,
+    );
+    const moved = nextDocument.geometry.containers.find(
+      (container) => container.id === id,
+    )!;
+    placed.set(id, moved.bounds);
+  }
+
+  if (parentId) {
+    return resizeContainerToContentBounds(nextDocument, parentId, stableIndex);
+  }
+  return nextDocument;
+}
+
 function rerouteWires(document: ProjectDocument): ProjectDocument {
   const spatialIndex = buildEditorSpatialIndex(document);
   const ports = collectConnectablePorts(document);
@@ -784,12 +960,14 @@ export function autoLayoutDocument(
   if (scope.kind === "project") {
     nextDocument = packTopLevelContainers(nextDocument);
   } else {
-    let index = buildChildIndex(nextDocument);
-    let parentId = index.parentByContainerId.get(scope.containerId) ?? null;
-    while (parentId) {
+    let protectedId = scope.containerId;
+    while (true) {
+      nextDocument = resolveSiblingContainerCollisions(nextDocument, protectedId);
+      const index = buildChildIndex(nextDocument);
+      const parentId = index.parentByContainerId.get(protectedId) ?? null;
+      if (!parentId) break;
       nextDocument = layoutDirectChildren(nextDocument, parentId);
-      index = buildChildIndex(nextDocument);
-      parentId = index.parentByContainerId.get(parentId) ?? null;
+      protectedId = parentId;
     }
   }
 

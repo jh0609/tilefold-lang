@@ -34,9 +34,36 @@ Disconnected components are placed in the same deterministic grid policy.
 
 After children are placed, the container is resized to fit content with header
 space, padding, and minimum dimensions. Project layout then packs top-level
-containers into stable rows. Container Auto Layout may resize ancestors and move
-siblings only through the same geometry patch; it does not relayout unrelated
-subtrees.
+containers into stable rows.
+
+Container Auto Layout resolves sibling container overlap at every hierarchy
+level affected by the selected container or an expanded ancestor. The explicitly
+laid-out container, then each expanded ancestor, is treated as protected and
+kept anchored when resolving its sibling level. Colliding siblings are moved as
+whole subtrees through the existing subtree-shift path; their descendants,
+element port anchors, boundary ports, wire endpoint hints, and semantic
+ownership are not rewritten. Non-colliding sibling containers keep their
+existing bounds byte-for-byte.
+
+The scoped sibling resolver uses the same 120 px clearance as the top-level
+container horizontal gap. For each colliding sibling, it builds deterministic
+candidate positions from the current sibling obstacle edges plus the required
+clearance, tests each candidate against every sibling bound at that level, and
+chooses the smallest displacement from the sibling's current position. Distance
+ties are resolved by fixed direction priority: right, down, left, up, then
+diagonal/grid placements, followed by numeric coordinate order. Siblings are
+processed in stable ID order after the protected container, and each moved
+sibling becomes part of the placed obstacle set before later siblings are
+considered. The finite candidate set always includes positions beyond obstacle
+edges; if those were exhausted, the deterministic fallback places the container
+to the right of the rightmost obstacle. Therefore each finite sibling level
+terminates without oscillation, including boxed-in arrangements.
+
+For nested scoped layout, resolving a child level may resize that child's parent
+to preserve containment before the algorithm proceeds outward. Each affected
+ancestor is then laid out and its own sibling level is resolved. Unrelated
+subtree internals are not relaid out; only a colliding sibling subtree may be
+translated to restore clearance.
 
 Before a layout result is applied, the editor validates that all node,
 container, and wire IDs still exist; all coordinates and sizes are finite; and
