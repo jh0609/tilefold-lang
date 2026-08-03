@@ -178,6 +178,7 @@
     ],
     "junctions": []
   },
+  "surfaceFunctions": [],
   "view": {
     "cameraX": 0,
     "cameraY": 0,

@@ -18,6 +18,7 @@ import {
   savedViewBox,
 } from "./model/coordinates";
 import { formatCoreType } from "./model/coreTypes";
+import { autoLayoutDocument } from "./model/autoLayout";
 import {
   type EditorCommand,
 } from "./model/editorCommands";
@@ -88,6 +89,7 @@ import {
 const initialExample = EXAMPLE_PROJECTS[0];
 const initialDocument = parseProjectJson(initialExample.projectJson);
 const THEME_STORAGE_KEY = "tilefold.editor.theme";
+const EXECUTION_MODE_STORAGE_KEY = "tilefold.editor.executionMode";
 
 function readStoredThemePreference(): ThemePreference {
   if (typeof window === "undefined") return "system";
@@ -95,6 +97,12 @@ function readStoredThemePreference(): ThemePreference {
   return stored === "light" || stored === "dark" || stored === "system"
     ? stored
     : "system";
+}
+
+function readStoredExecutionMode(): ExecutionMode {
+  if (typeof window === "undefined") return "fast";
+  const stored = window.localStorage.getItem(EXECUTION_MODE_STORAGE_KEY);
+  return stored === "transparent" || stored === "fast" ? stored : "fast";
 }
 
 function readFileText(file: File): Promise<string> {
@@ -146,7 +154,7 @@ export function App() {
     status: "idle",
   });
   const [executionMode, setExecutionMode] =
-    useState<ExecutionMode>("transparent");
+    useState<ExecutionMode>(readStoredExecutionMode);
   const [themePreference, setThemePreference] = useState<ThemePreference>(
     readStoredThemePreference,
   );
@@ -751,6 +759,19 @@ export function App() {
     setViewBox(formatViewBox(fitViewBoxToBounds(contentBounds, reference)));
   }
 
+  function fitViewToContainer(containerId: string) {
+    const container = document.geometry.containers.find(
+      (candidate) => candidate.id === containerId,
+    );
+    const reference = parseViewBox(referenceViewBox);
+    if (!container || !reference) {
+      setInspectorError(`Container ${containerId} is not available.`);
+      return;
+    }
+    setViewBox(formatViewBox(fitViewBoxToBounds(container.bounds, reference)));
+    setInspectorError(null);
+  }
+
   function focusTemplate(templateId: string) {
     const container = document.geometry.containers.find(
       (candidate) =>
@@ -772,6 +793,40 @@ export function App() {
     setViewBox(
       formatViewBox(fitViewBoxToBounds(container.bounds, reference)),
     );
+  }
+
+  function applyAutoLayout(scope: { kind: "project" } | { kind: "container"; containerId: string }) {
+    const result = autoLayoutDocument(document, scope);
+    if ("error" in result) {
+      setInspectorError(result.error);
+      return;
+    }
+    if (
+      result.changedElementIds.length === 0 &&
+      result.changedContainerIds.length === 0 &&
+      result.changedWireIds.length === 0
+    ) {
+      setInspectorError("Auto Layout did not change this graph.");
+      return;
+    }
+    const nextDocument = runCommand({
+      type: "apply_auto_layout",
+      scope,
+      after: result.document,
+    });
+    if (!nextDocument) return;
+    if (scope.kind === "container") {
+      setSelection({ type: "container", id: scope.containerId });
+      const container = nextDocument.geometry.containers.find(
+        (candidate) => candidate.id === scope.containerId,
+      );
+      const reference = parseViewBox(referenceViewBox);
+      if (container && reference) {
+        setViewBox(formatViewBox(fitViewBoxToBounds(container.bounds, reference)));
+      }
+    } else {
+      fitViewToDocument(nextDocument);
+    }
   }
 
   function focusContainerById(containerId: string) {
@@ -1074,6 +1129,10 @@ export function App() {
     window.localStorage.setItem(THEME_STORAGE_KEY, themePreference);
   }, [themePreference]);
 
+  useEffect(() => {
+    window.localStorage.setItem(EXECUTION_MODE_STORAGE_KEY, executionMode);
+  }, [executionMode]);
+
   return (
     <div className="editor-app" data-theme={themePreference}>
       <Toolbar
@@ -1090,6 +1149,7 @@ export function App() {
         onOpenFile={openFile}
         onExport={() => downloadProject(document)}
         onDelete={removeSelected}
+        onAutoLayoutProject={() => applyAutoLayout({ kind: "project" })}
         onUndo={undo}
         onRedo={redo}
         onRun={runProject}
@@ -1432,6 +1492,10 @@ export function App() {
             });
             if (afterDocument) setSelection({ type: "container", id });
           }}
+          onFitViewToContainer={fitViewToContainer}
+          onAutoLayoutContainer={(id) =>
+            applyAutoLayout({ kind: "container", containerId: id })
+          }
           onError={setInspectorError}
         />
         <ExecutionPanel

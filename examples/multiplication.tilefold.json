@@ -1408,6 +1408,108 @@
     ],
     "junctions": []
   },
+  "surfaceFunctions": [
+    {
+      "name": "multiplication",
+      "templateId": "multiplication_template",
+      "bodyContainerId": "multiplication_container",
+      "parameters": [
+        {
+          "name": "multiplication_parameter_b",
+          "type": "nat"
+        }
+      ],
+      "result": {
+        "name": "multiplication_result",
+        "type": "nat"
+      }
+    },
+    {
+      "name": "multiply_step_outer",
+      "templateId": "multiply_step_outer_template",
+      "bodyContainerId": "multiply_step_outer_container",
+      "parameters": [
+        {
+          "name": "multiply_step_predecessor",
+          "type": "nat"
+        }
+      ],
+      "result": {
+        "name": "multiply_step_outer_result",
+        "type": {
+          "arrow": [
+            "nat",
+            "nat"
+          ]
+        }
+      }
+    },
+    {
+      "name": "multiply_step_inner",
+      "templateId": "multiply_step_inner_template",
+      "bodyContainerId": "multiply_step_inner_container",
+      "parameters": [
+        {
+          "name": "multiply_step_accumulator",
+          "type": "nat"
+        }
+      ],
+      "result": {
+        "name": "multiply_step_inner_result",
+        "type": "nat"
+      }
+    },
+    {
+      "name": "multiply_add",
+      "templateId": "multiply_add_template",
+      "bodyContainerId": "multiply_add_container",
+      "parameters": [
+        {
+          "name": "multiply_add_parameter_b",
+          "type": "nat"
+        }
+      ],
+      "result": {
+        "name": "multiply_add_result",
+        "type": "nat"
+      }
+    },
+    {
+      "name": "multiply_add_step_outer",
+      "templateId": "multiply_add_step_outer_template",
+      "bodyContainerId": "multiply_add_step_outer_container",
+      "parameters": [
+        {
+          "name": "multiply_add_step_predecessor",
+          "type": "nat"
+        }
+      ],
+      "result": {
+        "name": "multiply_add_step_outer_result",
+        "type": {
+          "arrow": [
+            "nat",
+            "nat"
+          ]
+        }
+      }
+    },
+    {
+      "name": "multiply_add_step_inner",
+      "templateId": "multiply_add_step_inner_template",
+      "bodyContainerId": "multiply_add_step_inner_container",
+      "parameters": [
+        {
+          "name": "multiply_add_step_accumulator",
+          "type": "nat"
+        }
+      ],
+      "result": {
+        "name": "multiply_add_step_inner_result",
+        "type": "nat"
+      }
+    }
+  ],
   "view": {
     "cameraX": 0,
     "cameraY": 0,

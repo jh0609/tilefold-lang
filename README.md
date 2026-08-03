@@ -23,6 +23,23 @@ For repeatable local, Playwright, and Vercel verification steps, see
 
 Execution modes are documented in [`docs/fast-run.md`](docs/fast-run.md).
 
+### Editor Auto Layout
+
+The browser editor includes explicit Auto Layout actions for the selected
+container and for the whole project. Auto Layout only updates visual geometry:
+node and container bounds, boundary anchors, and stored wire route points. It
+preserves node IDs, container IDs, wire IDs, port identities, type parameters,
+function/capture relations, Project JSON meaning fields, and Trace/Fast
+execution results.
+
+Container Auto Layout arranges child containers bottom-up, fits each container
+to its content with padding and minimum sizes, and reroutes wires through the
+existing editor router. Project Auto Layout applies the same policy to all
+containers and then packs top-level containers. Re-running Auto Layout on its
+own result is deterministic and should not drift coordinates. The Inspector
+also offers a view-only action to fit the canvas viewport to a selected
+container; that camera action does not enter undo history or Project JSON.
+
 ### Rec Node Result Types
 
 `NatRec` and `BoolRec` are polymorphic in the value they produce. The editor

@@ -34,6 +34,10 @@ import {
 } from "./editorOps";
 import { exportProjectJson, parseProjectJson } from "./importProject";
 import {
+  applyAutoLayoutDocument,
+  type AutoLayoutScope,
+} from "./autoLayout";
+import {
   coreTypeEqual,
   type ConnectablePort,
   type WireEndpoint,
@@ -128,6 +132,11 @@ export type EditorCommand =
       id: string;
       before: Bounds;
       after: Bounds;
+    }
+  | {
+      type: "apply_auto_layout";
+      scope: AutoLayoutScope;
+      after: ProjectDocument;
     }
   | {
       type: "set_nat_value";
@@ -459,6 +468,23 @@ export function applyEditorCommand(
       return {
         document: fitContainerToContent(document, command.id),
       };
+    case "apply_auto_layout": {
+      const result = applyAutoLayoutDocument(document, command.after);
+      if (result.error) return result;
+      try {
+        return {
+          document: parseProjectJson(exportProjectJson(result.document)),
+        };
+      } catch (error) {
+        return {
+          document,
+          error:
+            error instanceof Error
+              ? `Auto Layout failed the editor structure check: ${error.message}`
+              : "Auto Layout failed the editor structure check.",
+        };
+      }
+    }
     case "set_nat_value":
       return {
         document: updateNatValue(document, command.id, command.after),
@@ -568,6 +594,10 @@ export function editorCommandLabel(command: EditorCommand): string {
       return `Resize ${command.id}`;
     case "fit_container_to_content":
       return `Fit ${command.id} to content`;
+    case "apply_auto_layout":
+      return command.scope.kind === "project"
+        ? "Auto Layout project"
+        : `Auto Layout ${command.scope.containerId}`;
     case "set_nat_value":
     case "set_bool_value":
       return `Edit value for ${command.id}`;

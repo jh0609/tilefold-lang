@@ -1376,6 +1376,9 @@ const naturalNumberExpectations = new Map([
   ["multiplication", { result: "Nat(12)", rewriteCount: 205 }],
 ]);
 const resultExpectations = new Map([
+  ["successor-fast", "Nat(3)"],
+  ["addition-fast", "Nat(5)"],
+  ["multiplication-fast", "Nat(12)"],
   ["list-length-empty", "Nat(0)"],
   ["list-length-empty-fast", "Nat(0)"],
   ["list-length-one", "Nat(1)"],
@@ -1396,13 +1399,15 @@ const resultExpectations = new Map([
   ["list-nat-fast", "List[Nat(1), Nat(2), Nat(3)]"],
 ]);
 for (const [name] of naturalNumberExpectations) {
+  const projectJson = await readFile(
+    resolve(repositoryRoot, `examples/${name}.tilefold.json`),
+    "utf8",
+  );
   fixtures.set(
     name,
-    await readFile(
-      resolve(repositoryRoot, `examples/${name}.tilefold.json`),
-      "utf8",
-    ),
+    projectJson,
   );
+  fixtures.set(`${name}-fast`, { mode: "fast", projectJson });
 }
 for (const name of [
   "option-safe-pred-get-or-else",

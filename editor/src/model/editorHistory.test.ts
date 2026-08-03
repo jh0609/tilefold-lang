@@ -10,6 +10,7 @@ import { parseProjectJson } from "./importProject";
 import { addElement, updateListItemType } from "./editorOps";
 import { collectConnectablePorts } from "./portConnections";
 import { planTypeAutoMatch } from "./typeAutoMatch";
+import { autoLayoutDocument, stripLayoutForComparison } from "./autoLayout";
 
 describe("editor command history", () => {
   it("undoes and redoes an added element without changing its stable ID", () => {
@@ -308,6 +309,29 @@ describe("editor command history", () => {
     expect(redone.present.geometry.wires.map((wire) => wire.id)).toEqual(
       initial.geometry.wires.map((wire) => wire.id),
     );
+  });
+
+  it("undoes and redoes Auto Layout as one semantic-preserving entry", () => {
+    const initial = parseProjectJson(exampleJson);
+    const layout = autoLayoutDocument(initial, { kind: "project" });
+    expect("error" in layout ? layout.error : undefined).toBeUndefined();
+    if ("error" in layout) return;
+    const executed = executeEditorCommand(createEditorHistory(initial), {
+      type: "apply_auto_layout",
+      scope: { kind: "project" },
+      after: layout.document,
+    });
+    expect(executed.error).toBeUndefined();
+    expect(executed.history.past).toHaveLength(1);
+    expect(stripLayoutForComparison(executed.history.present)).toEqual(
+      stripLayoutForComparison(initial),
+    );
+    expect(executed.history.present.geometry).toEqual(layout.document.geometry);
+
+    const undone = undoEditorCommand(executed.history);
+    expect(undone.present).toBe(initial);
+    const redone = redoEditorCommand(undone);
+    expect(redone.present).toBe(executed.history.present);
   });
 
   it("leaves undo and redo stacks untouched when a tracked move fails", () => {

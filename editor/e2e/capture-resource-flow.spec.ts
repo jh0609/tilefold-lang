@@ -262,6 +262,7 @@ test("fans out a Capture boundary output through managed Copy and Drop materiali
     elementPort(page, applyId!, "result", "output"),
     boundaryPort(page, "entry", "result", "input"),
   );
+  await page.getByLabel("Execution mode").selectOption("transparent");
   await page.getByRole("button", { name: "Run" }).click();
   await expect(page.getByText(/Result:/)).toContainText("Nat(4)");
   await expect(page.locator(".trace-event-button", { hasText: "Copy" })).toHaveCount(2);

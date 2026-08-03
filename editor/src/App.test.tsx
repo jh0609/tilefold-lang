@@ -41,7 +41,10 @@ beforeAll(() => {
   });
 });
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  window.localStorage.removeItem("tilefold.editor.executionMode");
+});
 
 function getFunctionResultTypeEditor(): HTMLElement {
   const [editor] = screen.getAllByLabelText("Result type");
@@ -75,6 +78,36 @@ describe("Tilefold editor UI", () => {
     expect(screen.getByRole("combobox", { name: "Theme" })).toHaveValue("dark");
   });
 
+  it("defaults execution to Fast and restores a valid saved Trace preference", async () => {
+    const user = userEvent.setup();
+    window.localStorage.removeItem("tilefold.editor.executionMode");
+    const { unmount } = render(<App />);
+
+    const executionPicker = screen.getByRole("combobox", {
+      name: "Execution mode",
+    });
+    expect(executionPicker).toHaveValue("fast");
+
+    await user.selectOptions(executionPicker, "transparent");
+    expect(window.localStorage.getItem("tilefold.editor.executionMode")).toBe(
+      "transparent",
+    );
+
+    unmount();
+    render(<App />);
+    expect(
+      screen.getByRole("combobox", { name: "Execution mode" }),
+    ).toHaveValue("transparent");
+  });
+
+  it("falls back to Fast for an invalid saved execution mode", () => {
+    window.localStorage.setItem("tilefold.editor.executionMode", "slow");
+    render(<App />);
+    expect(screen.getByRole("combobox", { name: "Execution mode" })).toHaveValue(
+      "fast",
+    );
+  });
+
   it("opens the shared example and selects then clears an element", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -87,6 +120,27 @@ describe("Tilefold editor UI", () => {
     expect(screen.getByText("No selection")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Open example" }));
     expect(screen.getByText(/3 elements/)).toBeInTheDocument();
+  });
+
+  it("offers project Auto Layout and container view fitting without changing meaning", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Auto Layout project" }));
+    expect(screen.getByText("1 undo · 0 redo")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(screen.getByText("0 undo · 1 redo")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "entry container entry" }));
+    expect(
+      screen.getByRole("button", { name: "Fit container view to entry" }),
+    ).toBeInTheDocument();
+    const beforeViewBox = screen.getByTestId("project-canvas").getAttribute("viewBox");
+    await user.click(screen.getByRole("button", { name: "Fit container view to entry" }));
+    expect(screen.getByTestId("project-canvas").getAttribute("viewBox")).not.toBe(
+      beforeViewBox,
+    );
+    expect(screen.getByText("0 undo · 1 redo")).toBeInTheDocument();
   });
 
   it("selects natural-number examples and clears stale document UI state", async () => {

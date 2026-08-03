@@ -69,6 +69,7 @@ async function runAndExpect(
   page: Page,
   expected: { result: string; rewrites: number },
 ) {
+  await page.getByLabel("Execution mode").selectOption("transparent");
   await page.getByRole("button", { name: "Run" }).click();
   await expect(page.getByText(/Result:/)).toContainText(
     `Result: ${expected.result} · ${expected.rewrites} rewrites`,
@@ -110,6 +111,24 @@ test("runs each natural-number example in Chromium with exact results", async ({
     await expect(page.getByText(example.fileName)).toBeVisible();
     await expect(page.getByTestId(example.marker)).toBeVisible();
     await runAndExpect(page, example);
+  }
+
+  await expectNoBrowserIssues(issues);
+});
+
+test("defaults to Fast and runs natural-number Project functions from examples", async ({
+  page,
+}) => {
+  const issues = watchBrowserIssues(page);
+  await page.goto("/");
+  await expect(page.getByLabel("Execution mode")).toHaveValue("fast");
+
+  for (const example of EXAMPLES) {
+    await openExample(page, example.id);
+    await expect(page.getByLabel("Execution mode")).toHaveValue("fast");
+    await page.getByRole("button", { name: "Run" }).click();
+    await expect(page.getByText(/Result:/)).toContainText(example.result);
+    await expect(page.getByText(/runner\.internal/)).toHaveCount(0);
   }
 
   await expectNoBrowserIssues(issues);

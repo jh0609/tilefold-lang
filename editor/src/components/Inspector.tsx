@@ -71,6 +71,8 @@ interface InspectorProps {
   onEditSignature: (edit: SurfaceFunctionSignatureEdit) => boolean;
   onEditCaptures: (edit: TemplateCapturesEdit) => boolean;
   onFitContainer: (id: string) => void;
+  onFitViewToContainer: (id: string) => void;
+  onAutoLayoutContainer: (id: string) => void;
   onError: (error: string | null) => void;
 }
 
@@ -1120,6 +1122,8 @@ export function Inspector({
   onEditSignature,
   onEditCaptures,
   onFitContainer,
+  onFitViewToContainer,
+  onAutoLayoutContainer,
   onError,
 }: InspectorProps) {
   const [editingSignature, setEditingSignature] =
@@ -1396,6 +1400,22 @@ export function Inspector({
             <h3>Container geometry</h3>
             <button type="button" onClick={() => onFitContainer(container.id)}>
               Fit to content
+            </button>
+            <button
+              type="button"
+              onClick={() => onFitViewToContainer(container.id)}
+              aria-label={`Fit container view to ${container.id}`}
+              title="Fit the current canvas view to this container without changing the project"
+            >
+              Fit container view
+            </button>
+            <button
+              type="button"
+              onClick={() => onAutoLayoutContainer(container.id)}
+              aria-label={`Auto Layout ${container.id}`}
+              title="Automatically arrange this container and its child containers without changing program meaning"
+            >
+              Auto Layout inside
             </button>
           </section>
           {container.kind.dependencies.length > 0 && (

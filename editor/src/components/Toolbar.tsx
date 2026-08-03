@@ -20,6 +20,7 @@ interface ToolbarProps {
   onOpenFile: (file: File) => void;
   onExport: () => void;
   onDelete: () => void;
+  onAutoLayoutProject: () => void;
   onUndo: () => void;
   onRedo: () => void;
   onRun: () => void;
@@ -45,6 +46,7 @@ export function Toolbar({
   onOpenFile,
   onExport,
   onDelete,
+  onAutoLayoutProject,
   onUndo,
   onRedo,
   onRun,
@@ -109,6 +111,14 @@ export function Toolbar({
       <div className="toolbar-group" aria-label="Edit project">
         <button type="button" onClick={onDelete} disabled={!canDelete}>
           Delete selected
+        </button>
+        <button
+          type="button"
+          onClick={onAutoLayoutProject}
+          title="Automatically arrange every container without changing program meaning"
+          aria-label="Auto Layout project"
+        >
+          Auto Layout
         </button>
         <button
           type="button"

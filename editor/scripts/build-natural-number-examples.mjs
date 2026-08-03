@@ -14,6 +14,7 @@ class ProjectBuilder {
     this.elements = [];
     this.containers = [];
     this.wires = [];
+    this.surfaceFunctions = [];
     this.elementPorts = new Map();
     this.boundaries = new Map();
   }
@@ -34,6 +35,24 @@ class ProjectBuilder {
       bounds: { x, y, width, height },
       boundaryPorts,
     });
+    if (kind.kind === "template") {
+      const parameters = boundaries
+        .filter((boundary) => boundary.role === "parameter")
+        .map((boundary) => ({ name: boundary.id, type: boundary.type }));
+      const templateResult = boundaries.find(
+        (boundary) => boundary.role === "result",
+      );
+      this.surfaceFunctions.push({
+        name: kind.templateId.replace(/_template$/, ""),
+        templateId: kind.templateId,
+        bodyContainerId: id,
+        parameters,
+        result: {
+          name: templateResult?.id ?? "result",
+          type: kind.resultType,
+        },
+      });
+    }
     for (const boundary of boundaries) {
       this.boundaries.set(`${id}:${boundary.id}`, {
         point: { x: x + boundary.x, y: y + boundary.y },
@@ -96,6 +115,7 @@ class ProjectBuilder {
         wires: this.wires,
         junctions: [],
       },
+      surfaceFunctions: this.surfaceFunctions,
       view,
     };
   }

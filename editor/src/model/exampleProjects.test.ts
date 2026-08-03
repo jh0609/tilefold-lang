@@ -41,6 +41,13 @@ describe("example projects", () => {
       exampleProjectById("addition")!.projectJson,
     );
     expect(
+      addition.surfaceFunctions?.map((functionInfo) => functionInfo.templateId),
+    ).toEqual([
+      "addition_template",
+      "add_step_outer_template",
+      "add_step_inner_template",
+    ]);
+    expect(
       addition.geometry.elements.find(
         (element) => element.id === "addition_natrec",
       ),
@@ -65,6 +72,18 @@ describe("example projects", () => {
     const multiplication = parseProjectJson(
       exampleProjectById("multiplication")!.projectJson,
     );
+    expect(
+      multiplication.surfaceFunctions?.map(
+        (functionInfo) => functionInfo.templateId,
+      ),
+    ).toEqual([
+      "multiplication_template",
+      "multiply_step_outer_template",
+      "multiply_step_inner_template",
+      "multiply_add_template",
+      "multiply_add_step_outer_template",
+      "multiply_add_step_inner_template",
+    ]);
     const inner = multiplication.geometry.containers.find(
       (container) => container.id === "multiply_step_inner_container",
     );

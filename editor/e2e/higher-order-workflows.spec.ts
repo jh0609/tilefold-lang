@@ -586,6 +586,7 @@ test("authors NatRec with an Arrow accumulator and applies the result", async ({
     boundaryPort(page, "entry", "result", "input"),
   );
 
+  await page.getByLabel("Execution mode").selectOption("transparent");
   await page.getByRole("button", { name: "Run" }).click();
   await expect(page.getByText(/Result:/)).toContainText("Nat(0)");
   await expect(page.getByText(/NatRecStart/)).toBeVisible();
@@ -600,6 +601,7 @@ test("authors NatRec with an Arrow accumulator and applies the result", async ({
   await reloaded.goto("/");
   await reloaded.getByLabel("Open JSON file").setInputFiles(savedPath);
   await expect(reloaded.getByText("natRecArrow.tilefold.json")).toBeVisible();
+  await reloaded.getByLabel("Execution mode").selectOption("transparent");
   await reloaded.getByRole("button", { name: "Run" }).click();
   await expect(reloaded.getByText(/Result:/)).toContainText("Nat(0)");
   await expect(reloaded.getByText(/NatRecStart/)).toBeVisible();

@@ -571,6 +571,73 @@ test("reconnects an endpoint and keeps the routed path clear of obstacles", asyn
   await expectNoBrowserIssues(issues);
 });
 
+test("auto layout arranges a selected container without changing execution", async ({
+  page,
+}, testInfo) => {
+  const issues = watchBrowserIssues(page);
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Run" }).click();
+  await expect(page.getByText(/Result:/)).toContainText("Nat(3)");
+
+  await selectElement(page, "node_succ");
+  await setSelectedBounds(page, "30", "45");
+  const overlappedNat = await svgRect(element(page, "node_nat_2"));
+  const overlappedSucc = await svgRect(element(page, "node_succ"));
+  expect(boxesOverlap(overlappedNat, overlappedSucc)).toBe(true);
+
+  await page.locator('g.container-shape[data-container-id="entry"]').focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: "Auto Layout entry" }).click();
+  const arrangedNat = await svgRect(element(page, "node_nat_2"));
+  const arrangedSucc = await svgRect(element(page, "node_succ"));
+  expect(boxesOverlap(arrangedNat, arrangedSucc)).toBe(false);
+  await expect(page.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
+    "data-source-node-id",
+    "node_nat_2",
+  );
+  await expect(page.getByTestId("wire-wire_nat_succ")).toHaveAttribute(
+    "data-target-node-id",
+    "node_succ",
+  );
+
+  await page.getByRole("button", { name: "Run" }).click();
+  await expect(page.getByText(/Result:/)).toContainText("Nat(3)");
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  expect(
+    boxesOverlap(
+      await svgRect(element(page, "node_nat_2")),
+      await svgRect(element(page, "node_succ")),
+    ),
+  ).toBe(true);
+  await page.getByRole("button", { name: "Redo" }).click();
+  expect(
+    boxesOverlap(
+      await svgRect(element(page, "node_nat_2")),
+      await svgRect(element(page, "node_succ")),
+    ),
+  ).toBe(false);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export JSON" }).click();
+  const download = await downloadPromise;
+  const savedPath = testInfo.outputPath("auto-layout.tilefold.json");
+  await download.saveAs(savedPath);
+  await page.reload();
+  await page.getByLabel("Open JSON file").setInputFiles(savedPath);
+  expect(
+    boxesOverlap(
+      await svgRect(element(page, "node_nat_2")),
+      await svgRect(element(page, "node_succ")),
+    ),
+  ).toBe(false);
+  await page.getByRole("button", { name: "Run" }).click();
+  await expect(page.getByText(/Result:/)).toContainText("Nat(3)");
+
+  await expectNoBrowserIssues(issues);
+});
+
 for (const viewport of [
   { width: 1440, height: 900 },
   { width: 1024, height: 768 },

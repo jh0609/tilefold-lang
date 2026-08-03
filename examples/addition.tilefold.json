@@ -744,6 +744,58 @@
     ],
     "junctions": []
   },
+  "surfaceFunctions": [
+    {
+      "name": "addition",
+      "templateId": "addition_template",
+      "bodyContainerId": "addition_container",
+      "parameters": [
+        {
+          "name": "addition_parameter_b",
+          "type": "nat"
+        }
+      ],
+      "result": {
+        "name": "addition_result",
+        "type": "nat"
+      }
+    },
+    {
+      "name": "add_step_outer",
+      "templateId": "add_step_outer_template",
+      "bodyContainerId": "add_step_outer_container",
+      "parameters": [
+        {
+          "name": "add_step_predecessor",
+          "type": "nat"
+        }
+      ],
+      "result": {
+        "name": "add_step_outer_result",
+        "type": {
+          "arrow": [
+            "nat",
+            "nat"
+          ]
+        }
+      }
+    },
+    {
+      "name": "add_step_inner",
+      "templateId": "add_step_inner_template",
+      "bodyContainerId": "add_step_inner_container",
+      "parameters": [
+        {
+          "name": "add_step_accumulator",
+          "type": "nat"
+        }
+      ],
+      "result": {
+        "name": "add_step_inner_result",
+        "type": "nat"
+      }
+    }
+  ],
   "view": {
     "cameraX": 0,
     "cameraY": 0,
