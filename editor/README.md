@@ -490,6 +490,23 @@ their type parameters change. This is not a cast or runtime coercion: Project
 JSON stores the changed explicit type, and Trace Run and Fast Run see the same
 validated graph as before.
 
+Extract function is an editor refactoring. Selecting an element, or multiple
+elements with modifier-click or an empty-canvas marquee, can expose an
+`Extract function` action in the Inspector. The planner requires one connected
+subgraph in the active container, exact Core types on every cut wire, at least
+one incoming argument wire, and exactly one outgoing result wire. Confirming
+creates a normal Surface function, moves the selected elements and their
+internal wires into its body, adds parameter/result boundaries, and replaces
+the original selection with a folded project Call wired to the original
+producers and consumer. The whole rewrite is one undoable command.
+
+The first extraction slice intentionally rejects managed resource-flow wires,
+function/reference/library/project-call nodes, disconnected selections,
+multiple outputs, zero-argument constant extraction, cross-container shapes,
+and any incomplete selected input. It does not introduce implicit Product
+packing, captures, Copy, Drop, casts, or new Core semantics. Selection and
+marquee state are UI-only and never enter Project JSON.
+
 Containers are selectable but cannot be moved. Moving a container
 without a fully specified policy for contained elements and wires could change
 Geometry ownership. Container boundary points therefore stay fixed when an

@@ -163,6 +163,15 @@
   pointer-events: none;
 }
 
+.marquee-selection {
+  fill: color-mix(in srgb, var(--select) 12%, transparent);
+  stroke: var(--select);
+  stroke-width: 1.5;
+  stroke-dasharray: 6 4;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
+}
+
 .wire-endpoint-handle {
   pointer-events: none;
 }

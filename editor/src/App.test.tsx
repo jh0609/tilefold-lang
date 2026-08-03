@@ -1588,6 +1588,28 @@ describe("Tilefold editor UI", () => {
     );
   });
 
+  it("extracts a selected node into a project function and restores it with undo and redo", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByTestId("element-node_succ"));
+    const name = screen.getByLabelText("Function name");
+    await user.clear(name);
+    await user.type(name, "increment");
+    expect(screen.getByText("input: Nat")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Extract function" }));
+    expect(screen.getByTestId("element-node_project_call_1")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(
+      screen.queryByTestId("element-node_project_call_1"),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Redo" }));
+    expect(screen.getByTestId("element-node_project_call_1")).toBeInTheDocument();
+  });
+
   it("does not commit a cancelled drag", () => {
     render(<App />);
     const element = screen.getByTestId("element-node_nat_2");

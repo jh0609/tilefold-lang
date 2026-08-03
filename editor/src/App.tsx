@@ -81,6 +81,7 @@ import {
   planTypeAutoMatch,
   type TypeAutoMatchPlan,
 } from "./model/typeAutoMatch";
+import { planExtractFunction } from "./model/extractFunction";
 import {
   buildEditorSpatialIndex,
   elementsForContainer,
@@ -222,6 +223,15 @@ export function App() {
       );
       if (element) {
         const owner = findElementOwnerContainer(document, element);
+        if (owner) return owner;
+      }
+    }
+    if (selection?.type === "elements" && selection.ids.length > 0) {
+      const first = document.geometry.elements.find(
+        (candidate) => candidate.id === selection.ids[0],
+      );
+      if (first) {
+        const owner = findElementOwnerContainer(document, first);
         if (owner) return owner;
       }
     }
@@ -467,6 +477,10 @@ export function App() {
         return nextDocument.geometry.elements.some(
           (item) => item.id === current.id,
         );
+      case "elements":
+        return current.ids.every((id) =>
+          nextDocument.geometry.elements.some((item) => item.id === id),
+        );
       case "container":
         return nextDocument.geometry.containers.some(
           (item) => item.id === current.id,
@@ -552,6 +566,46 @@ export function App() {
     if (element) {
       setSelection({ type: "element", id: element.id });
     }
+  }
+
+  function extractSelectedFunction(name: string) {
+    const ids =
+      selection?.type === "elements"
+        ? selection.ids
+        : selection?.type === "element"
+          ? [selection.id]
+          : [];
+    if (ids.length === 0) {
+      setInspectorError("Select one or more elements before extracting a function.");
+      return;
+    }
+    const targetContainer = functionHost;
+    if (!targetContainer) {
+      setInspectorError("Extract function requires an active container.");
+      return;
+    }
+    const planned = planExtractFunction(
+      document,
+      targetContainer.id,
+      ids,
+      name,
+    );
+    if (planned.kind !== "ok") {
+      setInspectorError(planned.message);
+      return;
+    }
+    const nextDocument = runCommand({
+      type: "extract_function",
+      plan: planned.plan,
+    });
+    if (!nextDocument) return;
+    const call = nextDocument.geometry.elements.find(
+      (element) =>
+        element.kind === "project_call" &&
+        element.properties.templateId === planned.plan.templateId,
+    );
+    setSelection(call ? { type: "element", id: call.id } : null);
+    setConnectionMessage(`Extracted ${planned.plan.functionName}.`);
   }
 
   async function viewTraceForFastResult() {
@@ -667,6 +721,11 @@ export function App() {
         (candidate) => candidate.id === next.id,
       );
       containerId = element ? findElementOwnerContainer(document, element)?.id ?? null : null;
+    } else if (next?.type === "elements") {
+      const element = document.geometry.elements.find(
+        (candidate) => candidate.id === next.ids[0],
+      );
+      containerId = element ? findElementOwnerContainer(document, element)?.id ?? null : null;
     }
     if (!containerId || containerId === document.currentContainerId) return;
     setHistory((current) => ({
@@ -683,6 +742,7 @@ export function App() {
 
   function selectionCanBeDeleted(current: Selection | null): boolean {
     if (!current) return false;
+    if (current.type === "elements") return current.ids.length > 0;
     if (current.type === "container") {
       const container = document.geometry.containers.find(
         (candidate) => candidate.id === current.id,
@@ -1200,6 +1260,12 @@ export function App() {
               to: next,
             });
           }}
+          onMoveElements={(movements) => {
+            runCommand({
+              type: "move_elements",
+              movements,
+            });
+          }}
           onMoveContainer={(id, from, to) => {
             if (from.x === to.x && from.y === to.y) return;
             runCommand({
@@ -1251,6 +1317,7 @@ export function App() {
         <Inspector
           document={document}
           selection={selection}
+          activeContainerId={functionHost?.id ?? null}
           error={inspectorError}
           onBoundsChange={(id, bounds) => {
             const element = document.geometry.elements.find(
@@ -1496,6 +1563,7 @@ export function App() {
           onAutoLayoutContainer={(id) =>
             applyAutoLayout({ kind: "container", containerId: id })
           }
+          onExtractFunction={extractSelectedFunction}
           onError={setInspectorError}
         />
         <ExecutionPanel

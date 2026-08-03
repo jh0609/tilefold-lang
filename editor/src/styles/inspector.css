@@ -97,6 +97,18 @@
   font-size: var(--font-caption);
 }
 
+.signature-preview {
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 8px;
+  color: var(--text-subtle);
+  background: var(--bg-subtle);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: var(--font-caption);
+}
+
 .empty-inspector {
   padding: 30px 8px 16px;
   color: var(--text-muted);

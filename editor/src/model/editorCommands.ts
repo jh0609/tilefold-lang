@@ -13,6 +13,7 @@ import {
   fitContainerToContent,
   moveContainer,
   moveElement,
+  moveElements,
   reconnectWireEndpoint,
   resizeContainer,
   resizeOrMoveElement,
@@ -37,6 +38,10 @@ import {
   applyAutoLayoutDocument,
   type AutoLayoutScope,
 } from "./autoLayout";
+import {
+  applyExtractFunctionPlan,
+  type ExtractFunctionPlan,
+} from "./extractFunction";
 import {
   coreTypeEqual,
   type ConnectablePort,
@@ -109,6 +114,10 @@ export type EditorCommand =
       to: Point;
     }
   | {
+      type: "move_elements";
+      movements: Array<{ id: string; from: Point; to: Point }>;
+    }
+  | {
       type: "move_container";
       id: string;
       from: Point;
@@ -137,6 +146,10 @@ export type EditorCommand =
       type: "apply_auto_layout";
       scope: AutoLayoutScope;
       after: ProjectDocument;
+    }
+  | {
+      type: "extract_function";
+      plan: ExtractFunctionPlan;
     }
   | {
       type: "set_nat_value";
@@ -434,6 +447,29 @@ export function applyEditorCommand(
         };
       }
     }
+    case "move_elements": {
+      const result = moveElements(
+        document,
+        command.movements.map((movement) => ({
+          id: movement.id,
+          to: movement.to,
+        })),
+      );
+      if ("error" in result) return { document, error: result.error };
+      try {
+        return {
+          document: parseProjectJson(exportProjectJson(result.document)),
+        };
+      } catch (error) {
+        return {
+          document,
+          error:
+            error instanceof Error
+              ? `Moved elements failed the editor structure check: ${error.message}`
+              : "Moved elements failed the editor structure check.",
+        };
+      }
+    }
     case "move_container": {
       const result = moveContainer(document, command.id, command.to);
       if ("error" in result) return { document, error: result.error };
@@ -481,7 +517,24 @@ export function applyEditorCommand(
           error:
             error instanceof Error
               ? `Auto Layout failed the editor structure check: ${error.message}`
-              : "Auto Layout failed the editor structure check.",
+            : "Auto Layout failed the editor structure check.",
+        };
+      }
+    }
+    case "extract_function": {
+      const result = applyExtractFunctionPlan(document, command.plan);
+      if ("error" in result) return { document, error: result.error };
+      try {
+        return {
+          document: parseProjectJson(exportProjectJson(result.document)),
+        };
+      } catch (error) {
+        return {
+          document,
+          error:
+            error instanceof Error
+              ? `Extracted function failed the editor structure check: ${error.message}`
+              : "Extracted function failed the editor structure check.",
         };
       }
     }
@@ -583,9 +636,13 @@ export function editorCommandLabel(command: EditorCommand): string {
     case "reconnect_wire_endpoint":
       return `Reconnect ${command.wireId} ${command.endpoint}`;
     case "delete_selection":
-      return `Delete ${command.selection.id}`;
+      return command.selection.type === "elements"
+        ? `Delete ${command.selection.ids.length} elements`
+        : `Delete ${command.selection.id}`;
     case "move_element":
       return `Move ${command.id}`;
+    case "move_elements":
+      return `Move ${command.movements.length} elements`;
     case "move_container":
       return `Move ${command.id}`;
     case "resize_or_move_element":
@@ -598,6 +655,8 @@ export function editorCommandLabel(command: EditorCommand): string {
       return command.scope.kind === "project"
         ? "Auto Layout project"
         : `Auto Layout ${command.scope.containerId}`;
+    case "extract_function":
+      return `Extract ${command.plan.functionName}`;
     case "set_nat_value":
     case "set_bool_value":
       return `Edit value for ${command.id}`;
@@ -620,6 +679,14 @@ export function isNoOpCommand(command: EditorCommand): boolean {
     case "move_element":
     case "move_container":
       return command.from.x === command.to.x && command.from.y === command.to.y;
+    case "move_elements":
+      return command.movements.every(
+        (movement) =>
+          movement.from.x === movement.to.x &&
+          movement.from.y === movement.to.y,
+      );
+    case "extract_function":
+      return false;
     case "resize_or_move_element":
     case "resize_container":
     case "fit_container_to_content":

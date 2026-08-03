@@ -4594,6 +4594,35 @@ export function moveElement(
   };
 }
 
+export function moveElements(
+  document: ProjectDocument,
+  movements: readonly { id: string; to: Point }[],
+): MoveElementResult {
+  if (movements.length === 0) {
+    return { error: "Move requires at least one element." };
+  }
+  let currentDocument = document;
+  let lastElement: ProjectElement | null = null;
+  let affectedEndpointCount = 0;
+  const seen = new Set<string>();
+  for (const movement of movements) {
+    if (seen.has(movement.id)) {
+      return { error: `Element ${movement.id} is listed more than once.` };
+    }
+    seen.add(movement.id);
+    const result = moveElement(currentDocument, movement.id, movement.to);
+    if ("error" in result) return result;
+    currentDocument = result.document;
+    lastElement = result.element;
+    affectedEndpointCount += result.affectedEndpointCount;
+  }
+  return {
+    document: currentDocument,
+    element: lastElement!,
+    affectedEndpointCount,
+  };
+}
+
 export function resizeOrMoveElement(
   document: ProjectDocument,
   id: string,
@@ -5593,6 +5622,23 @@ export function deleteSelection(
   selection: Selection | null,
 ): { document: ProjectDocument; error?: string } {
   if (!selection) return { document };
+  if (selection.type === "elements") {
+    if (selection.ids.length === 0) return { document };
+    const ids = new Set(selection.ids);
+    const missing = selection.ids.filter(
+      (id) => !document.geometry.elements.some((element) => element.id === id),
+    );
+    if (missing.length > 0) {
+      return { document, error: `Element ${missing[0]} does not exist.` };
+    }
+    let current = document;
+    for (const id of [...ids].sort((left, right) => left.localeCompare(right))) {
+      const deleted = deleteSelection(current, { type: "element", id });
+      if (deleted.error) return { document, error: deleted.error };
+      current = deleted.document;
+    }
+    return { document: current };
+  }
   if (selection.type === "container") {
     const container = document.geometry.containers.find(
       (candidate) => candidate.id === selection.id,

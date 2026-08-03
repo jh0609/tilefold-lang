@@ -17,6 +17,7 @@ import {
   compatibleFunctionReferenceCandidates,
   moveContainer,
   moveElement,
+  moveElements,
   replaceableAutoDropWireId,
   resizeContainer,
   resizeOrMoveElement,
@@ -75,10 +76,10 @@ function validateConnectionWithTypeAutoMatchPreview(
 
 interface DragState {
   pointerId: number;
-  elementId: string;
+  elementIds: string[];
   start: Point;
-  origin: Point;
-  next: Point;
+  origins: Record<string, Point>;
+  next: Record<string, Point>;
 }
 
 interface ResizeState {
@@ -107,6 +108,12 @@ interface ContainerMoveState {
   next: Point;
 }
 
+interface MarqueeState {
+  pointerId: number;
+  start: Point;
+  current: Point;
+}
+
 interface FunctionPortActionState {
   target: ConnectablePort;
   projectPoint: Point;
@@ -125,6 +132,9 @@ interface CanvasProps {
   onResetView: () => void;
   onSelect: (selection: Selection | null) => void;
   onMoveElement: (id: string, next: Point) => void;
+  onMoveElements: (
+    movements: Array<{ id: string; from: Point; to: Point }>,
+  ) => void;
   onMoveContainer: (id: string, from: Point, to: Point) => void;
   onResizeElement: (id: string, before: Bounds, after: Bounds) => void;
   onResizeContainer: (
@@ -433,6 +443,7 @@ export function Canvas({
   onResetView,
   onSelect,
   onMoveElement,
+  onMoveElements,
   onMoveContainer,
   onResizeElement,
   onResizeContainer,
@@ -451,6 +462,7 @@ export function Canvas({
     useState<ContainerResizeState | null>(null);
   const [containerMove, setContainerMove] =
     useState<ContainerMoveState | null>(null);
+  const [marquee, setMarquee] = useState<MarqueeState | null>(null);
   const [connection, setConnection] = useState<ConnectionDrag | null>(null);
   const [functionPortAction, setFunctionPortAction] =
     useState<FunctionPortActionState | null>(null);
@@ -753,6 +765,39 @@ export function Canvas({
     });
   }
 
+  function startMarquee(event: ReactPointerEvent<SVGRectElement>) {
+    if (
+      event.button !== 0 ||
+      !svgRef.current ||
+      connection ||
+      drag ||
+      resize ||
+      containerResize ||
+      containerMove ||
+      marquee ||
+      pan
+    ) {
+      return;
+    }
+    const start = clientToProject(
+      svgRef.current,
+      event.clientX,
+      event.clientY,
+    );
+    if (!start) return;
+    event.stopPropagation();
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      onConnectionMessage(
+        "Unable to capture the pointer; marquee selection cancelled.",
+      );
+      return;
+    }
+    suppressNextSelectionRef.current = true;
+    setMarquee({ pointerId: event.pointerId, start, current: start });
+  }
+
   function zoomAtCenter(factor: number) {
     const camera = parseViewBox(viewBox);
     const reference = parseViewBox(referenceViewBox);
@@ -789,6 +834,26 @@ export function Canvas({
     const start = clientToProject(svgRef.current, event.clientX, event.clientY);
     if (!start) return;
     event.stopPropagation();
+    if (event.ctrlKey || event.metaKey || event.shiftKey) {
+      const currentIds =
+        selection?.type === "elements"
+          ? selection.ids
+          : selection?.type === "element"
+            ? [selection.id]
+            : [];
+      const current = new Set(currentIds);
+      if (current.has(element.id)) current.delete(element.id);
+      else current.add(element.id);
+      const ids = [...current].sort((left, right) => left.localeCompare(right));
+      onSelect(
+        ids.length === 0
+          ? null
+          : ids.length === 1
+            ? { type: "element", id: ids[0]! }
+            : { type: "elements", ids },
+      );
+      return;
+    }
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
     } catch {
@@ -797,13 +862,27 @@ export function Canvas({
       );
       return;
     }
-    onSelect({ type: "element", id: element.id });
+    const selectedIds =
+      selection?.type === "elements" && selection.ids.includes(element.id)
+        ? selection.ids
+        : [element.id];
+    if (selectedIds.length === 1) onSelect({ type: "element", id: element.id });
+    else onSelect({ type: "elements", ids: selectedIds });
+    const selectedElements = selectedIds
+      .map((id) => document.geometry.elements.find((candidate) => candidate.id === id))
+      .filter((candidate): candidate is ProjectElement => Boolean(candidate));
+    const origins = Object.fromEntries(
+      selectedElements.map((candidate) => [
+        candidate.id,
+        { x: candidate.bounds.x, y: candidate.bounds.y },
+      ]),
+    );
     setDrag({
       pointerId: event.pointerId,
-      elementId: element.id,
+      elementIds: selectedIds,
       start,
-      origin: { x: element.bounds.x, y: element.bounds.y },
-      next: { x: element.bounds.x, y: element.bounds.y },
+      origins,
+      next: origins,
     });
   }
 
@@ -989,6 +1068,19 @@ export function Canvas({
       setConnection({ ...connection, current: point, validHover, rejection });
       return;
     }
+    if (marquee?.pointerId === event.pointerId && svgRef.current) {
+      const current = clientToProject(
+        svgRef.current,
+        event.clientX,
+        event.clientY,
+      );
+      if (!current) return;
+      setMarquee({
+        ...marquee,
+        current: { x: Math.round(current.x), y: Math.round(current.y) },
+      });
+      return;
+    }
     if (containerResize?.pointerId === event.pointerId && svgRef.current) {
       const current = clientToProject(
         svgRef.current,
@@ -1063,12 +1155,16 @@ export function Canvas({
       event.clientY,
     );
     if (!current) return;
+    const dx = Math.round(current.x - drag.start.x);
+    const dy = Math.round(current.y - drag.start.y);
     setDrag({
       ...drag,
-      next: {
-        x: Math.round(drag.origin.x + current.x - drag.start.x),
-        y: Math.round(drag.origin.y + current.y - drag.start.y),
-      },
+      next: Object.fromEntries(
+        drag.elementIds.map((id) => {
+          const origin = drag.origins[id] ?? { x: 0, y: 0 };
+          return [id, { x: origin.x + dx, y: origin.y + dy }];
+        }),
+      ),
     });
   }
 
@@ -1150,8 +1246,57 @@ export function Canvas({
       setContainerMove(null);
       return;
     }
+    if (marquee?.pointerId === event.pointerId) {
+      completedPointerRef.current = event.pointerId;
+      const left = Math.min(marquee.start.x, marquee.current.x);
+      const top = Math.min(marquee.start.y, marquee.current.y);
+      const right = Math.max(marquee.start.x, marquee.current.x);
+      const bottom = Math.max(marquee.start.y, marquee.current.y);
+      if (right - left < 4 && bottom - top < 4) {
+        onSelect(null);
+      } else {
+        const ids = document.geometry.elements
+          .filter((element) => {
+            if (
+              currentContainerId &&
+              spatialIndex.ownerByElementId.get(element.id) !==
+                currentContainerId
+            ) {
+              return false;
+            }
+            return (
+              element.bounds.x < right &&
+              element.bounds.x + element.bounds.width > left &&
+              element.bounds.y < bottom &&
+              element.bounds.y + element.bounds.height > top
+            );
+          })
+          .map((element) => element.id)
+          .sort((leftId, rightId) => leftId.localeCompare(rightId));
+        onSelect(
+          ids.length === 0
+            ? null
+            : ids.length === 1
+              ? { type: "element", id: ids[0]! }
+              : { type: "elements", ids },
+        );
+      }
+      setMarquee(null);
+      return;
+    }
     if (drag?.pointerId !== event.pointerId) return;
-    onMoveElement(drag.elementId, drag.next);
+    if (drag.elementIds.length === 1) {
+      const id = drag.elementIds[0]!;
+      onMoveElement(id, drag.next[id] ?? drag.origins[id]!);
+    } else {
+      onMoveElements(
+        drag.elementIds.map((id) => ({
+          id,
+          from: drag.origins[id]!,
+          to: drag.next[id] ?? drag.origins[id]!,
+        })),
+      );
+    }
     setDrag(null);
   }
 
@@ -1185,6 +1330,12 @@ export function Canvas({
       suppressNextSelectionRef.current = true;
       setContainerMove(null);
       onConnectionMessage("Container move cancelled.");
+      return;
+    }
+    if (marquee?.pointerId === event.pointerId) {
+      suppressNextSelectionRef.current = true;
+      setMarquee(null);
+      onConnectionMessage("Marquee selection cancelled.");
       return;
     }
     if (drag?.pointerId === event.pointerId) setDrag(null);
@@ -1289,7 +1440,19 @@ export function Canvas({
   }
 
   const movePreview = drag
-    ? moveElement(document, drag.elementId, drag.next)
+    ? drag.elementIds.length === 1
+      ? moveElement(
+          document,
+          drag.elementIds[0]!,
+          drag.next[drag.elementIds[0]!] ?? drag.origins[drag.elementIds[0]!]!,
+        )
+      : moveElements(
+          document,
+          drag.elementIds.map((id) => ({
+            id,
+            to: drag.next[id] ?? drag.origins[id]!,
+          })),
+        )
     : null;
   const resizePreview = resize
     ? resizeOrMoveElement(document, resize.elementId, resize.next)
@@ -1417,6 +1580,7 @@ export function Canvas({
           y="-5000"
           width="10000"
           height="10000"
+          onPointerDown={startMarquee}
         />
         <rect
           className="grid-fill"
@@ -1530,6 +1694,17 @@ export function Canvas({
             aria-hidden="true"
           />
         )}
+        {marquee && (
+          <rect
+            className="marquee-selection"
+            data-testid="marquee-selection"
+            x={Math.min(marquee.start.x, marquee.current.x)}
+            y={Math.min(marquee.start.y, marquee.current.y)}
+            width={Math.abs(marquee.current.x - marquee.start.x)}
+            height={Math.abs(marquee.current.y - marquee.start.y)}
+            aria-hidden="true"
+          />
+        )}
         <g className="junction-layer">
           {renderedDocument.geometry.junctions.map((junction) => (
             <g
@@ -1579,7 +1754,9 @@ export function Canvas({
             key={element.id}
             element={element}
             selected={
-              selection?.type === "element" && selection.id === element.id
+              (selection?.type === "element" && selection.id === element.id) ||
+              (selection?.type === "elements" &&
+                selection.ids.includes(element.id))
             }
             traceHighlighted={traceHighlightedElementId === element.id}
             ownerContainerId={spatialIndex.ownerByElementId.get(element.id)}

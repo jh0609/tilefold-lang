@@ -21,10 +21,12 @@ import {
   type StandardLibraryFunction,
 } from "../model/standardLibrary";
 import { CoreTypeEditor } from "./CoreTypeEditor";
+import { planExtractFunction } from "../model/extractFunction";
 
 interface InspectorProps {
   document: ProjectDocument;
   selection: Selection | null;
+  activeContainerId: string | null;
   error: string | null;
   onBoundsChange: (id: string, bounds: Bounds) => void;
   onNatValueChange: (id: string, value: string) => void;
@@ -73,6 +75,7 @@ interface InspectorProps {
   onFitContainer: (id: string) => void;
   onFitViewToContainer: (id: string) => void;
   onAutoLayoutContainer: (id: string) => void;
+  onExtractFunction: (name: string) => void;
   onError: (error: string | null) => void;
 }
 
@@ -1099,6 +1102,7 @@ function ElementInspector({
 export function Inspector({
   document,
   selection,
+  activeContainerId,
   error,
   onBoundsChange,
   onNatValueChange,
@@ -1124,12 +1128,60 @@ export function Inspector({
   onFitContainer,
   onFitViewToContainer,
   onAutoLayoutContainer,
+  onExtractFunction,
   onError,
 }: InspectorProps) {
   const [editingSignature, setEditingSignature] =
     useState<SurfaceFunctionMetadata | null>(null);
   const [editingCaptures, setEditingCaptures] =
     useState<ProjectDocument["geometry"]["containers"][number] | null>(null);
+  const [extractName, setExtractName] = useState("extracted_function");
+  function extractSection(ids: readonly string[]) {
+    const plan =
+      activeContainerId && extractName.trim().length > 0
+        ? planExtractFunction(
+            document,
+            activeContainerId,
+            ids,
+            extractName.trim(),
+          )
+        : { kind: "error" as const, message: "Choose a function name." };
+    return (
+      <section className="readout">
+        <h3>Extract function</h3>
+        <label className="field">
+          <span>Function name</span>
+          <input
+            value={extractName}
+            onChange={(event) => setExtractName(event.target.value)}
+            aria-label="Function name"
+          />
+        </label>
+        {plan.kind === "ok" ? (
+          <div className="signature-preview" aria-live="polite">
+            <span>
+              {plan.plan.parameters
+                .map(
+                  (parameter) =>
+                    `${parameter.name}: ${formatCoreType(parameter.type)}`,
+                )
+                .join(", ")}
+            </span>
+            <span>{"->"} {formatCoreType(plan.plan.result.type)}</span>
+          </div>
+        ) : (
+          <p className="limitation">{plan.message}</p>
+        )}
+        <button
+          type="button"
+          disabled={plan.kind !== "ok"}
+          onClick={() => onExtractFunction(extractName.trim())}
+        >
+          Extract function
+        </button>
+      </section>
+    );
+  }
   let content = (
     <div className="empty-inspector">
       <div className="empty-icon" aria-hidden="true">
@@ -1173,6 +1225,16 @@ export function Inspector({
         </button>
       </>
     );
+  } else if (selection?.type === "elements") {
+    content = (
+      <>
+        <div className="inspector-heading">
+          <span className="kind-chip">selection</span>
+          <h2>{selection.ids.length} elements</h2>
+        </div>
+        {extractSection(selection.ids)}
+      </>
+    );
   } else if (selection?.type === "element") {
     const element = document.geometry.elements.find(
       (candidate) => candidate.id === selection.id,
@@ -1188,31 +1250,34 @@ export function Inspector({
         )
         .map((wire) => wire.id);
       content = (
-        <ElementInspector
-          element={element}
-          connectedWires={connectedWires}
-          surfaceFunction={
-            element.kind === "function" || element.kind === "project_call"
-              ? document.surfaceFunctions?.find(
-                  (candidate) =>
-                    candidate.templateId === element.properties.templateId,
-                )
-              : undefined
-          }
-          onBoundsChange={onBoundsChange}
-          onNatValueChange={onNatValueChange}
-          onBoolValueChange={onBoolValueChange}
-          onElementTypeChange={onElementTypeChange}
-          onApplyTypesChange={onApplyTypesChange}
-          onPairTypesChange={onPairTypesChange}
-          onSumTypesChange={onSumTypesChange}
-          onCaseTypesChange={onCaseTypesChange}
-          onListItemTypeChange={onListItemTypeChange}
-          onListRecTypesChange={onListRecTypesChange}
-          onFocusTemplate={onFocusTemplate}
-          onOpenStandardLibraryDefinition={onOpenStandardLibraryDefinition}
-          onError={onError}
-        />
+        <>
+          <ElementInspector
+            element={element}
+            connectedWires={connectedWires}
+            surfaceFunction={
+              element.kind === "function" || element.kind === "project_call"
+                ? document.surfaceFunctions?.find(
+                    (candidate) =>
+                      candidate.templateId === element.properties.templateId,
+                  )
+                : undefined
+            }
+            onBoundsChange={onBoundsChange}
+            onNatValueChange={onNatValueChange}
+            onBoolValueChange={onBoolValueChange}
+            onElementTypeChange={onElementTypeChange}
+            onApplyTypesChange={onApplyTypesChange}
+            onPairTypesChange={onPairTypesChange}
+            onSumTypesChange={onSumTypesChange}
+            onCaseTypesChange={onCaseTypesChange}
+            onListItemTypeChange={onListItemTypeChange}
+            onListRecTypesChange={onListRecTypesChange}
+            onFocusTemplate={onFocusTemplate}
+            onOpenStandardLibraryDefinition={onOpenStandardLibraryDefinition}
+            onError={onError}
+          />
+          {extractSection([element.id])}
+        </>
       );
     }
   } else if (selection?.type === "boundary") {
@@ -1583,7 +1648,9 @@ export function Inspector({
       {selection && (
         <section className="inspector-actions">
           <button type="button" onClick={onDelete} disabled={!canDelete}>
-            Delete {selection.type} {selection.id}
+            {selection.type === "elements"
+              ? `Delete ${selection.ids.length} elements`
+              : `Delete ${selection.type} ${selection.id}`}
           </button>
         </section>
       )}

@@ -300,6 +300,7 @@ export interface SurfaceProjectCall {
 
 export type Selection =
   | { type: "element"; id: StableId }
+  | { type: "elements"; ids: StableId[] }
   | { type: "boundary"; id: StableId; containerId: StableId }
   | { type: "container"; id: StableId }
   | { type: "wire"; id: StableId }
