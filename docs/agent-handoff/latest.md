@@ -3,6 +3,11 @@
 Read this file first when a new ChatGPT/Codex session needs the latest local
 agent context for this repository.
 
+Protocol:
+
+- [README.md](README.md) - required handoff, validation, push, deployment, and
+  watcher rules
+
 Pending task:
 
 - None

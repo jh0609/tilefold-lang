@@ -47,12 +47,19 @@ language.
 
 ## Agent Handoff
 
+- Follow the repository handoff protocol in
+  `docs/agent-handoff/README.md`. It defines validation SHA reporting,
+  implementation/handoff commit boundaries, push timing, deployment follow-up,
+  and watcher safety.
 - At the start of a new task, check `docs/agent-handoff/latest.md` when it
   exists. It records the latest completed agent work, validation results,
   deployment details, and known follow-up context.
 - When a task completes with changes that future sessions should know about,
   add an archive entry under `docs/agent-handoff/archive/` and update
   `docs/agent-handoff/latest.md`.
+- Prefer separate implementation and handoff commits, but push them together.
+  If executable or generated content changes after validation, rerun the
+  affected checks before reporting completion.
 
 ## Completion Reports
 
