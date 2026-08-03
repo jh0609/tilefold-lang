@@ -989,6 +989,114 @@ function mapSuccFixture(items) {
   });
 }
 
+function capturedNatRecStepFixture() {
+  const natToNat = { arrow: ["nat", "nat"] };
+  return JSON.stringify({
+    format: "tilefold-project",
+    version: 2,
+    geometry: {
+      snapTolerance: 8,
+      elements: [
+        { id: "entry-drop", kind: "drop", bounds: { x: 80, y: 92, width: 88, height: 56 }, properties: { type: "unit" }, portAnchors: [{ port: "input", x: 80, y: 120 }] },
+        { id: "increment", kind: "nat_literal", bounds: { x: 80, y: 170, width: 96, height: 56 }, properties: { value: "2" }, portAnchors: [{ port: "value", x: 176, y: 198 }] },
+        { id: "base", kind: "nat_literal", bounds: { x: 240, y: 250, width: 96, height: 56 }, properties: { value: "0" }, portAnchors: [{ port: "value", x: 336, y: 278 }] },
+        { id: "count", kind: "nat_literal", bounds: { x: 240, y: 330, width: 96, height: 56 }, properties: { value: "3" }, portAnchors: [{ port: "value", x: 336, y: 358 }] },
+        {
+          id: "captured-step-function",
+          kind: "function",
+          bounds: { x: 260, y: 148, width: 128, height: 72 },
+          properties: {
+            templateId: "capturedIncrementStep",
+            parameterType: "nat",
+            resultType: natToNat,
+            captures: [{ key: "increment", type: "nat" }],
+          },
+          portAnchors: [
+            { port: "increment", x: 260, y: 172 },
+            { port: "value", x: 388, y: 184 },
+          ],
+        },
+        {
+          id: "natrec",
+          kind: "nat_rec",
+          bounds: { x: 520, y: 162, width: 160, height: 130 },
+          properties: { type: "nat" },
+          portAnchors: [
+            { port: "base", x: 520, y: 188 },
+            { port: "step", x: 520, y: 228 },
+            { port: "count", x: 520, y: 268 },
+            { port: "result", x: 680, y: 227 },
+          ],
+        },
+        { id: "step-drop-index", kind: "drop", bounds: { x: 1040, y: 44, width: 88, height: 56 }, properties: { type: "nat" }, portAnchors: [{ port: "input", x: 1040, y: 72 }] },
+        {
+          id: "step-add",
+          kind: "library_call",
+          bounds: { x: 1160, y: 152, width: 156, height: 106 },
+          properties: {
+            library: "tilefold.std",
+            functionId: "nat.add",
+            templateId: "tilefold.std.nat.add",
+            version: "v1",
+          },
+          portAnchors: [
+            { port: "arg_0", x: 1160, y: 180 },
+            { port: "arg_1", x: 1160, y: 230 },
+            { port: "result", x: 1316, y: 205 },
+          ],
+        },
+      ],
+      containers: [
+        {
+          id: "entry",
+          kind: { kind: "entry", templateId: "entry-template", resultType: "nat", dependencies: ["capturedIncrementStep", "tilefold.std.nat.add"] },
+          bounds: { x: 0, y: 0, width: 820, height: 420 },
+          boundaryPorts: [
+            { id: "entry-parameter", role: "parameter", type: "unit", anchor: { x: 0, y: 120 } },
+            { id: "entry-result", role: "result", type: "nat", anchor: { x: 820, y: 220 } },
+          ],
+        },
+        {
+          id: "capturedIncrementStep-body",
+          kind: { kind: "template", templateId: "capturedIncrementStep", parameterType: "nat", resultType: "nat", dependencies: ["tilefold.std.nat.add"] },
+          bounds: { x: 960, y: 0, width: 560, height: 320 },
+          boundaryPorts: [
+            { id: "step-index", role: "parameter", type: "nat", anchor: { x: 0, y: 72 } },
+            { id: "step-previous", role: "parameter", type: "nat", anchor: { x: 0, y: 136 } },
+            { id: "step-capture-increment", role: "capture", captureKey: "increment", type: "nat", anchor: { x: 0, y: 204 } },
+            { id: "step-result", role: "result", type: "nat", anchor: { x: 560, y: 204 } },
+          ],
+        },
+      ],
+      wires: [
+        wire("w-entry-param", boundaryPort("entry", "entry-parameter"), elementPort("entry-drop", "input"), [{ x: 0, y: 120 }, { x: 80, y: 120 }]),
+        wire("w-increment-capture", elementPort("increment", "value"), elementPort("captured-step-function", "increment"), [{ x: 176, y: 198 }, { x: 260, y: 172 }]),
+        wire("w-step-function", elementPort("captured-step-function", "value"), elementPort("natrec", "step"), [{ x: 388, y: 184 }, { x: 520, y: 228 }]),
+        wire("w-base", elementPort("base", "value"), elementPort("natrec", "base"), [{ x: 336, y: 278 }, { x: 520, y: 188 }]),
+        wire("w-count", elementPort("count", "value"), elementPort("natrec", "count"), [{ x: 336, y: 358 }, { x: 520, y: 268 }]),
+        wire("w-natrec-result", elementPort("natrec", "result"), boundaryPort("entry", "entry-result"), [{ x: 680, y: 227 }, { x: 820, y: 220 }]),
+        wire("w-step-index", boundaryPort("capturedIncrementStep-body", "step-index"), elementPort("step-drop-index", "input"), [{ x: 960, y: 72 }, { x: 1040, y: 72 }]),
+        wire("w-step-previous", boundaryPort("capturedIncrementStep-body", "step-previous"), elementPort("step-add", "arg_0"), [{ x: 960, y: 136 }, { x: 1160, y: 180 }]),
+        wire("w-step-capture", boundaryPort("capturedIncrementStep-body", "step-capture-increment"), elementPort("step-add", "arg_1"), [{ x: 960, y: 204 }, { x: 1160, y: 230 }]),
+        wire("w-step-add-result", elementPort("step-add", "result"), boundaryPort("capturedIncrementStep-body", "step-result"), [{ x: 1316, y: 205 }, { x: 1520, y: 204 }]),
+      ],
+      junctions: [],
+    },
+    surfaceFunctions: [
+      {
+        name: "capturedIncrementStep",
+        templateId: "capturedIncrementStep",
+        bodyContainerId: "capturedIncrementStep-body",
+        parameters: [
+          { name: "index", type: "nat" },
+          { name: "previous", type: "nat" },
+        ],
+        result: { name: "result", type: "nat" },
+      },
+    ],
+  });
+}
+
 const fixtures = new Map([
   ["example", exampleText],
   ["nat-zero", withNat("0")],
@@ -1207,6 +1315,8 @@ fixtures.set("list-sum-three", sumFixture([1, 2, 3]));
 fixtures.set("list-sum-three-fast", { mode: "fast", projectJson: sumFixture([1, 2, 3]) });
 fixtures.set("list-mapSucc-three", mapSuccFixture([1, 2, 3]));
 fixtures.set("list-mapSucc-three-fast", { mode: "fast", projectJson: mapSuccFixture([1, 2, 3]) });
+fixtures.set("captured-natrec-step", capturedNatRecStepFixture());
+fixtures.set("captured-natrec-step-fast", { mode: "fast", projectJson: capturedNatRecStepFixture() });
 fixtures.set("standard-library-equal-big-fast", {
   mode: "fast",
   projectJson: foldedStandardCallProject({
@@ -1278,6 +1388,8 @@ const resultExpectations = new Map([
   ["list-sum-three-fast", "Nat(6)"],
   ["list-mapSucc-three", "List[Nat(2), Nat(3), Nat(4)]"],
   ["list-mapSucc-three-fast", "List[Nat(2), Nat(3), Nat(4)]"],
+  ["captured-natrec-step", "Nat(6)"],
+  ["captured-natrec-step-fast", "Nat(6)"],
   ["option-safe-pred-get-or-else", "Nat(4)"],
   ["option-safe-pred-get-or-else-fast", "Nat(4)"],
   ["list-nat", "List[Nat(1), Nat(2), Nat(3)]"],

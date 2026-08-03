@@ -1193,6 +1193,171 @@ let () =
   in
   assert (member "status" flat_capture_result = `String "completed");
   assert (member "result" flat_capture_result = `String "Nat(5)");
+  let flat_capture_fast_result =
+    E.run_json_with_mode (P.encode_json flat_capture_project) ~mode:"fast"
+    |> Yojson.Safe.from_string
+  in
+  assert (member "status" flat_capture_fast_result = `String "completed");
+  assert (member "result" flat_capture_fast_result = `String "Nat(5)");
+  let captured_natrec_step_project : P.t =
+    {
+      format = "tilefold-project";
+      version = 2;
+      snap_tolerance = 8;
+      view = None;
+      junctions = [];
+      surface_project_calls = [];
+      surface_functions =
+        [
+          {
+            name = "capturedIncrementStep";
+            template_id = "capturedIncrementStep";
+            body_container_id = "capturedIncrementStep-body";
+            parameters =
+              [
+                { name = "index"; typ = Tilefold.Core_type.Nat };
+                { name = "previous"; typ = Tilefold.Core_type.Nat };
+              ];
+            result_name = "result";
+            result_type = Tilefold.Core_type.Nat;
+          };
+        ];
+      containers =
+        [
+          {
+            id = "entry";
+            bounds = bounds 0 0 820 420;
+            kind =
+              P.Entry
+                {
+                  template_id = "entry-template";
+                  result_type = Tilefold.Core_type.Nat;
+                  dependencies = [ "capturedIncrementStep"; "tilefold.std.nat.add" ];
+                };
+            boundary_ports =
+              [
+                boundary "entry-parameter" P.Parameter Tilefold.Core_type.Unit 0 120;
+                boundary "entry-result" P.Result Tilefold.Core_type.Nat 820 220;
+              ];
+          };
+          {
+            id = "capturedIncrementStep-body";
+            bounds = bounds 960 0 560 320;
+            kind =
+              P.Template
+                {
+                  template_id = "capturedIncrementStep";
+                  parameter_type = Tilefold.Core_type.Nat;
+                  result_type = Tilefold.Core_type.Nat;
+                  dependencies = [ "tilefold.std.nat.add" ];
+                };
+            boundary_ports =
+              [
+                boundary "step-index" P.Parameter Tilefold.Core_type.Nat 0 72;
+                boundary "step-previous" P.Parameter Tilefold.Core_type.Nat 0 136;
+                boundary "step-capture-increment" (P.Capture "increment")
+                  Tilefold.Core_type.Nat 0 204;
+                boundary "step-result" P.Result Tilefold.Core_type.Nat 560 204;
+              ];
+          };
+        ];
+      elements =
+        [
+          element "entry-drop" (P.Drop Tilefold.Core_type.Unit) (bounds 80 92 88 56)
+            [ anchor "input" 80 120 ];
+          element "increment" (P.Nat_literal "2") (bounds 80 170 96 56)
+            [ anchor "value" 176 198 ];
+          element "base" (P.Nat_literal "0") (bounds 240 250 96 56)
+            [ anchor "value" 336 278 ];
+          element "count" (P.Nat_literal "3") (bounds 240 330 96 56)
+            [ anchor "value" 336 358 ];
+          element
+            "captured-step-function"
+            (P.Function
+               {
+                 template_id = "capturedIncrementStep";
+                 parameter_type = Tilefold.Core_type.Nat;
+                 result_type =
+                   Tilefold.Core_type.Arrow
+                     (Tilefold.Core_type.Nat, Tilefold.Core_type.Nat);
+                 captures = [ ("increment", Tilefold.Core_type.Nat) ];
+               })
+            (bounds 260 148 128 72)
+            [ anchor "increment" 260 172; anchor "value" 388 184 ];
+          element
+            "natrec"
+            (P.NatRec Tilefold.Core_type.Nat)
+            (bounds 520 162 160 130)
+            [
+              anchor "base" 520 188;
+              anchor "step" 520 228;
+              anchor "count" 520 268;
+              anchor "result" 680 227;
+            ];
+          element "step-drop-index" (P.Drop Tilefold.Core_type.Nat) (bounds 1040 44 88 56)
+            [ anchor "input" 1040 72 ];
+          element
+            "step-add"
+            (P.Library_call
+               {
+                 library = "tilefold.std";
+                 function_id = "nat.add";
+                 template_id = "tilefold.std.nat.add";
+                 version = "v1";
+               })
+            (bounds 1160 152 156 106)
+            [
+              anchor "arg_0" 1160 180;
+              anchor "arg_1" 1160 230;
+              anchor "result" 1316 205;
+            ];
+        ];
+      wires =
+        [
+          wire "w-entry-param" (boundary_port "entry" "entry-parameter")
+            (element_port "entry-drop" "input")
+            [ pt 0 120; pt 80 120 ];
+          wire "w-increment-capture" (element_port "increment" "value")
+            (element_port "captured-step-function" "increment")
+            [ pt 176 198; pt 260 172 ];
+          wire "w-step-function" (element_port "captured-step-function" "value")
+            (element_port "natrec" "step")
+            [ pt 388 184; pt 520 228 ];
+          wire "w-base" (element_port "base" "value")
+            (element_port "natrec" "base")
+            [ pt 336 278; pt 520 188 ];
+          wire "w-count" (element_port "count" "value")
+            (element_port "natrec" "count")
+            [ pt 336 358; pt 520 268 ];
+          wire "w-natrec-result" (element_port "natrec" "result")
+            (boundary_port "entry" "entry-result")
+            [ pt 680 227; pt 820 220 ];
+          wire "w-step-index" (boundary_port "capturedIncrementStep-body" "step-index")
+            (element_port "step-drop-index" "input")
+            [ pt 960 72; pt 1040 72 ];
+          wire "w-step-previous" (boundary_port "capturedIncrementStep-body" "step-previous")
+            (element_port "step-add" "arg_0")
+            [ pt 960 136; pt 1160 180 ];
+          wire "w-step-capture" (boundary_port "capturedIncrementStep-body" "step-capture-increment")
+            (element_port "step-add" "arg_1")
+            [ pt 960 204; pt 1160 230 ];
+          wire "w-step-add-result" (element_port "step-add" "result")
+            (boundary_port "capturedIncrementStep-body" "step-result")
+            [ pt 1316 205; pt 1520 204 ];
+        ];
+    }
+  in
+  let captured_natrec_step_trace =
+    project_execution_result captured_natrec_step_project
+  in
+  assert (member "status" captured_natrec_step_trace = `String "completed");
+  assert (member "result" captured_natrec_step_trace = `String "Nat(6)");
+  let captured_natrec_step_fast =
+    E.run_json_with_mode (P.encode_json captured_natrec_step_project) ~mode:"fast"
+    |> Yojson.Safe.from_string
+  in
+  assert (member "status" captured_natrec_step_fast = `String "completed");
+  assert (member "result" captured_natrec_step_fast = `String "Nat(6)");
   let factorial_project : P.t =
     {
       format = "tilefold-project";

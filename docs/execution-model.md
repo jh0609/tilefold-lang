@@ -159,6 +159,13 @@ Closure invariants:
 Physical sharing of immutable template or closure payloads is allowed only when
 it does not merge logical value identity or change trace observations.
 
+Trace and Fast are observationally equivalent execution strategies for every
+validated Core program. They accept the same closure values, capture bindings,
+ordinary `Apply`, and higher-order uses such as `NatRec.step`; they produce the
+same final value and completion class. Trace additionally records Core rewrite
+events and intermediate ownership/provenance details, while Fast computes the
+same meaning without preserving every raw rewrite event.
+
 ### Apply Instance
 
 Status: Current implementation for depth-first function calls.

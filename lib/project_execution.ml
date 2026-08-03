@@ -59,6 +59,7 @@ module Fast = struct
     | Project_closure of {
         template_id : string;
         args : value list;
+        captures : (string * value) list;
       }
     | Std_closure of {
         function_id : Standard_library.function_id;
@@ -252,7 +253,7 @@ module Fast = struct
         | None -> fail ("Result boundary is not connected in " ^ container.id)
         | Some source -> eval_source state document env source)
 
-  and eval_project_function state document function_info args =
+  and eval_project_function state document function_info ~captures args =
     if List.length args <> List.length function_info.P.parameters then
       fail
         ("Fast Project function " ^ function_info.name ^ " received the wrong arity")
@@ -279,15 +280,49 @@ module Fast = struct
               ^ function_info.name
               ^ " parameter boundary count does not match its signature")
           else
-          let env =
-            List.map2
-              (fun (boundary : P.boundary_port) value ->
-                ((function_info.body_container_id, boundary.id), value))
-              parameter_boundaries args
+          let capture_boundaries =
+            container.P.boundary_ports
+            |> List.filter_map (fun (boundary : P.boundary_port) ->
+                   match boundary.role with
+                   | P.Capture key -> Some (key, boundary)
+                   | _ -> None)
+            |> List.sort (fun (left_key, (left : P.boundary_port)) (right_key, right) ->
+                   match String.compare left_key right_key with
+                   | 0 -> String.compare left.id right.id
+                   | order -> order)
           in
-          eval_boundary_result state document env container
+          let sorted_captures =
+            captures
+            |> List.sort (fun (left_key, _) (right_key, _) ->
+                   String.compare left_key right_key)
+          in
+          let capture_keys =
+            List.map fst capture_boundaries
+          in
+          let actual_capture_keys =
+            List.map fst sorted_captures
+          in
+          if capture_keys <> actual_capture_keys then
+            fail
+              ("Fast Project function "
+              ^ function_info.name
+              ^ " capture bindings do not match its signature")
+          else
+            let parameter_env =
+              List.map2
+                (fun (boundary : P.boundary_port) value ->
+                  ((function_info.body_container_id, boundary.id), value))
+                parameter_boundaries args
+            in
+            let capture_env =
+              List.map2
+                (fun (_key, (boundary : P.boundary_port)) (_key, value) ->
+                  ((function_info.body_container_id, boundary.id), value))
+                capture_boundaries sorted_captures
+            in
+            eval_boundary_result state document (parameter_env @ capture_env) container
 
-  and apply_project_function state document ~template_id ~args argument =
+  and apply_project_function_with_captures state document ~template_id ~captures ~args argument =
     match surface_function_by_template_id document template_id with
     | None -> fail ("Fast execution cannot evaluate Project function " ^ template_id)
     | Some function_info -> (
@@ -300,8 +335,8 @@ module Fast = struct
             else
               let args = args @ [ argument ] in
               if List.length args = List.length function_info.parameters then
-                eval_project_function state document function_info args
-              else Ok (Project_closure { template_id; args }))
+                eval_project_function state document function_info ~captures args
+              else Ok (Project_closure { template_id; args; captures }))
 
   and eval_natrec state document env element_id =
     match
@@ -315,12 +350,16 @@ module Fast = struct
           else
             let index_value = Nat index in
             match step with
-            | Project_closure { template_id; args } -> (
-                match apply_project_function state document ~template_id ~args index_value with
+            | Project_closure { template_id; args; captures } -> (
+                match
+                  apply_project_function_with_captures state document ~template_id
+                    ~captures ~args index_value
+                with
                 | Ok (Project_closure partial) -> (
                     match
-                      apply_project_function state document
-                        ~template_id:partial.template_id ~args:partial.args previous
+                      apply_project_function_with_captures state document
+                        ~template_id:partial.template_id ~captures:partial.captures
+                        ~args:partial.args previous
                     with
                     | Ok next -> loop (Nat.succ index) next
                     | Error _ as error -> error)
@@ -361,8 +400,8 @@ module Fast = struct
     match function_value with
     | Std_closure { function_id; subject; args } ->
         apply_standard_closure state ~function_id ~subject ~args argument
-    | Project_closure { template_id; args } ->
-        apply_project_function state document ~template_id ~args argument
+    | Project_closure { template_id; args; captures } ->
+        apply_project_function_with_captures state document ~template_id ~captures ~args argument
     | _ -> fail "Case branch input must be a function."
 
   and eval_element_port state document env element_id port =
@@ -466,9 +505,21 @@ module Fast = struct
             | Error _ as error -> error)
         | P.Copy _, ("left" | "right") -> eval_input state document env element_id "input"
         | P.Function { template_id; captures; _ }, "value" -> (
-            if captures <> [] then
-              fail "Fast execution supports only capture-free Function references."
-            else
+            let rec collect_captures acc = function
+              | [] -> Ok (List.rev acc)
+              | (key, typ) :: rest -> (
+                  match eval_input state document env element_id key with
+                  | Ok value when type_matches typ value ->
+                      collect_captures ((key, value) :: acc) rest
+                  | Ok _ ->
+                      fail
+                        ("Fast Function capture " ^ template_id ^ "." ^ key
+                       ^ " type does not match its signature.")
+                  | Error _ as error -> error)
+            in
+            match collect_captures [] captures with
+            | Error _ as error -> error
+            | Ok captured_values -> (
               match CG.Function_template_id.of_string template_id with
               | Error message -> fail message
               | Ok template_id -> (
@@ -476,13 +527,20 @@ module Fast = struct
                   | None -> (
                       let template_id = CG.Function_template_id.to_string template_id in
                       match surface_function_by_template_id document template_id with
-                      | Some _ -> Ok (Project_closure { template_id; args = [] })
+                      | Some _ ->
+                          Ok
+                            (Project_closure
+                               { template_id; args = []; captures = captured_values })
                       | None ->
                           fail
                             ("Fast execution cannot evaluate Project function "
                            ^ template_id))
                   | Some function_id ->
-                      Ok (Std_closure { function_id; subject = element_id; args = [] })))
+                      if captured_values <> [] then
+                        fail
+                          "Fast execution cannot bind captures on Standard Library Function references."
+                      else
+                        Ok (Std_closure { function_id; subject = element_id; args = [] }))))
         | P.Apply _, "result" -> (
             match
               ( eval_input state document env element_id "function",
@@ -490,8 +548,8 @@ module Fast = struct
             with
             | Ok (Std_closure { function_id; subject; args }), Ok argument -> (
                 apply_standard_closure state ~function_id ~subject ~args argument)
-            | Ok (Project_closure { template_id; args }), Ok argument ->
-                apply_project_function state document ~template_id ~args argument
+            | Ok (Project_closure { template_id; args; captures }), Ok argument ->
+                apply_project_function_with_captures state document ~template_id ~captures ~args argument
             | Ok _, Ok _ -> fail "Fast Apply requires a Standard Library function."
             | Error message, _ | _, Error message -> fail message)
         | P.Library_call { template_id; _ }, "result" -> (
@@ -538,7 +596,7 @@ module Fast = struct
                       | Error _ as error -> error)
                 in
                 (match collect 0 [] function_info.parameters with
-                | Ok args -> eval_project_function state document function_info args
+                | Ok args -> eval_project_function state document function_info ~captures:[] args
                 | Error _ as error -> error))
         | P.BoolRec _, "result" -> (
             match

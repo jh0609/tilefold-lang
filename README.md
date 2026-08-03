@@ -45,8 +45,10 @@ shows that selected value type directly in canvas titles such as `NatRec<Nat>`,
 This is an editor UX rule only; Core semantics, Project JSON v2, Trace Run, and
 Fast Run use the same typed `NatRec[A]` and `BoolRec[A]` graph model.
 Trace Run records the transparent Core rewrite trace; Fast Run shares the same
-decode, validation, and lowering preflight, then computes supported programs
-without materializing every raw rewrite event.
+decode, validation, and lowering preflight, then computes the same final
+meaning for every validated Core program without materializing every raw
+rewrite event. Both execution strategies use the same closure and capture
+semantics; Fast Run only omits the detailed intermediate trace.
 
 ### Type Auto-Matching
 
