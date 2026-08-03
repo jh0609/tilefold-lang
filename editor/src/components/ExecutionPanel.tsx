@@ -1,8 +1,8 @@
 import type {
   ExecutionResponse,
-  ExecutionTraceEvent,
 } from "../model/executionApi";
 import type { SourceDiagnostic } from "../model/sourceDiagnostics";
+import type { TraceStore } from "../model/traceStore";
 import { TraceInspector } from "./TraceInspector";
 
 export type ExecutionState =
@@ -10,13 +10,18 @@ export type ExecutionState =
   | {
       status: "running";
       mode: "transparent" | "fast";
-      trace: ExecutionTraceEvent[];
+      traceStore: TraceStore;
+      traceCount: number;
+      traceVersion: number;
       selectedTraceIndex: number | null;
       replayFastResult?: string;
     }
   | {
       status: "completed";
       response: ExecutionResponse;
+      traceStore: TraceStore;
+      traceCount: number;
+      traceVersion: number;
       selectedTraceIndex: number | null;
       traceReplayProjectJson?: string;
     }
@@ -39,7 +44,8 @@ export function ExecutionPanel({
   onDiagnosticSelect,
 }: ExecutionPanelProps) {
   const execution = state.status === "completed" ? state.response : null;
-  const runningTrace = state.status === "running" ? state.trace : [];
+  const runningTraceStore = state.status === "running" ? state.traceStore : null;
+  const runningTraceCount = state.status === "running" ? state.traceCount : 0;
   const runningSelectedTraceIndex =
     state.status === "running" ? state.selectedTraceIndex : null;
   const diagnostics =
@@ -55,19 +61,20 @@ export function ExecutionPanel({
         <>
           <p role="status" aria-live="polite">
             {state.mode === "fast"
-              ? "Running Fast Run…"
-              : state.replayFastResult
-                ? `Trace 보기 · 다시 실행 중… ${runningTrace.length} steps`
-                : `Running Trace Run… ${runningTrace.length} steps`}
+                ? "Running Fast Run…"
+                : state.replayFastResult
+                ? `Trace 보기 · 다시 실행 중… ${runningTraceCount} steps`
+                : `Running Trace Run… ${runningTraceCount} steps`}
           </p>
           {state.replayFastResult && (
             <p>
               Fast result: <strong>{state.replayFastResult}</strong>
             </p>
           )}
-          {runningSelectedTraceIndex !== null && runningTrace.length > 0 ? (
+          {runningSelectedTraceIndex !== null && runningTraceStore && runningTraceCount > 0 ? (
             <TraceInspector
-              trace={runningTrace}
+              traceStore={runningTraceStore}
+              traceCount={runningTraceCount}
               selectedIndex={runningSelectedTraceIndex}
               sourceElementId={traceSourceElementId}
               onSelect={onTraceSelect}
@@ -151,7 +158,8 @@ export function ExecutionPanel({
           {state.status === "completed" &&
           state.selectedTraceIndex !== null ? (
             <TraceInspector
-              trace={execution.trace}
+              traceStore={state.traceStore}
+              traceCount={state.traceCount}
               selectedIndex={state.selectedTraceIndex}
               sourceElementId={traceSourceElementId}
               onSelect={onTraceSelect}

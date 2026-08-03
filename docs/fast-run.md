@@ -45,6 +45,14 @@ events to the panel in order as they are produced, and checks that the Trace
 final value matches the Fast result. Editing the document invalidates the Fast
 result and its replay snapshot through the normal execution invalidation path.
 
+Trace replay stores received events in append-only chunks in the editor instead
+of repeatedly copying one growing JavaScript array. The Trace inspector renders a
+bounded window around the selected step, so long traces do not create one DOM row
+per event. The OCaml reference engine stores its internal trace list by consing
+new events and reverses it only when an ordered full trace is requested. These
+optimizations do not change rewrite order or event contents; they only remove
+trace-length-dependent storage and rendering overhead.
+
 Cancellation continues to use the existing browser Worker lifecycle. Canceling
 terminates the worker, so a late response from the canceled execution cannot
 overwrite a later run.

@@ -7,6 +7,7 @@ import {
   initialTraceIndex,
   traceEventAt,
 } from "./traceInspector";
+import { TraceStore } from "./traceStore";
 
 const completed: ExecutionResponse = {
   status: "completed",
@@ -32,10 +33,14 @@ describe("trace inspector state", () => {
   });
 
   it("never returns an event outside the current trace", () => {
-    expect(traceEventAt(completed, 1)).toEqual(completed.trace[1]);
-    expect(traceEventAt(completed, -1)).toBeNull();
-    expect(traceEventAt(completed, 2)).toBeNull();
-    expect(traceEventAt(completed, null)).toBeNull();
+    const traceStore = new TraceStore();
+    traceStore.appendBatch(completed.trace);
+    expect(traceEventAt(traceStore, traceStore.length, 1)).toEqual(
+      completed.trace[1],
+    );
+    expect(traceEventAt(traceStore, traceStore.length, -1)).toBeNull();
+    expect(traceEventAt(traceStore, traceStore.length, 2)).toBeNull();
+    expect(traceEventAt(traceStore, traceStore.length, null)).toBeNull();
   });
 
   it("maps only an exact Project element stable ID", () => {

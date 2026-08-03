@@ -206,7 +206,7 @@ module Machine = struct
     | Some instance -> instance.result_value
     | None -> None
 
-  let trace_events machine = machine.trace_events
+  let trace_events machine = List.rev machine.trace_events
 
   let node_state machine ~instance_id node_id =
     match instance_by_id machine instance_id with
@@ -254,7 +254,8 @@ module Machine = struct
              binding_values @ lifecycle_values @ result_values)
     in
     let created_values =
-      machine.trace_events |> List.concat_map (fun event -> event.Rewrite_event.created)
+      trace_events machine
+      |> List.concat_map (fun event -> event.Rewrite_event.created)
     in
     let rec add_unique seen = function
       | [] -> List.rev seen
@@ -628,7 +629,7 @@ let bind_boundary_output instance node_id value =
 let append_event machine event =
   {
     machine with
-    Machine.trace_events = machine.Machine.trace_events @ [ event ];
+    Machine.trace_events = event :: machine.Machine.trace_events;
     next_event_index = machine.Machine.next_event_index + 1;
   }
 

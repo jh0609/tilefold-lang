@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { TraceStore } from "../model/traceStore";
 import { ExecutionPanel, type ExecutionState } from "./ExecutionPanel";
 
 function renderPanel(state: ExecutionState, onViewTrace = vi.fn()) {
@@ -29,6 +30,9 @@ describe("ExecutionPanel trace replay", () => {
           summary:
             "Fast Run completed without materializing Core rewrite events.",
         },
+        traceStore: new TraceStore(),
+        traceCount: 0,
+        traceVersion: 0,
         selectedTraceIndex: null,
         traceReplayProjectJson: "{}",
       },
@@ -42,14 +46,18 @@ describe("ExecutionPanel trace replay", () => {
   });
 
   it("shows streamed trace events while replay is still running", () => {
+    const traceStore = new TraceStore();
+    traceStore.appendBatch([
+      { index: 0, rule: "Function", subject: "step_function" },
+      { index: 1, rule: "NatRecStart", subject: "natrec_1" },
+    ]);
     renderPanel({
       status: "running",
       mode: "transparent",
       replayFastResult: "Bool(True)",
-      trace: [
-        { index: 0, rule: "Function", subject: "step_function" },
-        { index: 1, rule: "NatRecStart", subject: "natrec_1" },
-      ],
+      traceStore,
+      traceCount: traceStore.length,
+      traceVersion: 1,
       selectedTraceIndex: 0,
     });
 

@@ -708,6 +708,7 @@ type trace_session = {
   package : Program_package.t;
   mutable machine : Engine.Machine.t;
   mutable executed_steps : Nat.t;
+  mutable event_count : int;
 }
 
 let next_trace_session_id = ref 1
@@ -741,7 +742,7 @@ let start_trace_session_json project_json =
                 let session_id = !next_trace_session_id in
                 incr next_trace_session_id;
                 Hashtbl.replace trace_sessions session_id
-                  { package; machine; executed_steps = Nat.zero };
+                  { package; machine; executed_steps = Nat.zero; event_count = 0 };
                 `Assoc
                   [
                     ("status", `String "started");
@@ -765,15 +766,14 @@ let trace_session_next_json ~session_id ~batch_size =
               [
                 ("status", `String "trace_batch");
                 ("trace", trace_batch (List.rev acc));
-                ( "rewriteCount",
-                  `Int (List.length (Engine.Machine.trace_events session.machine))
-                );
+                ("rewriteCount", `Int session.event_count);
               ]
           else
             match Program_package.step session.machine with
             | Engine.Rewritten { machine; event } ->
                 session.machine <- machine;
                 session.executed_steps <- Nat.succ session.executed_steps;
+                session.event_count <- session.event_count + 1;
                 loop (remaining - 1) (event :: acc)
             | Engine.Completed value ->
                 Hashtbl.remove trace_sessions session_id;
@@ -786,10 +786,7 @@ let trace_session_next_json ~session_id ~batch_size =
                       ("status", `String "completed");
                       ("mode", `String "transparent");
                       ("result", `String (result_value value));
-                      ( "rewriteCount",
-                        `Int
-                          (List.length
-                             (Engine.Machine.trace_events session.machine)) );
+                      ("rewriteCount", `Int session.event_count);
                       ("trace", trace_batch (List.rev acc));
                     ]
                 else

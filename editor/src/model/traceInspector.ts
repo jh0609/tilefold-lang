@@ -1,24 +1,25 @@
 import type { ExecutionResponse, ExecutionTraceEvent } from "./executionApi";
 import type { ProjectDocument } from "./project";
+import type { TraceStore } from "./traceStore";
 
 export function initialTraceIndex(response: ExecutionResponse): number | null {
   return response.status === "completed" && response.trace.length > 0 ? 0 : null;
 }
 
 export function traceEventAt(
-  response: ExecutionResponse,
+  traceStore: TraceStore,
+  traceCount: number,
   index: number | null,
 ): ExecutionTraceEvent | null {
   if (
-    response.status !== "completed" ||
     index === null ||
     !Number.isInteger(index) ||
     index < 0 ||
-    index >= response.trace.length
+    index >= traceCount
   ) {
     return null;
   }
-  return response.trace[index];
+  return traceStore.get(index) ?? null;
 }
 
 export function exactTraceElementId(

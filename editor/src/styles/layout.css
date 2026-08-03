@@ -266,6 +266,12 @@
   min-width: 0;
 }
 
+.trace-window-boundary {
+  color: var(--text-muted);
+  font-size: var(--font-small);
+  text-align: center;
+}
+
 .trace-inspector {
   display: grid;
   gap: 8px;

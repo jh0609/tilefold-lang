@@ -172,7 +172,7 @@ export function createBrowserExecutionBackend(
         generation: number;
         signal?: AbortSignal;
         onAbort?: () => void;
-        traceEvents: ExecutionTraceEvent[];
+        traceEvents: ExecutionTraceEvent[] | null;
         onTraceBatch?: (events: ExecutionTraceEvent[]) => void;
         resolve: (response: ExecutionResponse) => void;
         reject: (error: Error) => void;
@@ -232,8 +232,8 @@ export function createBrowserExecutionBackend(
       if (data.traceBatch) {
         try {
           const events = parseTraceBatch(data.traceBatch);
-          request.traceEvents.push(...events);
-          request.onTraceBatch?.(events);
+          if (request.onTraceBatch) request.onTraceBatch(events);
+          else request.traceEvents?.push(...events);
         } catch (error) {
           finish(request, {
             type: "reject",
@@ -248,7 +248,9 @@ export function createBrowserExecutionBackend(
       try {
         const response = parseExecutionResponse(data.output ?? "");
         const mergedResponse =
-          response.status === "completed" && request.traceEvents.length > 0
+          response.status === "completed" &&
+          request.traceEvents !== null &&
+          request.traceEvents.length > 0
             ? {
                 ...response,
                 trace: [...request.traceEvents, ...response.trace],
@@ -323,7 +325,7 @@ export function createBrowserExecutionBackend(
           requestId,
           generation,
           signal: options?.signal,
-          traceEvents: [],
+          traceEvents: options?.onTraceBatch ? null : [],
           onTraceBatch: options?.onTraceBatch,
           resolve,
           reject,

@@ -106,7 +106,7 @@ describe("browser execution backend", () => {
     });
   });
 
-  it("streams trace batches and merges them into the completed response", async () => {
+  it("streams trace batches without duplicating storage when a callback consumes them", async () => {
     const worker = new FakeWorker();
     const backend = createBrowserExecutionBackend(() => worker);
     const batches: unknown[] = [];
@@ -132,14 +132,35 @@ describe("browser execution backend", () => {
 
     await expect(pending).resolves.toMatchObject({
       result: "Unit",
+      trace: [{ index: 1, rule: "Drop", subject: "drop_1" }],
+    });
+    expect(batches).toEqual([
+      [{ index: 0, rule: "Unit", subject: "unit_1" }],
+    ]);
+  });
+
+  it("merges streamed batches into the completed response when no callback consumes them", async () => {
+    const worker = new FakeWorker();
+    const backend = createBrowserExecutionBackend(() => worker);
+    const pending = backend.run("{}", { mode: "transparent" });
+    worker.traceBatch(1, {
+      status: "trace_batch",
+      trace: [{ index: 0, rule: "Unit", subject: "unit_1" }],
+    });
+    worker.respond(1, {
+      status: "completed",
+      result: "Unit",
+      rewriteCount: 2,
+      trace: [{ index: 1, rule: "Drop", subject: "drop_1" }],
+    });
+
+    await expect(pending).resolves.toMatchObject({
+      result: "Unit",
       trace: [
         { index: 0, rule: "Unit", subject: "unit_1" },
         { index: 1, rule: "Drop", subject: "drop_1" },
       ],
     });
-    expect(batches).toEqual([
-      [{ index: 0, rule: "Unit", subject: "unit_1" }],
-    ]);
   });
 
   it("terminates the worker and settles active work as cancellation", async () => {

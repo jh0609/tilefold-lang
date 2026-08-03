@@ -63,6 +63,7 @@ import {
   initialTraceIndex,
   traceEventAt,
 } from "./model/traceInspector";
+import { TraceStore } from "./model/traceStore";
 import {
   diagnosticSourceSelection,
   preflightProjectDiagnostics,
@@ -184,12 +185,13 @@ export function App() {
   const selectedTraceEvent =
     executionState.status === "completed"
       ? traceEventAt(
-          executionState.response,
+          executionState.traceStore,
+          executionState.traceCount,
           executionState.selectedTraceIndex,
         )
       : executionState.status === "running" &&
           executionState.selectedTraceIndex !== null
-        ? (executionState.trace[executionState.selectedTraceIndex] ?? null)
+        ? (executionState.traceStore.get(executionState.selectedTraceIndex) ?? null)
         : null;
   const traceHighlightedElementId = useMemo(
     () => exactTraceElementId(document, selectedTraceEvent),
@@ -276,8 +278,9 @@ export function App() {
       if (executionRequest.current !== request || current.status !== "running") {
         return current;
       }
-      const previousLength = current.trace.length;
-      const trace = [...current.trace, ...events];
+      const previousLength = current.traceCount;
+      current.traceStore.appendBatch(events);
+      const traceCount = current.traceStore.length;
       const wasFollowing =
         current.selectedTraceIndex !== null &&
         current.selectedTraceIndex === previousLength - 1;
@@ -285,9 +288,14 @@ export function App() {
         current.selectedTraceIndex === null
           ? 0
           : wasFollowing
-            ? trace.length - 1
+            ? traceCount - 1
             : current.selectedTraceIndex;
-      return { ...current, trace, selectedTraceIndex };
+      return {
+        ...current,
+        traceCount,
+        traceVersion: current.traceVersion + 1,
+        selectedTraceIndex,
+      };
     });
   }
 
@@ -298,10 +306,12 @@ export function App() {
     if (
       current.status === "running" &&
       current.selectedTraceIndex !== null &&
-      response.status === "completed" &&
-      current.selectedTraceIndex < response.trace.length
+      current.selectedTraceIndex < current.traceCount
     ) {
       return current.selectedTraceIndex;
+    }
+    if (current.status === "running" && current.traceCount > 0) {
+      return 0;
     }
     return initialTraceIndex(response);
   }
@@ -316,7 +326,9 @@ export function App() {
     setExecutionState({
       status: "running",
       mode,
-      trace: [],
+      traceStore: new TraceStore(),
+      traceCount: 0,
+      traceVersion: 0,
       selectedTraceIndex: null,
     });
     try {
@@ -352,15 +364,34 @@ export function App() {
         });
         return;
       }
-      setExecutionState((current) => ({
-        status: "completed",
-        response,
-        selectedTraceIndex: selectedTraceIndexAfterRun(current, response),
-        traceReplayProjectJson:
-          response.status === "completed" && response.mode === "fast"
-            ? projectJson
-            : undefined,
-      }));
+      setExecutionState((current) => {
+        const traceStore =
+          current.status === "running" && mode === "transparent"
+            ? current.traceStore
+            : new TraceStore();
+        if (response.status === "completed" && response.trace.length > 0) {
+          traceStore.appendBatch(response.trace);
+        }
+        const traceCount = traceStore.length;
+        return {
+          status: "completed",
+          response,
+          traceStore,
+          traceCount,
+          traceVersion:
+            current.status === "running" ? current.traceVersion + 1 : 0,
+          selectedTraceIndex: selectedTraceIndexAfterRun(
+            current.status === "running"
+              ? { ...current, traceCount }
+              : current,
+            response,
+          ),
+          traceReplayProjectJson:
+            response.status === "completed" && response.mode === "fast"
+              ? projectJson
+              : undefined,
+        };
+      });
     } catch (error) {
       if (executionRequest.current !== request) return;
       if (isExecutionCanceledError(error)) {
@@ -411,7 +442,7 @@ export function App() {
         return { ...current, selectedTraceIndex: index };
       }
       if (current.status === "running") {
-        if (index >= current.trace.length) return current;
+        if (index >= current.traceCount) return current;
         return { ...current, selectedTraceIndex: index };
       }
       return current;
@@ -534,7 +565,9 @@ export function App() {
     setExecutionState({
       status: "running",
       mode: "transparent",
-      trace: [],
+      traceStore: new TraceStore(),
+      traceCount: 0,
+      traceVersion: 0,
       selectedTraceIndex: null,
       replayFastResult: fastResult,
     });
@@ -570,11 +603,28 @@ export function App() {
         });
         return;
       }
-      setExecutionState((current) => ({
-        status: "completed",
-        response,
-        selectedTraceIndex: selectedTraceIndexAfterRun(current, response),
-      }));
+      setExecutionState((current) => {
+        const traceStore =
+          current.status === "running" ? current.traceStore : new TraceStore();
+        if (response.status === "completed" && response.trace.length > 0) {
+          traceStore.appendBatch(response.trace);
+        }
+        const traceCount = traceStore.length;
+        return {
+          status: "completed",
+          response,
+          traceStore,
+          traceCount,
+          traceVersion:
+            current.status === "running" ? current.traceVersion + 1 : 0,
+          selectedTraceIndex: selectedTraceIndexAfterRun(
+            current.status === "running"
+              ? { ...current, traceCount }
+              : current,
+            response,
+          ),
+        };
+      });
     } catch (error) {
       if (executionRequest.current !== request) return;
       if (isExecutionCanceledError(error)) {
