@@ -4,14 +4,15 @@ Date: 2026-08-03
 
 ## Status
 
-Implementation complete locally.
+Complete.
 
 - Starting HEAD: `63be317 Queue extract function hardening`
 - Implementation SHA: `fc36992 Harden extract function workflow`
 - Branch: `main`
 - Pre-existing working tree state: clean; no stash entries
-- Push: pending at the time this archive was written
-- Deployment: pending at the time this archive was written
+- Final pushed SHA: `194462440db480ba62640d68602101d73895fef2`
+- Push: complete
+- Deployment: complete
 
 ## Summary
 
@@ -150,7 +151,32 @@ The explicitly excluded Extract Function cases remain unsupported:
 - cross-container extraction;
 - new Core constructs or Project JSON schema changes.
 
-## Deployment Follow-Up
+## Deployment
 
-Production deployment and public URL verification must be recorded after the
-implementation and handoff commits are pushed.
+- Production deployment ID: `dpl_FzwdjzsfcCx5ER8zbuc9tRrsYdu5`
+- Deployment state: `READY`
+- Production URL: `https://tilefold-editor.vercel.app`
+- Deployment URL: `https://tilefold-editor-f97o6l85s-draftgame.vercel.app`
+- Inspector URL:
+  `https://vercel.com/draftgame/tilefold-editor/FzwdjzsfcCx5ER8zbuc9tRrsYdu5`
+- Production source branch: `main`
+- Production source SHA: `194462440db480ba62640d68602101d73895fef2`
+- Vercel response: `Server: Vercel`, `X-Vercel-Id:
+  icn1::f8mv4-1785744964763-ff921cd0b848`, `Last-Modified: Mon, 03 Aug
+  2026 08:15:49 GMT`
+
+Production Chromium verification against
+`PLAYWRIGHT_BASE_URL=https://tilefold-editor.vercel.app`:
+
+- `npm run test:e2e -- e2e/extract-function.spec.ts e2e/natural-number-examples.spec.ts`
+- Result: passed, 8 Chromium tests
+- Extract Function production flow: passed
+- Natural-number example production flow, including default Fast execution:
+  passed
+- Runtime error scan: no Vercel runtime errors found in the last hour
+- Console/page errors: none observed by the executed Playwright specs
+
+The deployment follow-up is documentation-only. Full local validation remains
+the validation for implementation SHA `fc36992`; final SHA
+`194462440db480ba62640d68602101d73895fef2` contains the first handoff archive
+only. A later deployment-follow-up commit records the production evidence above.
