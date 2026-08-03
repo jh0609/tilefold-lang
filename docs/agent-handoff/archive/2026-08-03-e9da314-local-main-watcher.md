@@ -60,9 +60,9 @@ That means:
 At setup time:
 
 - Window title pattern: `tilefold-lang`
-- Poll interval: `120` seconds
+- Poll interval: `60` seconds
 - Initial `origin/main`: `e9da31488f24573fa9b05d8894dff3d77d7c4a3b`
-- Local watcher process PID at creation time: `31460`
+- Local watcher process PID after interval update: `2984`
 
 The PID is local and ephemeral. Future sessions should not assume that process
 still exists.
@@ -80,7 +80,7 @@ still exists.
 - Stop the local watcher with:
 
 ```powershell
-Stop-Process -Id 31460
+Stop-Process -Id 2984
 ```
 
 if that process is still running.
@@ -90,6 +90,7 @@ if that process is still running.
 - Dry run initialized state successfully.
 - Live watcher started and logged `No change` for
   `e9da31488f24573fa9b05d8894dff3d77d7c4a3b`.
+- The local watcher was later restarted with a 60-second poll interval.
 - No repository files were changed by the watcher itself.
 
 ## Open Questions
@@ -98,4 +99,3 @@ if that process is still running.
   official Codex session attach/send API or daemon/inbox mode.
 - If this workflow becomes important, prefer an explicit watcher document or
   script outside `.tmp/` with clearer operator controls and safety prompts.
-
