@@ -1,4 +1,7 @@
-import type { PointerEvent as ReactPointerEvent } from "react";
+import type {
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+} from "react";
 import type { CoreType, ProjectElement } from "../model/project";
 import type { ConnectablePort } from "../model/portConnections";
 import { formatCoreType } from "../model/coreTypes";
@@ -16,7 +19,7 @@ interface ElementNodeProps {
   traceHighlighted: boolean;
   ownerContainerId?: string;
   projectCallDisplayName?: string;
-  onSelect: () => void;
+  onSelect: (event?: ReactMouseEvent<SVGGElement>) => void;
   onPointerDown: (
     event: ReactPointerEvent<SVGGElement>,
     element: ProjectElement,
@@ -358,7 +361,7 @@ export function ElementNode({
       tabIndex={0}
       onClick={(event) => {
         event.stopPropagation();
-        onSelect();
+        onSelect(event);
       }}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {

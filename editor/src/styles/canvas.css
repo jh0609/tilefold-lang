@@ -23,6 +23,7 @@
 
 .grid-fill {
   fill: url("#minor-grid");
+  pointer-events: none;
 }
 
 .grid-line {

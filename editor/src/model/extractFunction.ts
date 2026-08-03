@@ -49,6 +49,99 @@ export type ExtractFunctionPlanResult =
   | { kind: "ok"; plan: ExtractFunctionPlan }
   | { kind: "error"; message: string };
 
+type ExtractFunctionParameterCandidate = Omit<
+  ExtractFunctionParameterPlan,
+  "name"
+>;
+
+const EXTRACTED_CALL_CONTAINER_MARGIN = 24;
+
+function expandContainerToIncludeBounds(
+  container: ProjectContainer,
+  bounds: Bounds,
+): ProjectContainer {
+  const width = Math.max(
+    container.bounds.width,
+    Math.ceil(bounds.x + bounds.width - container.bounds.x + EXTRACTED_CALL_CONTAINER_MARGIN),
+  );
+  const height = Math.max(
+    container.bounds.height,
+    Math.ceil(bounds.y + bounds.height - container.bounds.y + EXTRACTED_CALL_CONTAINER_MARGIN),
+  );
+  if (width === container.bounds.width && height === container.bounds.height) {
+    return container;
+  }
+  const scaleX = container.bounds.width === 0 ? 1 : width / container.bounds.width;
+  const scaleY = container.bounds.height === 0 ? 1 : height / container.bounds.height;
+  return {
+    ...container,
+    bounds: {
+      ...container.bounds,
+      width,
+      height,
+    },
+    boundaryPorts: container.boundaryPorts.map((boundary) => ({
+      ...boundary,
+      anchor: {
+        x: Math.round(boundary.anchor.x * scaleX),
+        y: Math.round(boundary.anchor.y * scaleY),
+      },
+    })),
+  };
+}
+
+function boundaryAbsolutePoint(
+  container: ProjectContainer,
+  boundary: BoundaryPort,
+): Point {
+  return {
+    x: container.bounds.x + boundary.anchor.x,
+    y: container.bounds.y + boundary.anchor.y,
+  };
+}
+
+function retargetBoundaryWireEndpoints(
+  wires: ProjectWire[],
+  container: ProjectContainer,
+): ProjectWire[] {
+  const boundaryById = new Map(
+    container.boundaryPorts.map((boundary) => [boundary.id, boundary]),
+  );
+  return wires.map((wire) => {
+    const points = wire.points.map((point) => ({ ...point }));
+    let changed = false;
+    if (
+      wire.sourceHint?.kind === "boundary_port" &&
+      wire.sourceHint.containerId === container.id
+    ) {
+      const boundary = boundaryById.get(wire.sourceHint.boundaryId);
+      if (boundary && points.length > 0) {
+        points[0] = boundaryAbsolutePoint(container, boundary);
+        changed = true;
+      }
+    }
+    if (
+      wire.targetHint?.kind === "boundary_port" &&
+      wire.targetHint.containerId === container.id
+    ) {
+      const boundary = boundaryById.get(wire.targetHint.boundaryId);
+      if (boundary && points.length > 1) {
+        points[points.length - 1] = boundaryAbsolutePoint(container, boundary);
+        changed = true;
+      }
+    }
+    return changed
+      ? {
+          ...wire,
+          points: points.map((point) => ({
+            x: Math.round(point.x),
+            y: Math.round(point.y),
+          })),
+        }
+      : wire;
+  });
+}
+
 const SAFE_EXTRACT_ELEMENT_KINDS = new Set<ProjectElement["kind"]>([
   "unit_literal",
   "nat_literal",
@@ -240,6 +333,12 @@ export function planExtractFunction(
       message: "Function name must use letters, numbers, _, ., or -.",
     };
   }
+  if (collectStableIds(document).has(requestedName)) {
+    return {
+      kind: "error",
+      message: `Function ID ${requestedName} already exists.`,
+    };
+  }
   const existingTemplate = document.geometry.containers.find(
     (candidate) => candidate.kind.templateId === requestedName,
   );
@@ -275,7 +374,7 @@ export function planExtractFunction(
       message: "Extract function requires one connected selected subgraph.",
     };
   }
-  const incoming: ExtractFunctionParameterPlan[] = [];
+  const incoming: ExtractFunctionParameterCandidate[] = [];
   const outgoing: ExtractFunctionPlan["result"][] = [];
   const parameterNames = new Set<string>();
   for (const wire of document.geometry.wires) {
@@ -306,7 +405,6 @@ export function planExtractFunction(
     }
     if (!sourceInside && targetInside) {
       incoming.push({
-        name: nameFromPort(target, parameterNames),
         type: target.type,
         source,
         target,
@@ -342,8 +440,12 @@ export function planExtractFunction(
     const byTarget = portSortKey(left.target).localeCompare(portSortKey(right.target));
     return byTarget || left.wireId.localeCompare(right.wireId);
   });
+  const parameters: ExtractFunctionParameterPlan[] = incoming.map((item) => ({
+    ...item,
+    name: nameFromPort(item.target, parameterNames),
+  }));
   const selectedInputKeys = new Set(
-    incoming.map((item) => item.target.key),
+    parameters.map((item) => item.target.key),
   );
   const internalTargetKeys = new Set<string>();
   for (const wire of document.geometry.wires) {
@@ -381,7 +483,7 @@ export function planExtractFunction(
       selectedElementIds: uniqueIds,
       templateId: requestedName,
       functionName: requestedName,
-      parameters: incoming,
+      parameters,
       result: outgoing[0]!,
       selectedBounds: boundsOfElements(selectedElements),
     },
@@ -453,7 +555,7 @@ export function applyExtractFunctionPlan(
   const contentY = 88;
   const newContainerBounds: Bounds = {
     x: Math.round(plan.selectedBounds.x),
-    y: Math.round(maxContainerBottom + 96),
+    y: Math.round(maxContainerBottom + 192),
     width: Math.max(360, Math.round(plan.selectedBounds.width + 300)),
     height: Math.max(
       240,
@@ -538,6 +640,7 @@ export function applyExtractFunctionPlan(
       },
     ],
   };
+  const expandedSourceContainer = expandContainerToIncludeBounds(sourceContainer, callBounds);
   const parameterWires: ProjectWire[] = plan.parameters.map((parameter, index) => {
     const boundary = parameterBoundaries[index]!;
     const source = boundaryAnchor(newContainer, boundary);
@@ -603,6 +706,17 @@ export function applyExtractFunctionPlan(
   const remainingWires = document.geometry.wires.filter(
     (wire) => !cutWireIds.has(wire.id) && !removedInternalWireIds.has(wire.id),
   );
+  const nextWires = retargetBoundaryWireEndpoints(
+    [
+      ...remainingWires,
+      ...internalWires,
+      ...parameterWires,
+      resultWire,
+      ...callInputWires,
+      callResultWire,
+    ],
+    expandedSourceContainer,
+  );
   const functionInfo: SurfaceFunctionMetadata = {
     name: plan.functionName,
     templateId: plan.templateId,
@@ -626,29 +740,21 @@ export function applyExtractFunctionPlan(
         callElement,
       ],
       containers: [
-        ...document.geometry.containers.map((container) =>
-          container.id === sourceContainer.id
-            ? {
-                ...container,
-                kind: {
-                  ...container.kind,
-                  dependencies: container.kind.dependencies.includes(plan.templateId)
-                    ? container.kind.dependencies
-                    : [...container.kind.dependencies, plan.templateId],
-                },
-              }
-            : container,
-        ),
+        ...document.geometry.containers.map((container) => {
+          if (container.id !== sourceContainer.id) return container;
+          return {
+            ...expandedSourceContainer,
+            kind: {
+              ...expandedSourceContainer.kind,
+              dependencies: expandedSourceContainer.kind.dependencies.includes(plan.templateId)
+                ? expandedSourceContainer.kind.dependencies
+                : [...expandedSourceContainer.kind.dependencies, plan.templateId],
+            },
+          };
+        }),
         newContainer,
       ],
-      wires: [
-        ...remainingWires,
-        ...internalWires,
-        ...parameterWires,
-        resultWire,
-        ...callInputWires,
-        callResultWire,
-      ],
+      wires: nextWires,
     },
     surfaceFunctions: [...(document.surfaceFunctions ?? []), functionInfo],
     surfaceProjectCalls: [

@@ -835,6 +835,7 @@ export function Canvas({
     if (!start) return;
     event.stopPropagation();
     if (event.ctrlKey || event.metaKey || event.shiftKey) {
+      suppressNextSelectionRef.current = true;
       const currentIds =
         selection?.type === "elements"
           ? selection.ids
@@ -884,6 +885,37 @@ export function Canvas({
       origins,
       next: origins,
     });
+  }
+
+  function selectElementWithModifier(
+    element: ProjectElement,
+    modifier: boolean,
+  ) {
+    if (suppressNextSelectionRef.current) {
+      suppressNextSelectionRef.current = false;
+      return;
+    }
+    if (!modifier) {
+      selectUnlessSuppressed({ type: "element", id: element.id });
+      return;
+    }
+    const currentIds =
+      selection?.type === "elements"
+        ? selection.ids
+        : selection?.type === "element"
+          ? [selection.id]
+          : [];
+    const current = new Set(currentIds);
+    if (current.has(element.id)) current.delete(element.id);
+    else current.add(element.id);
+    const ids = [...current].sort((left, right) => left.localeCompare(right));
+    onSelect(
+      ids.length === 0
+        ? null
+        : ids.length === 1
+          ? { type: "element", id: ids[0]! }
+          : { type: "elements", ids },
+    );
   }
 
   function startResize(
@@ -1768,8 +1800,11 @@ export function Canvas({
                   )?.name
                 : undefined
             }
-            onSelect={() => {
-              selectUnlessSuppressed({ type: "element", id: element.id });
+            onSelect={(event) => {
+              selectElementWithModifier(
+                element,
+                Boolean(event?.ctrlKey || event?.metaKey || event?.shiftKey),
+              );
             }}
             onPointerDown={startDrag}
             onResizePointerDown={startResize}
