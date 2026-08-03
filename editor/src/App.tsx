@@ -78,6 +78,10 @@ import {
   planTypeAutoMatch,
   type TypeAutoMatchPlan,
 } from "./model/typeAutoMatch";
+import {
+  buildEditorSpatialIndex,
+  elementsForContainer,
+} from "./model/editorSpatialIndex";
 
 const initialExample = EXAMPLE_PROJECTS[0];
 const initialDocument = parseProjectJson(initialExample.projectJson);
@@ -158,6 +162,10 @@ export function App() {
   const executionAbort = useRef<AbortController | null>(null);
   const [viewBox, setViewBox] = useState(savedViewBox(initialDocument.view));
   const referenceViewBox = savedViewBox(document.view);
+  const spatialIndex = useMemo(
+    () => buildEditorSpatialIndex(document),
+    [document],
+  );
 
   const viewportCenter = useMemo<Point>(() => {
     const camera = parseViewBox(viewBox);
@@ -437,6 +445,7 @@ export function App() {
         kind,
         viewportCenter,
         targetContainer.bounds,
+        elementsForContainer(document, spatialIndex, targetContainer.id),
       ),
     } as const;
     const nextDocument = runCommand(command);

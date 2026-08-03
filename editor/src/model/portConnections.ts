@@ -278,11 +278,18 @@ function elementPortType(
   }
 }
 
+export interface CollectConnectablePortsOptions {
+  elementIds?: ReadonlySet<string>;
+  containerIds?: ReadonlySet<string>;
+}
+
 export function collectConnectablePorts(
   document: ProjectDocument,
+  options: CollectConnectablePortsOptions = {},
 ): ConnectablePort[] {
   const ports: ConnectablePort[] = [];
   for (const element of document.geometry.elements) {
+    if (options.elementIds && !options.elementIds.has(element.id)) continue;
     for (const anchor of element.portAnchors) {
       const schema = elementPortType(document, element, anchor.port);
       if (!schema) continue;
@@ -302,6 +309,9 @@ export function collectConnectablePorts(
     }
   }
   for (const container of document.geometry.containers) {
+    if (options.containerIds && !options.containerIds.has(container.id)) {
+      continue;
+    }
     for (const boundary of container.boundaryPorts) {
       const direction: PortDirection =
         boundary.role === "result" ? "input" : "output";
@@ -409,9 +419,16 @@ export function resolveEndpointHint(
   document: ProjectDocument,
   hint: EndpointHint | undefined,
 ): ConnectablePort | null {
+  return resolveEndpointHintFromPorts(collectConnectablePorts(document), hint);
+}
+
+export function resolveEndpointHintFromPorts(
+  ports: readonly ConnectablePort[],
+  hint: EndpointHint | undefined,
+): ConnectablePort | null {
   if (!hint) return null;
   return (
-    collectConnectablePorts(document).find((port) =>
+    ports.find((port) =>
       endpointHintEqual(hint, port.hint),
     ) ?? null
   );

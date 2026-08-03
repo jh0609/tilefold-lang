@@ -17,6 +17,7 @@ import {
   endpointHintEqual,
   pointEqual,
   resolveEndpointHint,
+  resolveEndpointHintFromPorts,
   validateConnection,
   type ConnectablePort,
   type WireEndpoint,
@@ -192,6 +193,7 @@ export function findOpenElementCenter(
   kind: AddableElementKind,
   preferredCenter: Point,
   ownerBounds?: Bounds,
+  obstacleElements: readonly ProjectElement[] = document.geometry.elements,
 ): Point {
   const { width, height } = NEW_ELEMENT_SIZE[kind];
   const clampToOwner = (center: Point): Point => {
@@ -214,7 +216,7 @@ export function findOpenElementCenter(
   const available = (center: Point) => {
     const candidate = newElementBounds(kind, center);
     if (ownerBounds && !boundsInside(candidate, ownerBounds)) return false;
-    return document.geometry.elements.every(
+    return obstacleElements.every(
       (element) => !boundsOverlapWithClearance(candidate, element.bounds),
     );
   };
@@ -242,7 +244,7 @@ export function findOpenElementCenter(
 
   const rightmost = Math.max(
     preferred.x,
-    ...document.geometry.elements.map(
+    ...obstacleElements.map(
       (element) => element.bounds.x + element.bounds.width,
     ),
   );
@@ -4528,6 +4530,7 @@ export function moveElement(
       elements,
     },
   };
+  const movedPorts = collectConnectablePorts(movedDocument);
   let affectedEndpointCount = 0;
   const wires: ProjectWire[] = [];
   for (const wire of document.geometry.wires) {
@@ -4548,7 +4551,7 @@ export function moveElement(
     if (targetMoves) endpoints.push("target");
     for (const endpoint of endpoints) {
       const hint = endpoint === "source" ? wire.sourceHint : wire.targetHint;
-      const port = resolveEndpointHint(movedDocument, hint);
+      const port = resolveEndpointHintFromPorts(movedPorts, hint);
       if (!port) {
         return {
           error: `Wire ${wire.id} ${endpoint} hint does not resolve to a port on ${id}.`,
@@ -4623,6 +4626,7 @@ export function resizeOrMoveElement(
       elements,
     },
   };
+  const resizedPorts = collectConnectablePorts(resizedDocument);
   const wires: ProjectWire[] = [];
   for (const wire of document.geometry.wires) {
     const sourceChanges = hintReferencesElementPort(wire.sourceHint, id);
@@ -4637,11 +4641,11 @@ export function resizeOrMoveElement(
     }
     const points = wire.points.map((point) => ({ ...point }));
     if (sourceChanges) {
-      const port = resolveEndpointHint(resizedDocument, wire.sourceHint);
+      const port = resolveEndpointHintFromPorts(resizedPorts, wire.sourceHint);
       if (port) points[0] = { x: Math.round(port.anchor.x), y: Math.round(port.anchor.y) };
     }
     if (targetChanges) {
-      const port = resolveEndpointHint(resizedDocument, wire.targetHint);
+      const port = resolveEndpointHintFromPorts(resizedPorts, wire.targetHint);
       if (port) {
         points[points.length - 1] = {
           x: Math.round(port.anchor.x),
@@ -4942,6 +4946,7 @@ export function moveContainer(
     ...document,
     geometry: { ...document.geometry, elements, containers },
   };
+  const movedPorts = collectConnectablePorts(movedDocument);
   const movePoint = (point: Point): Point => ({ x: point.x + dx, y: point.y + dy });
   const hintMoves = (hint: ProjectWire["sourceHint"]) => {
     if (!hint) return false;
@@ -4960,11 +4965,11 @@ export function moveContainer(
     }
     const points = wire.points.map((point) => ({ ...point }));
     if (sourceMoves) {
-      const port = resolveEndpointHint(movedDocument, wire.sourceHint);
+      const port = resolveEndpointHintFromPorts(movedPorts, wire.sourceHint);
       if (port && points[0]) points[0] = { x: Math.round(port.anchor.x), y: Math.round(port.anchor.y) };
     }
     if (targetMoves) {
-      const port = resolveEndpointHint(movedDocument, wire.targetHint);
+      const port = resolveEndpointHintFromPorts(movedPorts, wire.targetHint);
       if (port && points.length > 0) {
         points[points.length - 1] = {
           x: Math.round(port.anchor.x),

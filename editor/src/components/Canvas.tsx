@@ -14,7 +14,6 @@ import {
 } from "../model/coordinates";
 import { formatCoreType } from "../model/coreTypes";
 import {
-  findElementOwnerContainer,
   compatibleFunctionReferenceCandidates,
   moveContainer,
   moveElement,
@@ -24,6 +23,9 @@ import {
   type ContainerResizeHandle,
 } from "../model/editorOps";
 import { routeWire } from "../model/edgeRouting";
+import {
+  buildEditorSpatialIndex,
+} from "../model/editorSpatialIndex";
 import {
   collectConnectablePorts,
   validateConnection,
@@ -458,7 +460,63 @@ export function Canvas({
     () => measurePixelsPerCanvasUnit(parseViewBox(viewBox), svgViewport),
     [svgViewport, viewBox],
   );
-  const ports = useMemo(() => collectConnectablePorts(document), [document]);
+  const spatialIndex = useMemo(
+    () => buildEditorSpatialIndex(document),
+    [document],
+  );
+  const allPorts = useMemo(() => collectConnectablePorts(document), [document]);
+  const activeElementIds = useMemo(
+    () =>
+      currentContainerId
+        ? spatialIndex.elementIdsByContainerId.get(currentContainerId) ?? new Set<string>()
+        : undefined,
+    [currentContainerId, spatialIndex],
+  );
+  const activeWireIds = useMemo(
+    () =>
+      currentContainerId
+        ? spatialIndex.wireIdsByContainerId.get(currentContainerId) ?? new Set<string>()
+        : undefined,
+    [currentContainerId, spatialIndex],
+  );
+  function portContainerId(port: ConnectablePort): string | null {
+    if (port.hint.kind === "boundary_port") return port.hint.containerId;
+    if (port.hint.kind === "element_port") {
+      return spatialIndex.ownerByElementId.get(port.hint.elementId) ?? null;
+    }
+    return null;
+  }
+  const connectionSourceContainerId = connection
+    ? portContainerId(
+        connection.kind === "new" ? connection.source : connection.fixed,
+      )
+    : currentContainerId;
+  const connectionScopeContainerIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (connectionSourceContainerId) ids.add(connectionSourceContainerId);
+    if (currentContainerId) ids.add(currentContainerId);
+    return ids.size > 0 ? ids : undefined;
+  }, [connectionSourceContainerId, currentContainerId]);
+  const connectionElementIds = useMemo(
+    () => {
+      if (!connectionScopeContainerIds) return undefined;
+      const ids = new Set<string>();
+      for (const containerId of connectionScopeContainerIds) {
+        for (const elementId of spatialIndex.elementIdsByContainerId.get(containerId) ?? []) {
+          ids.add(elementId);
+        }
+      }
+      return ids;
+    },
+    [connectionScopeContainerIds, spatialIndex],
+  );
+  const ports = useMemo(
+    () =>
+      collectConnectablePorts(document, {
+        elementIds: connectionElementIds,
+      }),
+    [connectionElementIds, document],
+  );
   const functionReferenceCandidates = useMemo(
     () =>
       functionPortAction && currentContainerId
@@ -569,14 +627,16 @@ export function Canvas({
     activeConnection: ConnectionDrag,
     point: Point,
   ): { validHover: ConnectablePort | null; rejection: string | null } {
-    const hover =
-      ports
+    const nearest = (candidates: readonly ConnectablePort[]) =>
+      candidates
         .map((port) => ({
           port,
           distance: Math.hypot(point.x - port.anchor.x, point.y - port.anchor.y),
         }))
         .filter((candidate) => candidate.distance <= 14)
-        .sort((left, right) => left.distance - right.distance)[0]?.port ?? null;
+        .sort((left, right) => left.distance - right.distance)[0]?.port ??
+      null;
+    const hover = nearest(ports) ?? nearest(allPorts);
     let validHover: ConnectablePort | null = null;
     let rejection: string | null = null;
     if (hover) {
@@ -1259,6 +1319,44 @@ export function Canvas({
     () => collectConnectablePorts(renderedDocument),
     [renderedDocument],
   );
+  const renderedPortsByOwner = useMemo(() => {
+    const byOwner = new Map<string, ConnectablePort[]>();
+    for (const port of renderedPorts) {
+      const current = byOwner.get(port.ownerId);
+      if (current) current.push(port);
+      else byOwner.set(port.ownerId, [port]);
+    }
+    return byOwner;
+  }, [renderedPorts]);
+  const baseWireRoutes = useMemo(() => {
+    const routes = new Map<string, string>();
+    for (const wire of document.geometry.wires) {
+      const scoped = activeWireIds?.has(wire.id);
+      routes.set(
+        wire.id,
+        routeWire(
+          document,
+          wire,
+          scoped
+            ? {
+                ports: allPorts,
+                obstacleElementIds: activeElementIds,
+                referenceWireIds: activeWireIds,
+              }
+            : { ports: allPorts },
+        )
+          .map((point) => `${point.x},${point.y}`)
+          .join(" "),
+      );
+    }
+    return routes;
+  }, [activeElementIds, activeWireIds, allPorts, document]);
+  const previewAffectedWireIds = useMemo(() => {
+    if (drag || resize) return activeWireIds ?? new Set<string>();
+    if (containerMove) return spatialIndex.wireIdsByContainerId.get(containerMove.containerId) ?? new Set<string>();
+    if (containerResize) return spatialIndex.wireIdsByContainerId.get(containerResize.containerId) ?? new Set<string>();
+    return null;
+  }, [activeWireIds, containerMove, containerResize, drag, resize, spatialIndex]);
 
   function selectUnlessSuppressed(next: Selection | null) {
     if (suppressNextSelectionRef.current) {
@@ -1365,9 +1463,22 @@ export function Canvas({
                   ? "wire selected"
                   : "wire"
               }
-              points={routeWire(renderedDocument, wire)
-                .map((point) => `${point.x},${point.y}`)
-                .join(" ")}
+              points={
+                renderedDocument === document ||
+                !previewAffectedWireIds?.has(wire.id)
+                  ? (baseWireRoutes.get(wire.id) ?? "")
+                  : routeWire(renderedDocument, wire, {
+                      ports: renderedPorts,
+                      obstacleElementIds:
+                        currentContainerId === containerMove?.containerId ||
+                        currentContainerId === containerResize?.containerId
+                          ? undefined
+                          : activeElementIds,
+                      referenceWireIds: activeWireIds,
+                    })
+                      .map((point) => `${point.x},${point.y}`)
+                      .join(" ")
+              }
               role="button"
               tabIndex={0}
               aria-label={`Wire ${wire.id}`}
@@ -1471,9 +1582,7 @@ export function Canvas({
               selection?.type === "element" && selection.id === element.id
             }
             traceHighlighted={traceHighlightedElementId === element.id}
-            ownerContainerId={
-              findElementOwnerContainer(renderedDocument, element)?.id
-            }
+            ownerContainerId={spatialIndex.ownerByElementId.get(element.id)}
             projectCallDisplayName={
               element.kind === "project_call"
                 ? renderedDocument.surfaceFunctions?.find(
@@ -1487,7 +1596,7 @@ export function Canvas({
             }}
             onPointerDown={startDrag}
             onResizePointerDown={startResize}
-            ports={renderedPorts.filter((port) => port.ownerId === element.id)}
+            ports={renderedPortsByOwner.get(element.id) ?? []}
             connectionTargetKey={connection?.validHover?.key ?? null}
             compatiblePortKeys={connectionTargets.compatible}
             rejectedPortKeys={connectionTargets.rejected}

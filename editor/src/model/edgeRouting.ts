@@ -1,4 +1,8 @@
-import { resolveEndpointHint } from "./portConnections";
+import {
+  collectConnectablePorts,
+  resolveEndpointHintFromPorts,
+  type ConnectablePort,
+} from "./portConnections";
 import type {
   Bounds,
   Point,
@@ -22,6 +26,12 @@ interface Rect {
 interface Segment {
   a: Point;
   b: Point;
+}
+
+export interface RouteWireOptions {
+  ports?: readonly ConnectablePort[];
+  obstacleElementIds?: ReadonlySet<string>;
+  referenceWireIds?: ReadonlySet<string>;
 }
 
 export type RouteMode =
@@ -54,9 +64,10 @@ function endpointPoint(
   document: ProjectDocument,
   wire: ProjectWire,
   endpoint: "source" | "target",
+  ports: readonly ConnectablePort[],
 ): Point | null {
-  const resolved = resolveEndpointHint(
-    document,
+  const resolved = resolveEndpointHintFromPorts(
+    ports,
     endpoint === "source" ? wire.sourceHint : wire.targetHint,
   );
   if (resolved) return resolved.anchor;
@@ -429,9 +440,10 @@ function boundingBoxExcursion(points: readonly Point[], source: Point, target: P
 function referenceSegmentsForWire(
   document: ProjectDocument,
   wire: ProjectWire,
+  ports: readonly ConnectablePort[],
 ): Segment[] {
-  const source = endpointPoint(document, wire, "source");
-  const target = endpointPoint(document, wire, "target");
+  const source = endpointPoint(document, wire, "source", ports);
+  const target = endpointPoint(document, wire, "target", ports);
   if (!source || !target) return pathSegments(wire.points);
   const sourceDirection = endpointDirection(document, wire, "source", source);
   const targetDirection = endpointDirection(document, wire, "target", target);
@@ -458,11 +470,17 @@ function referenceSegmentsForWire(
 function referenceSegments(
   document: ProjectDocument,
   wire: ProjectWire,
+  ports: readonly ConnectablePort[],
+  referenceWireIds?: ReadonlySet<string>,
 ): Segment[] {
   return document.geometry.wires
-    .filter((candidate) => candidate.id !== wire.id)
+    .filter(
+      (candidate) =>
+        candidate.id !== wire.id &&
+        (!referenceWireIds || referenceWireIds.has(candidate.id)),
+    )
     .sort((left, right) => left.id.localeCompare(right.id))
-    .flatMap((candidate) => referenceSegmentsForWire(document, candidate));
+    .flatMap((candidate) => referenceSegmentsForWire(document, candidate, ports));
 }
 
 function routeCost(
@@ -654,9 +672,11 @@ function endpointCorridorPoints(
 export function routeWireDetailed(
   document: ProjectDocument,
   wire: ProjectWire,
+  options: RouteWireOptions = {},
 ): RoutedWire {
-  const source = endpointPoint(document, wire, "source");
-  const target = endpointPoint(document, wire, "target");
+  const ports = options.ports ?? collectConnectablePorts(document);
+  const source = endpointPoint(document, wire, "source", ports);
+  const target = endpointPoint(document, wire, "target", ports);
   if (!source || !target) {
     const points = normalizePath(wire.points.map((point) => ({ ...point })));
     return {
@@ -671,11 +691,21 @@ export function routeWireDetailed(
   const targetElementId = endpointElementId(wire, "target");
   const sourceDirection = endpointDirection(document, wire, "source", source);
   const targetDirection = endpointDirection(document, wire, "target", target);
-  const obstacles = document.geometry.elements.map((element) =>
+  const obstacleElements = options.obstacleElementIds
+    ? document.geometry.elements.filter((element) =>
+        options.obstacleElementIds!.has(element.id),
+      )
+    : document.geometry.elements;
+  const obstacles = obstacleElements.map((element) =>
     inflated(element.bounds, ROUTE_MARGIN, element.id),
   );
-  const references = referenceSegments(document, wire);
-  const bodyObstacles = document.geometry.elements.map((element) =>
+  const references = referenceSegments(
+    document,
+    wire,
+    ports,
+    options.referenceWireIds,
+  );
+  const bodyObstacles = obstacleElements.map((element) =>
     inflated(element.bounds, 0, element.id),
   );
   const { sourceExit, targetEntry, corridorsFit } = endpointCorridorPoints(
@@ -747,7 +777,7 @@ export function routeWireDetailed(
 
   const lanes = new Set<number>([source.y, target.y]);
   const xLanes = new Set<number>([clearSourceExit.x, clearTargetEntry.x]);
-  for (const element of document.geometry.elements) {
+  for (const element of obstacleElements) {
     lanes.add(element.bounds.y - ROUTE_MARGIN);
     lanes.add(element.bounds.y + element.bounds.height + ROUTE_MARGIN);
   }
@@ -882,8 +912,9 @@ export function routeWireDetailed(
 export function routeWire(
   document: ProjectDocument,
   wire: ProjectWire,
+  options: RouteWireOptions = {},
 ): Point[] {
-  return routeWireDetailed(document, wire).points;
+  return routeWireDetailed(document, wire, options).points;
 }
 
 export function elementObstacleBounds(element: ProjectElement): Bounds {
