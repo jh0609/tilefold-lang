@@ -45,6 +45,15 @@ language.
 - If local tooling is unavailable, report the missing tool and the commands that
   could not be run.
 
+## Agent Handoff
+
+- At the start of a new task, check `docs/agent-handoff/latest.md` when it
+  exists. It records the latest completed agent work, validation results,
+  deployment details, and known follow-up context.
+- When a task completes with changes that future sessions should know about,
+  add an archive entry under `docs/agent-handoff/archive/` and update
+  `docs/agent-handoff/latest.md`.
+
 ## Completion Reports
 
 Every completion report should include:
