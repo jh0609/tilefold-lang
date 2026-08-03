@@ -10,21 +10,40 @@ class FakeWorker {
     | ((event: MessageEvent<{
         requestId: number;
         output?: string;
+        traceBatch?: string;
         workerError?: string;
       }>) => void)
     | null = null;
   onerror: ((event: ErrorEvent) => void) | null = null;
   onmessageerror: ((event: MessageEvent) => void) | null = null;
-  posted: { requestId: number; projectJson: string; mode: string }[] = [];
+  posted: {
+    requestId: number;
+    projectJson: string;
+    mode: string;
+    streamTrace?: boolean;
+    traceBatchSize?: number;
+  }[] = [];
   terminate = vi.fn();
 
-  postMessage(message: { requestId: number; projectJson: string; mode: string }) {
+  postMessage(message: {
+    requestId: number;
+    projectJson: string;
+    mode: string;
+    streamTrace?: boolean;
+    traceBatchSize?: number;
+  }) {
     this.posted.push(message);
   }
 
   respond(requestId: number, output: object) {
     this.onmessage?.({
       data: { requestId, output: JSON.stringify(output) },
+    } as MessageEvent);
+  }
+
+  traceBatch(requestId: number, output: object) {
+    this.onmessage?.({
+      data: { requestId, traceBatch: JSON.stringify(output) },
     } as MessageEvent);
   }
 
@@ -74,11 +93,53 @@ describe("browser execution backend", () => {
       status: "completed",
       result: "Nat(3)",
       rewriteCount: 1,
-      trace: [{ index: 0, rule: "FastCallCompleted(tilefold.std.nat.add@v1)", subject: "function_1" }],
+      mode: "fast",
     });
 
-    await expect(pending).resolves.toMatchObject({ result: "Nat(3)" });
-    expect(worker.posted[0]).toMatchObject({ mode: "fast" });
+    await expect(pending).resolves.toMatchObject({
+      result: "Nat(3)",
+      trace: [],
+    });
+    expect(worker.posted[0]).toMatchObject({
+      mode: "fast",
+      streamTrace: false,
+    });
+  });
+
+  it("streams trace batches and merges them into the completed response", async () => {
+    const worker = new FakeWorker();
+    const backend = createBrowserExecutionBackend(() => worker);
+    const batches: unknown[] = [];
+    const pending = backend.run("{}", {
+      mode: "transparent",
+      onTraceBatch: (events) => batches.push(events),
+    });
+    expect(worker.posted[0]).toMatchObject({
+      mode: "transparent",
+      streamTrace: true,
+    });
+
+    worker.traceBatch(1, {
+      status: "trace_batch",
+      trace: [{ index: 0, rule: "Unit", subject: "unit_1" }],
+    });
+    worker.respond(1, {
+      status: "completed",
+      result: "Unit",
+      rewriteCount: 2,
+      trace: [{ index: 1, rule: "Drop", subject: "drop_1" }],
+    });
+
+    await expect(pending).resolves.toMatchObject({
+      result: "Unit",
+      trace: [
+        { index: 0, rule: "Unit", subject: "unit_1" },
+        { index: 1, rule: "Drop", subject: "drop_1" },
+      ],
+    });
+    expect(batches).toEqual([
+      [{ index: 0, rule: "Unit", subject: "unit_1" }],
+    ]);
   });
 
   it("terminates the worker and settles active work as cancellation", async () => {

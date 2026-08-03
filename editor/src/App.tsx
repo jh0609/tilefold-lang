@@ -56,6 +56,7 @@ import {
   type ExecutionMode,
   isExecutionCanceledError,
   type ExecutionBackend,
+  type ExecutionTraceEvent,
 } from "./model/executionApi";
 import {
   exactTraceElementId,
@@ -186,7 +187,10 @@ export function App() {
           executionState.response,
           executionState.selectedTraceIndex,
         )
-      : null;
+      : executionState.status === "running" &&
+          executionState.selectedTraceIndex !== null
+        ? (executionState.trace[executionState.selectedTraceIndex] ?? null)
+        : null;
   const traceHighlightedElementId = useMemo(
     () => exactTraceElementId(document, selectedTraceEvent),
     [document, selectedTraceEvent],
@@ -266,13 +270,55 @@ export function App() {
     stopExecution({ status: "idle" });
   }
 
+  function appendTraceEvents(request: number, events: ExecutionTraceEvent[]) {
+    if (events.length === 0) return;
+    setExecutionState((current) => {
+      if (executionRequest.current !== request || current.status !== "running") {
+        return current;
+      }
+      const previousLength = current.trace.length;
+      const trace = [...current.trace, ...events];
+      const wasFollowing =
+        current.selectedTraceIndex !== null &&
+        current.selectedTraceIndex === previousLength - 1;
+      const selectedTraceIndex =
+        current.selectedTraceIndex === null
+          ? 0
+          : wasFollowing
+            ? trace.length - 1
+            : current.selectedTraceIndex;
+      return { ...current, trace, selectedTraceIndex };
+    });
+  }
+
+  function selectedTraceIndexAfterRun(
+    current: ExecutionState,
+    response: Extract<ExecutionState, { status: "completed" }>["response"],
+  ) {
+    if (
+      current.status === "running" &&
+      current.selectedTraceIndex !== null &&
+      response.status === "completed" &&
+      current.selectedTraceIndex < response.trace.length
+    ) {
+      return current.selectedTraceIndex;
+    }
+    return initialTraceIndex(response);
+  }
+
   async function runProject() {
     if (executionAbort.current) return;
     const request = executionRequest.current + 1;
     executionRequest.current = request;
     const controller = new AbortController();
     executionAbort.current = controller;
-    setExecutionState({ status: "running" });
+    const mode = executionMode;
+    setExecutionState({
+      status: "running",
+      mode,
+      trace: [],
+      selectedTraceIndex: null,
+    });
     try {
       const diagnostics = preflightProjectDiagnostics(document);
       if (diagnostics.length > 0) {
@@ -287,8 +333,12 @@ export function App() {
       executionBackend.current ??= createBrowserExecutionBackend();
       const projectJson = exportProjectJson(document);
       const response = await executionBackend.current.run(projectJson, {
-        mode: executionMode,
+        mode,
         signal: controller.signal,
+        onTraceBatch:
+          mode === "transparent"
+            ? (events) => appendTraceEvents(request, events)
+            : undefined,
       });
       if (executionRequest.current !== request) return;
       if (response.status === "error") {
@@ -302,11 +352,15 @@ export function App() {
         });
         return;
       }
-      setExecutionState({
+      setExecutionState((current) => ({
         status: "completed",
         response,
-        selectedTraceIndex: initialTraceIndex(response),
-      });
+        selectedTraceIndex: selectedTraceIndexAfterRun(current, response),
+        traceReplayProjectJson:
+          response.status === "completed" && response.mode === "fast"
+            ? projectJson
+            : undefined,
+      }));
     } catch (error) {
       if (executionRequest.current !== request) return;
       if (isExecutionCanceledError(error)) {
@@ -346,16 +400,21 @@ export function App() {
 
   function selectTraceEvent(index: number) {
     setExecutionState((current) => {
-      if (
-        current.status !== "completed" ||
-        current.response.status !== "completed" ||
-        !Number.isInteger(index) ||
-        index < 0 ||
-        index >= current.response.trace.length
-      ) {
-        return current;
+      if (!Number.isInteger(index) || index < 0) return current;
+      if (current.status === "completed") {
+        if (
+          current.response.status !== "completed" ||
+          index >= current.response.trace.length
+        ) {
+          return current;
+        }
+        return { ...current, selectedTraceIndex: index };
       }
-      return { ...current, selectedTraceIndex: index };
+      if (current.status === "running") {
+        if (index >= current.trace.length) return current;
+        return { ...current, selectedTraceIndex: index };
+      }
+      return current;
     });
   }
 
@@ -453,6 +512,89 @@ export function App() {
     const element = nextDocument.geometry.elements.at(-1);
     if (element) {
       setSelection({ type: "element", id: element.id });
+    }
+  }
+
+  async function viewTraceForFastResult() {
+    if (
+      executionAbort.current ||
+      executionState.status !== "completed" ||
+      executionState.response.status !== "completed" ||
+      executionState.response.mode !== "fast" ||
+      !executionState.traceReplayProjectJson
+    ) {
+      return;
+    }
+    const fastResult = executionState.response.result;
+    const projectJson = executionState.traceReplayProjectJson;
+    const request = executionRequest.current + 1;
+    executionRequest.current = request;
+    const controller = new AbortController();
+    executionAbort.current = controller;
+    setExecutionState({
+      status: "running",
+      mode: "transparent",
+      trace: [],
+      selectedTraceIndex: null,
+      replayFastResult: fastResult,
+    });
+    try {
+      executionBackend.current ??= createBrowserExecutionBackend();
+      const response = await executionBackend.current.run(projectJson, {
+        mode: "transparent",
+        signal: controller.signal,
+        onTraceBatch: (events) => appendTraceEvents(request, events),
+      });
+      if (executionRequest.current !== request) return;
+      if (response.status === "error") {
+        setExecutionState({
+          status: "failed",
+          message: "The browser OCaml runner rejected the trace replay.",
+          diagnostics: response.messages.map((message, index) => ({
+            ...runnerErrorDiagnostic(message, response.stage),
+            id: `diag:trace-replay:${response.stage}:${index}`,
+          })),
+        });
+        return;
+      }
+      if (response.result !== fastResult) {
+        setExecutionState({
+          status: "failed",
+          message: "Trace replay result did not match the Fast Run result.",
+          diagnostics: [
+            runnerErrorDiagnostic(
+              `Fast result ${fastResult}; Trace result ${response.result}`,
+              "trace-replay",
+            ),
+          ],
+        });
+        return;
+      }
+      setExecutionState((current) => ({
+        status: "completed",
+        response,
+        selectedTraceIndex: selectedTraceIndexAfterRun(current, response),
+      }));
+    } catch (error) {
+      if (executionRequest.current !== request) return;
+      if (isExecutionCanceledError(error)) {
+        setExecutionState({ status: "canceled" });
+      } else {
+        setExecutionState({
+          status: "failed",
+          message:
+            error instanceof Error ? error.message : "Unknown trace replay failure.",
+          diagnostics: [
+            runnerErrorDiagnostic(
+              error instanceof Error
+                ? error.message
+                : "Unknown trace replay failure.",
+            ),
+          ],
+        });
+      }
+    } finally {
+      if (executionRequest.current === request) executionAbort.current = null;
     }
   }
 
@@ -1246,6 +1388,7 @@ export function App() {
           state={executionState}
           traceSourceElementId={traceHighlightedElementId}
           onTraceSelect={selectTraceEvent}
+          onViewTrace={viewTraceForFastResult}
           onDiagnosticSelect={focusDiagnostic}
         />
       </div>

@@ -39,14 +39,6 @@ let trace_event (event : Rewrite_event.t) =
       ("subject", `String (Core_graph.Node_id.to_string event.subject));
     ]
 
-let fast_trace_event index rule subject =
-  `Assoc
-    [
-      ("index", `Int index);
-      ("rule", `String rule);
-      ("subject", `String subject);
-    ]
-
 module Fast = struct
   type value =
     | Unit
@@ -67,7 +59,7 @@ module Fast = struct
         args : Runtime_value.payload list;
       }
 
-  type state = { mutable trace : Yojson.Safe.t list }
+  type state = { mutable operation_count : int }
 
   let fail message = Error message
 
@@ -209,14 +201,8 @@ module Fast = struct
     | Error message -> fail message
     | Ok payload ->
         let* value = value_of_payload payload in
-        let rule =
-          "FastCallCompleted("
-          ^ (Standard_library.functions
-            |> List.find (fun info -> info.Standard_library.id = function_id)
-            |> fun info -> info.stable_id ^ "@" ^ info.version)
-          ^ ")"
-        in
-        state.trace <- state.trace @ [ fast_trace_event (List.length state.trace) rule subject ];
+        let (_ : string) = subject in
+        state.operation_count <- state.operation_count + 1;
         Ok value
 
   let rec eval_source state document env = function
@@ -630,7 +616,7 @@ module Fast = struct
         match result_boundary with
         | None -> fail "Fast execution requires an entry result boundary."
         | Some boundary -> (
-            let state = { trace = [] } in
+            let state = { operation_count = 0 } in
             match source_for_input document (`Boundary (entry.id, boundary.id)) with
             | None -> fail "Entry result is not connected."
             | Some source -> (
@@ -642,8 +628,7 @@ module Fast = struct
                            ("status", `String "completed");
                            ("mode", `String "fast");
                            ("result", `String (value_to_string value));
-                           ("rewriteCount", `Int (List.length state.trace));
-                           ("trace", `List state.trace);
+                           ("rewriteCount", `Int state.operation_count);
                            ( "summary",
                              `String
                                "Fast Run completed without materializing Core rewrite events." );
@@ -718,3 +703,120 @@ let run_json_with_mode project_json ~mode =
   Yojson.Safe.to_string response
 
 let run_json project_json = run_json_with_mode project_json ~mode:"transparent"
+
+type trace_session = {
+  package : Program_package.t;
+  mutable machine : Engine.Machine.t;
+  mutable executed_steps : Nat.t;
+}
+
+let next_trace_session_id = ref 1
+let trace_sessions : (int, trace_session) Hashtbl.t = Hashtbl.create 4
+
+let trace_batch events =
+  `List (List.map trace_event events)
+
+let start_trace_session_json project_json =
+  let response =
+    match P.decode_json project_json with
+    | Error decode_error ->
+        error "decode" [ P.Decode_error.to_string decode_error ]
+    | Ok document -> (
+        match P.infer_symbolic document with
+        | Error (`Validation errors) ->
+            error "validation" (List.map P.Validation_error.to_string errors)
+        | Error (`Conversion errors) ->
+            error "conversion" (List.map P.Conversion_error.to_string errors)
+        | Error (`Geometry errors) ->
+            error "geometry" (List.map Surface_geometry.render_validation_error errors)
+        | Error (`Inference errors) ->
+            error "inference" (List.map Surface_geometry.render_inference_error errors)
+        | Ok symbolic -> (
+            let package = Surface_symbolic.lower_to_program_package symbolic in
+            match Program_package.initialize package with
+            | Error error_value ->
+                error "execution"
+                  [ Program_package.execution_error_to_string error_value ]
+            | Ok machine ->
+                let session_id = !next_trace_session_id in
+                incr next_trace_session_id;
+                Hashtbl.replace trace_sessions session_id
+                  { package; machine; executed_steps = Nat.zero };
+                `Assoc
+                  [
+                    ("status", `String "started");
+                    ("sessionId", `Int session_id);
+                  ]))
+  in
+  Yojson.Safe.to_string response
+
+let dispose_trace_session ~session_id =
+  Hashtbl.remove trace_sessions session_id
+
+let trace_session_next_json ~session_id ~batch_size =
+  let safe_batch_size = if batch_size <= 0 then 1 else batch_size in
+  let response =
+    match Hashtbl.find_opt trace_sessions session_id with
+    | None -> error "execution" [ "Unknown trace session." ]
+    | Some session ->
+        let rec loop remaining acc =
+          if remaining <= 0 then
+            `Assoc
+              [
+                ("status", `String "trace_batch");
+                ("trace", trace_batch (List.rev acc));
+                ( "rewriteCount",
+                  `Int (List.length (Engine.Machine.trace_events session.machine))
+                );
+              ]
+          else
+            match Program_package.step session.machine with
+            | Engine.Rewritten { machine; event } ->
+                session.machine <- machine;
+                session.executed_steps <- Nat.succ session.executed_steps;
+                loop (remaining - 1) (event :: acc)
+            | Engine.Completed value ->
+                Hashtbl.remove trace_sessions session_id;
+                if
+                  Core_type.equal (Runtime_value.typ value)
+                    (Program_package.result_type session.package)
+                then
+                  `Assoc
+                    [
+                      ("status", `String "completed");
+                      ("mode", `String "transparent");
+                      ("result", `String (result_value value));
+                      ( "rewriteCount",
+                        `Int
+                          (List.length
+                             (Engine.Machine.trace_events session.machine)) );
+                      ("trace", trace_batch (List.rev acc));
+                    ]
+                else
+                  error "execution"
+                    [
+                      Program_package.execution_error_to_string
+                        (Completed_result_type_mismatch
+                           {
+                             expected = Program_package.result_type session.package;
+                             actual = Runtime_value.typ value;
+                           });
+                    ]
+            | Engine.Stuck reason ->
+                Hashtbl.remove trace_sessions session_id;
+                error "execution"
+                  [
+                    "Execution stuck in "
+                    ^ Runtime_value.Instance_id.to_string reason.instance_id;
+                  ]
+            | Engine.Runtime_error execution_error ->
+                Hashtbl.remove trace_sessions session_id;
+                error "execution"
+                  [
+                    Program_package.execution_error_to_string
+                      (Runtime_error execution_error);
+                  ]
+        in
+        loop safe_batch_size []
+  in
+  Yojson.Safe.to_string response

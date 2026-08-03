@@ -1,0 +1,64 @@
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { ExecutionPanel, type ExecutionState } from "./ExecutionPanel";
+
+function renderPanel(state: ExecutionState, onViewTrace = vi.fn()) {
+  render(
+    <ExecutionPanel
+      state={state}
+      traceSourceElementId={null}
+      onTraceSelect={vi.fn()}
+      onViewTrace={onViewTrace}
+      onDiagnosticSelect={vi.fn()}
+    />,
+  );
+}
+
+describe("ExecutionPanel trace replay", () => {
+  it("offers Trace 보기 after a completed Fast Run without rendering trace events", () => {
+    const onViewTrace = vi.fn();
+    renderPanel(
+      {
+        status: "completed",
+        response: {
+          status: "completed",
+          mode: "fast",
+          result: "Bool(True)",
+          rewriteCount: 0,
+          trace: [],
+          summary:
+            "Fast Run completed without materializing Core rewrite events.",
+        },
+        selectedTraceIndex: null,
+        traceReplayProjectJson: "{}",
+      },
+      onViewTrace,
+    );
+
+    expect(screen.getByText("Bool(True)")).toBeInTheDocument();
+    expect(screen.getByText("No rewrite events.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Trace 보기" }));
+    expect(onViewTrace).toHaveBeenCalledOnce();
+  });
+
+  it("shows streamed trace events while replay is still running", () => {
+    renderPanel({
+      status: "running",
+      mode: "transparent",
+      replayFastResult: "Bool(True)",
+      trace: [
+        { index: 0, rule: "Function", subject: "step_function" },
+        { index: 1, rule: "NatRecStart", subject: "natrec_1" },
+      ],
+      selectedTraceIndex: 0,
+    });
+
+    expect(screen.getByText(/Trace 보기 · 다시 실행 중… 2 steps/)).toBeInTheDocument();
+    expect(screen.getByText("Fast result:")).toBeInTheDocument();
+    expect(screen.getByText("Event 1 of 2")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Event 1: Function" })).toHaveAttribute(
+      "aria-current",
+      "step",
+    );
+  });
+});

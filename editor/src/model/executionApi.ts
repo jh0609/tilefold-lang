@@ -25,11 +25,14 @@ interface WorkerRequest {
   requestId: number;
   projectJson: string;
   mode: ExecutionMode;
+  streamTrace?: boolean;
+  traceBatchSize?: number;
 }
 
 interface WorkerResponse {
   requestId: number;
   output?: string;
+  traceBatch?: string;
   workerError?: string;
 }
 
@@ -57,7 +60,11 @@ export function isExecutionCanceledError(
 export interface ExecutionBackend {
   run(
     projectJson: string,
-    options?: { mode?: ExecutionMode; signal?: AbortSignal },
+    options?: {
+      mode?: ExecutionMode;
+      signal?: AbortSignal;
+      onTraceBatch?: (events: ExecutionTraceEvent[]) => void;
+    },
   ): Promise<ExecutionResponse>;
   dispose(): void;
 }
@@ -88,12 +95,16 @@ export function parseExecutionResponse(value: string): ExecutionResponse {
   if (
     parsed.status !== "completed" ||
     typeof parsed.result !== "string" ||
-    !Number.isInteger(parsed.rewriteCount) ||
-    !Array.isArray(parsed.trace)
+    !Number.isInteger(parsed.rewriteCount)
   ) {
     throw new Error("OCaml runner returned an invalid completed response.");
   }
-  const trace = parsed.trace.map((event) => {
+  const rawTrace = parsed.trace;
+  if (rawTrace !== undefined && !Array.isArray(rawTrace)) {
+    throw new Error("OCaml runner returned an invalid completed response.");
+  }
+  const rawTraceEvents = rawTrace === undefined ? [] : rawTrace;
+  const trace = rawTraceEvents.map((event) => {
     if (
       !isRecord(event) ||
       !Number.isInteger(event.index) ||
@@ -121,6 +132,31 @@ export function parseExecutionResponse(value: string): ExecutionResponse {
   };
 }
 
+export function parseTraceBatch(value: string): ExecutionTraceEvent[] {
+  const parsed: unknown = JSON.parse(value);
+  if (!isRecord(parsed) || parsed.status !== "trace_batch") {
+    throw new Error("OCaml runner returned an invalid trace batch.");
+  }
+  if (!Array.isArray(parsed.trace)) {
+    throw new Error("OCaml runner returned an invalid trace batch.");
+  }
+  return parsed.trace.map((event) => {
+    if (
+      !isRecord(event) ||
+      !Number.isInteger(event.index) ||
+      typeof event.rule !== "string" ||
+      typeof event.subject !== "string"
+    ) {
+      throw new Error("OCaml runner returned an invalid trace event.");
+    }
+    return {
+      index: event.index as number,
+      rule: event.rule,
+      subject: event.subject,
+    };
+  });
+}
+
 export function createBrowserExecutionBackend(
   createWorker: () => ExecutionWorker = () =>
     new Worker(new URL("../executionWorker.ts", import.meta.url)) as ExecutionWorker,
@@ -136,6 +172,8 @@ export function createBrowserExecutionBackend(
         generation: number;
         signal?: AbortSignal;
         onAbort?: () => void;
+        traceEvents: ExecutionTraceEvent[];
+        onTraceBatch?: (events: ExecutionTraceEvent[]) => void;
         resolve: (response: ExecutionResponse) => void;
         reject: (error: Error) => void;
       }
@@ -191,10 +229,34 @@ export function createBrowserExecutionBackend(
         });
         return;
       }
+      if (data.traceBatch) {
+        try {
+          const events = parseTraceBatch(data.traceBatch);
+          request.traceEvents.push(...events);
+          request.onTraceBatch?.(events);
+        } catch (error) {
+          finish(request, {
+            type: "reject",
+            error:
+              error instanceof Error
+                ? error
+                : new Error("Invalid runner trace batch."),
+          });
+        }
+        return;
+      }
       try {
+        const response = parseExecutionResponse(data.output ?? "");
+        const mergedResponse =
+          response.status === "completed" && request.traceEvents.length > 0
+            ? {
+                ...response,
+                trace: [...request.traceEvents, ...response.trace],
+              }
+            : response;
         finish(request, {
           type: "resolve",
-          response: parseExecutionResponse(data.output ?? ""),
+          response: mergedResponse,
         });
       } catch (error) {
         finish(request, {
@@ -261,6 +323,8 @@ export function createBrowserExecutionBackend(
           requestId,
           generation,
           signal: options?.signal,
+          traceEvents: [],
+          onTraceBatch: options?.onTraceBatch,
           resolve,
           reject,
         };
@@ -274,6 +338,9 @@ export function createBrowserExecutionBackend(
             requestId,
             projectJson,
             mode: options?.mode ?? "transparent",
+            streamTrace:
+              options?.mode !== "fast" && Boolean(options?.onTraceBatch),
+            traceBatchSize: 128,
           });
         } catch (error) {
           discardWorker(ownedWorker);

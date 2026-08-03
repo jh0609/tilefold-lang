@@ -597,21 +597,14 @@ test("runs a Standard Library add call transparently and with fast execution", a
 
   await page.getByLabel("Execution mode").selectOption("fast");
   await page.getByRole("button", { name: "Run" }).click();
-  await expect(page.getByText(/Result:/)).toContainText("Result: Nat(5) · 1 rewrites");
-  await expect(
-    page.getByRole("button", {
-      name: "Event 1: FastCallCompleted(tilefold.std.nat.add@v1)",
-    }),
-  ).toBeVisible();
-  await page
-    .getByRole("button", {
-      name: "Event 1: FastCallCompleted(tilefold.std.nat.add@v1)",
-    })
-    .click();
-  await expect(page.getByTestId("element-add-function")).toHaveAttribute(
-    "data-trace-highlighted",
-    "true",
+  await expect(page.getByText(/Result:/)).toContainText(
+    "Result: Nat(5) · 1 fast operations",
   );
+  await expect(page.getByText("No rewrite events.")).toBeVisible();
+  await expect(page.getByText("FastCallCompleted(tilefold.std.nat.add@v1)")).toHaveCount(0);
+  await page.getByRole("button", { name: "Trace 보기" }).click();
+  await expect(page.getByText(/Trace inspector/)).toBeVisible();
+  await expect(page.getByRole("button", { name: /Event 1:/ })).toBeVisible();
 
   await expectNoBrowserIssues(issues);
 });
@@ -992,11 +985,12 @@ test("compares Standard Library transparent and fast execution for all exposed c
       `Result: ${scenario.expected}`,
       { timeout: 30_000 },
     );
+    await expect(page.getByRole("button", { name: "Trace 보기" })).toBeVisible();
     await expect(
       page.getByRole("button", {
         name: new RegExp(`FastCallCompleted\\(tilefold\\.std\\.(nat|bool)\\.${scenario.name}@v1\\)`),
       }),
-    ).toBeVisible();
+    ).toHaveCount(0);
   }
 
   await expectNoBrowserIssues(issues);

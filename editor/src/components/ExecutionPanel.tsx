@@ -1,14 +1,24 @@
-import type { ExecutionResponse } from "../model/executionApi";
+import type {
+  ExecutionResponse,
+  ExecutionTraceEvent,
+} from "../model/executionApi";
 import type { SourceDiagnostic } from "../model/sourceDiagnostics";
 import { TraceInspector } from "./TraceInspector";
 
 export type ExecutionState =
   | { status: "idle" }
-  | { status: "running" }
+  | {
+      status: "running";
+      mode: "transparent" | "fast";
+      trace: ExecutionTraceEvent[];
+      selectedTraceIndex: number | null;
+      replayFastResult?: string;
+    }
   | {
       status: "completed";
       response: ExecutionResponse;
       selectedTraceIndex: number | null;
+      traceReplayProjectJson?: string;
     }
   | { status: "failed"; message: string; diagnostics?: SourceDiagnostic[] }
   | { status: "canceled" };
@@ -17,6 +27,7 @@ interface ExecutionPanelProps {
   state: ExecutionState;
   traceSourceElementId: string | null;
   onTraceSelect: (index: number) => void;
+  onViewTrace: () => void;
   onDiagnosticSelect: (diagnostic: SourceDiagnostic) => void;
 }
 
@@ -24,9 +35,13 @@ export function ExecutionPanel({
   state,
   traceSourceElementId,
   onTraceSelect,
+  onViewTrace,
   onDiagnosticSelect,
 }: ExecutionPanelProps) {
   const execution = state.status === "completed" ? state.response : null;
+  const runningTrace = state.status === "running" ? state.trace : [];
+  const runningSelectedTraceIndex =
+    state.status === "running" ? state.selectedTraceIndex : null;
   const diagnostics =
     state.status === "failed" ? (state.diagnostics ?? []) : [];
   return (
@@ -37,9 +52,30 @@ export function ExecutionPanel({
     >
       <h2 id="execution-title">OCaml execution</h2>
       {state.status === "running" && (
-        <p role="status" aria-live="polite">
-          Running the reference engine…
-        </p>
+        <>
+          <p role="status" aria-live="polite">
+            {state.mode === "fast"
+              ? "Running Fast Run…"
+              : state.replayFastResult
+                ? `Trace 보기 · 다시 실행 중… ${runningTrace.length} steps`
+                : `Running Trace Run… ${runningTrace.length} steps`}
+          </p>
+          {state.replayFastResult && (
+            <p>
+              Fast result: <strong>{state.replayFastResult}</strong>
+            </p>
+          )}
+          {runningSelectedTraceIndex !== null && runningTrace.length > 0 ? (
+            <TraceInspector
+              trace={runningTrace}
+              selectedIndex={runningSelectedTraceIndex}
+              sourceElementId={traceSourceElementId}
+              onSelect={onTraceSelect}
+            />
+          ) : state.mode === "transparent" ? (
+            <p className="trace-empty">Waiting for rewrite events…</p>
+          ) : null}
+        </>
       )}
       {state.status === "failed" && (
         <div className="execution-error" role="alert">
@@ -95,15 +131,22 @@ export function ExecutionPanel({
           </ul>
         </div>
       )}
-      {execution?.status === "completed" && (
+      {state.status === "completed" && execution?.status === "completed" && (
         <>
           <p>
             {execution.mode === "fast" ? "Fast Run" : "Trace Run"} · Result:{" "}
             <strong>{execution.result}</strong> ·{" "}
-            {execution.rewriteCount} rewrites
+            {execution.mode === "fast"
+              ? `${execution.rewriteCount} fast operations`
+              : `${execution.rewriteCount} rewrites`}
           </p>
           {execution.summary && (
             <p className="trace-empty">{execution.summary}</p>
+          )}
+          {execution.mode === "fast" && state.traceReplayProjectJson && (
+            <button type="button" onClick={onViewTrace}>
+              Trace 보기
+            </button>
           )}
           {state.status === "completed" &&
           state.selectedTraceIndex !== null ? (

@@ -1696,13 +1696,38 @@ let () =
   assert (member "status" std_add_fast = `String "completed");
   assert (member "result" std_add_fast = `String "Nat(5)");
   assert (member "rewriteCount" std_add_fast = `Int 1);
-  let trace = member "trace" std_add_fast in
+  assert (member "trace" std_add_fast = `Null);
+  let trace_start =
+    E.start_trace_session_json std_add_project |> Yojson.Safe.from_string
+  in
+  assert (member "status" trace_start = `String "started");
+  let session_id =
+    match member "sessionId" trace_start with
+    | `Int id -> id
+    | _ -> failwith "trace session did not return an integer session ID"
+  in
+  let first_batch =
+    E.trace_session_next_json ~session_id ~batch_size:1
+    |> Yojson.Safe.from_string
+  in
+  assert (member "status" first_batch = `String "trace_batch");
   assert (
-    match trace with
-    | `List [ event ] ->
-        member "rule" event
-        = `String "FastCallCompleted(tilefold.std.nat.add@v1)"
+    match member "trace" first_batch with
+    | `List [ _ ] -> true
     | _ -> false);
+  let rec finish_trace_session () =
+    let batch =
+      E.trace_session_next_json ~session_id ~batch_size:128
+      |> Yojson.Safe.from_string
+    in
+    match member "status" batch with
+    | `String "trace_batch" -> finish_trace_session ()
+    | `String "completed" -> batch
+    | _ -> failwith "trace session returned an unexpected status"
+  in
+  let trace_completed = finish_trace_session () in
+  assert (member "result" trace_completed = `String "Nat(5)");
+  assert (member "rewriteCount" trace_completed <> `Int 0);
   let std_cases =
     [
       ( "nat.add",
