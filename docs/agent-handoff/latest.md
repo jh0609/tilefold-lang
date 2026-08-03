@@ -10,7 +10,7 @@ Protocol:
 
 Pending task:
 
-- None
+- [Harden Extract Function and Complete End-to-End Coverage](../agent-tasks/latest.md)
 
 Latest archive:
 
