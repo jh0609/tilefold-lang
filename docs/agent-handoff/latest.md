@@ -10,7 +10,7 @@ Protocol:
 
 Pending task:
 
-- None
+- [Prevent Container Overlap After Scoped Auto Layout](../agent-tasks/latest.md)
 
 Latest archive:
 
