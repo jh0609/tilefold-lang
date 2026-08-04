@@ -288,6 +288,68 @@ describe("auto layout", () => {
     expect(repeated.changedWireIds).toEqual([]);
   });
 
+  it("keeps a left-anchored top-level row horizontal when entry expansion cascades", () => {
+    const before = addContainers(overlapEntryNodes(parseProjectJson(exampleJson)), [
+      container("container_template_1", {
+        x: 320,
+        y: 0,
+        width: 522,
+        height: 437,
+      }),
+      container("container_template_2", {
+        x: 922,
+        y: 0,
+        width: 671,
+        height: 1352,
+      }),
+      container("container_template_3", {
+        x: 1615,
+        y: 0,
+        width: 829,
+        height: 487,
+      }),
+      container("container_template_4", {
+        x: 2524,
+        y: 0,
+        width: 1286,
+        height: 718,
+      }),
+    ]);
+    const result = autoLayoutDocument(before, {
+      kind: "container",
+      containerId: "entry",
+    });
+    expect("error" in result ? result.error : undefined).toBeUndefined();
+    if ("error" in result) return;
+
+    expectNoOverlap(topLevelContainerBounds(result.document));
+    expect(
+      result.document.geometry.containers.map((candidate) => ({
+        id: candidate.id,
+        y: candidate.bounds.y,
+      })),
+    ).toEqual([
+      { id: "entry", y: 0 },
+      { id: "container_template_1", y: 0 },
+      { id: "container_template_2", y: 0 },
+      { id: "container_template_3", y: 0 },
+      { id: "container_template_4", y: 0 },
+    ]);
+    expect(
+      result.document.geometry.containers.map((candidate) => candidate.bounds.x),
+    ).toEqual([0, 406, 1048, 1839, 2788]);
+
+    const repeated = autoLayoutDocument(result.document, {
+      kind: "container",
+      containerId: "entry",
+    });
+    expect("error" in repeated ? repeated.error : undefined).toBeUndefined();
+    if ("error" in repeated) return;
+    expect(repeated.changedContainerIds).toEqual([]);
+    expect(repeated.changedElementIds).toEqual([]);
+    expect(repeated.changedWireIds).toEqual([]);
+  });
+
   it("uses the nearest deterministic side when resolving boxed-in siblings", () => {
     const before = addContainers(overlapEntryNodes(parseProjectJson(exampleJson)), [
       container("neighbor", { x: 400, y: 0, width: 220, height: 140 }),

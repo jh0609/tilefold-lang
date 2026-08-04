@@ -46,18 +46,28 @@ ownership are not rewritten. Non-colliding sibling containers keep their
 existing bounds byte-for-byte.
 
 The scoped sibling resolver uses the same 120 px clearance as the top-level
-container horizontal gap. For each colliding sibling, it builds deterministic
-candidate positions from the current sibling obstacle edges plus the required
-clearance, tests each candidate against every sibling bound at that level, and
-chooses the smallest displacement from the sibling's current position. Distance
-ties are resolved by fixed direction priority: right, down, left, up, then
-diagonal/grid placements, followed by numeric coordinate order. Siblings are
-processed in stable ID order after the protected container, and each moved
-sibling becomes part of the placed obstacle set before later siblings are
-considered. The finite candidate set always includes positions beyond obstacle
-edges; if those were exhausted, the deterministic fallback places the container
-to the right of the rightmost obstacle. Therefore each finite sibling level
-terminates without oscillation, including boxed-in arrangements.
+container horizontal gap. When the protected top-level container is the
+leftmost container, the existing left-to-right row is preserved: siblings are
+processed by their original x/y position and stable ID, a colliding sibling is
+shifted right at the same y coordinate, and later siblings are shifted only if
+the growing placed row reaches them. Future sibling positions are not treated
+as immovable obstacles because those siblings are part of the same deterministic
+cascade. This prevents a wide entry layout from ejecting function containers
+above the canvas merely because vertical displacement is shorter than moving
+the row right.
+
+Other sibling arrangements use the general nearest-position resolver. It builds
+deterministic candidate positions from the current sibling obstacle edges plus
+the required clearance, tests each candidate against every sibling bound at
+that level, and chooses the smallest displacement from the sibling's current
+position. Distance ties are resolved by fixed direction priority: right, down,
+left, up, then diagonal/grid placements, followed by numeric coordinate order.
+Siblings are processed in stable ID order after the protected container, and
+each moved sibling becomes part of the placed obstacle set before later siblings
+are considered. The finite candidate set always includes positions beyond
+obstacle edges; if those were exhausted, the deterministic fallback places the
+container to the right of the rightmost obstacle. Therefore each finite sibling
+level terminates without oscillation, including boxed-in arrangements.
 
 For nested scoped layout, resolving a child level may resize that child's parent
 to preserve containment before the algorithm proceeds outward. Each affected

@@ -710,6 +710,68 @@ function nearestCollisionFreePosition(
   })[0]!;
 }
 
+function resolveLeftAnchoredTopLevelRow(
+  document: ProjectDocument,
+  protectedContainerId: StableId,
+  siblingIds: readonly StableId[],
+  index: ChildIndex,
+  clearance: number,
+): ProjectDocument | null {
+  const originalById = new Map(
+    document.geometry.containers.map((container) => [container.id, container]),
+  );
+  const orderedIds = [...siblingIds].sort((leftId, rightId) => {
+    const left = originalById.get(leftId)!;
+    const right = originalById.get(rightId)!;
+    return (
+      left.bounds.x - right.bounds.x ||
+      left.bounds.y - right.bounds.y ||
+      left.id.localeCompare(right.id)
+    );
+  });
+  if (orderedIds[0] !== protectedContainerId) return null;
+
+  let nextDocument = document;
+  const placed: Bounds[] = [];
+  for (const id of orderedIds) {
+    const current = nextDocument.geometry.containers.find(
+      (container) => container.id === id,
+    );
+    if (!current) continue;
+    if (id === protectedContainerId || collisionFree(current.bounds, placed, clearance)) {
+      placed.push(current.bounds);
+      continue;
+    }
+
+    let x = current.bounds.x;
+    while (true) {
+      const candidate = { ...current.bounds, x };
+      const collisions = placed.filter((obstacle) =>
+        boundsOverlap(candidate, obstacle, clearance),
+      );
+      if (collisions.length === 0) break;
+      x = Math.max(
+        x,
+        ...collisions.map(
+          (obstacle) => obstacle.x + obstacle.width + clearance,
+        ),
+      );
+    }
+    nextDocument = shiftContainerSubtree(
+      nextDocument,
+      id,
+      Math.round(x - current.bounds.x),
+      0,
+      index,
+    );
+    placed.push(
+      nextDocument.geometry.containers.find((container) => container.id === id)!
+        .bounds,
+    );
+  }
+  return nextDocument;
+}
+
 function resolveSiblingContainerCollisions(
   document: ProjectDocument,
   protectedContainerId: StableId,
@@ -722,6 +784,17 @@ function resolveSiblingContainerCollisions(
   ].sort((left, right) => left.localeCompare(right));
   if (siblingIds.length < 2 || !siblingIds.includes(protectedContainerId)) {
     return document;
+  }
+
+  if (!parentId) {
+    const rowLayout = resolveLeftAnchoredTopLevelRow(
+      document,
+      protectedContainerId,
+      siblingIds,
+      stableIndex,
+      clearance,
+    );
+    if (rowLayout) return rowLayout;
   }
 
   const parent = parentId
