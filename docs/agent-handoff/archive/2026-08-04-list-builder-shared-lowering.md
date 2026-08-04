@@ -96,9 +96,27 @@ The full Chromium run includes:
 
 ## Deployment
 
-Push and production deployment were not yet performed when this archive was
-created. Add a deployment follow-up after push and public Production Chromium
-verification.
+Implementation and handoff were pushed to `origin/main`.
+
+- Final pushed SHA: `fb38a27e44858c0b9a1ca6f84f9bed95a7ef1092`
+- GitHub deployment ID: `5739834689`
+- GitHub deployment status ID: `16323097155`
+- Deployment state: `success`
+- Environment: `Production`
+- Production URL: `https://tilefold-editor.vercel.app`
+- Deployment URL: `https://tilefold-editor-ayz3urllg-draftgame.vercel.app`
+- Production source SHA: `fb38a27e44858c0b9a1ca6f84f9bed95a7ef1092`
+- Production runner hash:
+  `7c8b4e0798c3e542b9b09bcbb2cefd4e8859413f007354497dea73e3c121c6c6`
+- Response evidence: `Status=200`, `Server=Vercel`,
+  `X-Vercel-Cache=MISS`,
+  `X-Vercel-Id=icn1::kgvmr-1785829149341-e60e53333646`.
+
+Production Chromium verification against
+`PLAYWRIGHT_BASE_URL=https://tilefold-editor.vercel.app` passed:
+
+- `npm run test:e2e -- e2e/list-builder-authoring.spec.ts --timeout=120000 --reporter=list`
+  - passed; 3 Chromium tests
 
 ## Known Limitations
 
