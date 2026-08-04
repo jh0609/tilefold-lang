@@ -334,6 +334,31 @@ describe("editor command history", () => {
     expect(redone.present).toBe(executed.history.present);
   });
 
+  it("undoes and redoes scoped Auto Layout as one semantic-preserving entry", () => {
+    const initial = parseProjectJson(exampleJson);
+    const layout = autoLayoutDocument(initial, {
+      kind: "container",
+      containerId: "entry",
+    });
+    expect("error" in layout ? layout.error : undefined).toBeUndefined();
+    if ("error" in layout) return;
+    const executed = executeEditorCommand(createEditorHistory(initial), {
+      type: "apply_auto_layout",
+      scope: { kind: "container", containerId: "entry" },
+      after: layout.document,
+    });
+    expect(executed.error).toBeUndefined();
+    expect(executed.history.past).toHaveLength(1);
+    expect(stripLayoutForComparison(executed.history.present)).toEqual(
+      stripLayoutForComparison(initial),
+    );
+    expect(executed.history.present.geometry).toEqual(layout.document.geometry);
+
+    const undone = undoEditorCommand(executed.history);
+    expect(undone.present).toBe(initial);
+    const redone = redoEditorCommand(undone);
+    expect(redone.present).toBe(executed.history.present);
+  });
   it("leaves undo and redo stacks untouched when a tracked move fails", () => {
     const initial = parseProjectJson(exampleJson);
     const added = executeEditorCommand(createEditorHistory(initial), {

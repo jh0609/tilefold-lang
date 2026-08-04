@@ -141,12 +141,54 @@ function buildChildIndex(
     directContainerIdsByParentId.set(parentId, current);
   }
 
-  for (const element of stableElements(document)) {
-    const ownerId = spatialIndex.ownerByElementId.get(element.id);
-    if (!ownerId) continue;
+  function addDirectElement(ownerId: StableId | undefined, elementId: StableId) {
+    if (!ownerId) return;
+    for (const [candidateOwnerId, elementIds] of directElementIdsByContainerId) {
+      if (candidateOwnerId === ownerId) continue;
+      const filtered = elementIds.filter((id) => id !== elementId);
+      if (filtered.length === elementIds.length) continue;
+      if (filtered.length > 0) {
+        directElementIdsByContainerId.set(candidateOwnerId, filtered);
+      } else {
+        directElementIdsByContainerId.delete(candidateOwnerId);
+      }
+    }
     const current = directElementIdsByContainerId.get(ownerId) ?? [];
-    current.push(element.id);
+    if (!current.includes(elementId)) current.push(elementId);
     directElementIdsByContainerId.set(ownerId, current);
+  }
+
+  for (const element of stableElements(document)) {
+    addDirectElement(spatialIndex.ownerByElementId.get(element.id), element.id);
+  }
+
+  for (const call of document.surfaceLibraryCalls ?? []) {
+    const ownerId = spatialIndex.ownerByElementId.get(call.functionElementId);
+    addDirectElement(ownerId, call.functionElementId);
+    for (const applyId of call.applyElementIds) {
+      addDirectElement(ownerId, applyId);
+    }
+  }
+
+  for (const call of document.surfaceProjectCalls ?? []) {
+    const ownerId = spatialIndex.ownerByElementId.get(call.functionElementId);
+    addDirectElement(ownerId, call.functionElementId);
+  }
+
+  function directOwnerForElement(elementId: StableId): StableId | undefined {
+    for (const [ownerId, elementIds] of directElementIdsByContainerId) {
+      if (elementIds.includes(elementId)) return ownerId;
+    }
+    return spatialIndex.ownerByElementId.get(elementId);
+  }
+
+  for (const element of stableElements(document)) {
+    if (element.kind !== "drop") continue;
+    const provenance = element.properties.provenance;
+    if (!provenance || provenance.kind !== "auto_function_output_drop") {
+      continue;
+    }
+    addDirectElement(directOwnerForElement(provenance.sourceElementId), element.id);
   }
 
   for (const container of containers) {
@@ -281,7 +323,7 @@ function shiftContainerSubtree(
 function resizeContainerToContentBounds(
   document: ProjectDocument,
   containerId: StableId,
-  index = buildChildIndex(document),
+  index: ChildIndex,
 ): ProjectDocument {
   const container = document.geometry.containers.find(
     (candidate) => candidate.id === containerId,
@@ -458,15 +500,17 @@ function layerItems(
 function layoutDirectChildren(
   document: ProjectDocument,
   containerId: StableId,
+  ownershipIndex: ChildIndex,
 ): ProjectDocument {
   const container = document.geometry.containers.find(
     (candidate) => candidate.id === containerId,
   );
   if (!container) return document;
   const spatialIndex = buildEditorSpatialIndex(document);
-  const childIndex = buildChildIndex(document, spatialIndex);
-  const directElementIds = childIndex.directElementIdsByContainerId.get(containerId) ?? [];
-  const directContainerIds = childIndex.directContainerIdsByParentId.get(containerId) ?? [];
+  const directElementIds =
+    ownershipIndex.directElementIdsByContainerId.get(containerId) ?? [];
+  const directContainerIds =
+    ownershipIndex.directContainerIdsByParentId.get(containerId) ?? [];
   const elementById = new Map(
     document.geometry.elements.map((element) => [element.id, element]),
   );
@@ -487,7 +531,9 @@ function layoutDirectChildren(
       order: directElementIds.length + order,
     })),
   ].sort((left, right) => left.id.localeCompare(right.id));
-  if (items.length === 0) return resizeContainerToContentBounds(document, containerId, childIndex);
+  if (items.length === 0) {
+    return resizeContainerToContentBounds(document, containerId, ownershipIndex);
+  }
 
   const layers = layerItems(
     items,
@@ -525,7 +571,6 @@ function layoutDirectChildren(
           },
         };
       } else {
-        const latestIndex = buildChildIndex(nextDocument);
         const current = nextDocument.geometry.containers.find(
           (candidate) => candidate.id === item.id,
         )!;
@@ -534,14 +579,14 @@ function layoutDirectChildren(
           item.id,
           Math.round(target.x - current.bounds.x),
           Math.round(target.y - current.bounds.y),
-          latestIndex,
+          ownershipIndex,
         );
       }
       y += item.bounds.height + NODE_Y_GAP;
     }
     x += columnWidth + NODE_X_GAP;
   }
-  return resizeContainerToContentBounds(nextDocument, containerId, childIndex);
+  return resizeContainerToContentBounds(nextDocument, containerId, ownershipIndex);
 }
 
 function childContainerDepths(index: ChildIndex): Map<StableId, number> {
@@ -561,14 +606,16 @@ function childContainerDepths(index: ChildIndex): Map<StableId, number> {
 function layoutContainersBottomUp(
   document: ProjectDocument,
   containerIds: readonly StableId[],
+  ownershipIndex: ChildIndex,
 ): ProjectDocument {
-  const index = buildChildIndex(document);
   const selected = new Set(containerIds);
   const descendants = new Set<StableId>();
   for (const id of selected) {
-    for (const descendant of descendantsOf(index, id)) descendants.add(descendant);
+    for (const descendant of descendantsOf(ownershipIndex, id)) {
+      descendants.add(descendant);
+    }
   }
-  const depths = childContainerDepths(index);
+  const depths = childContainerDepths(ownershipIndex);
   const ordered = [...descendants].sort(
     (left, right) =>
       (depths.get(left) ?? 0) - (depths.get(right) ?? 0) ||
@@ -576,14 +623,18 @@ function layoutContainersBottomUp(
   );
   let nextDocument = document;
   for (const id of ordered) {
-    nextDocument = layoutDirectChildren(nextDocument, id);
+    nextDocument = layoutDirectChildren(nextDocument, id, ownershipIndex);
   }
   return nextDocument;
 }
 
-function packTopLevelContainers(document: ProjectDocument): ProjectDocument {
-  const index = buildChildIndex(document);
-  const topLevelIds = [...(index.directContainerIdsByParentId.get(null) ?? [])];
+function packTopLevelContainers(
+  document: ProjectDocument,
+  ownershipIndex: ChildIndex,
+): ProjectDocument {
+  const topLevelIds = [
+    ...(ownershipIndex.directContainerIdsByParentId.get(null) ?? []),
+  ];
   let x = 40;
   let y = 40;
   let rowHeight = 0;
@@ -598,13 +649,12 @@ function packTopLevelContainers(document: ProjectDocument): ProjectDocument {
       y += rowHeight + TOP_LEVEL_Y_GAP;
       rowHeight = 0;
     }
-    const childIndex = buildChildIndex(nextDocument);
     nextDocument = shiftContainerSubtree(
       nextDocument,
       id,
       Math.round(x - current.bounds.x),
       Math.round(y - current.bounds.y),
-      childIndex,
+      ownershipIndex,
     );
     x += current.bounds.width + TOP_LEVEL_X_GAP;
     rowHeight = Math.max(rowHeight, current.bounds.height);
@@ -775,12 +825,13 @@ function resolveLeftAnchoredTopLevelRow(
 function resolveSiblingContainerCollisions(
   document: ProjectDocument,
   protectedContainerId: StableId,
+  ownershipIndex: ChildIndex,
   clearance = SCOPED_CONTAINER_CLEARANCE,
 ): ProjectDocument {
-  const stableIndex = buildChildIndex(document);
-  const parentId = stableIndex.parentByContainerId.get(protectedContainerId) ?? null;
+  const parentId =
+    ownershipIndex.parentByContainerId.get(protectedContainerId) ?? null;
   const siblingIds = [
-    ...(stableIndex.directContainerIdsByParentId.get(parentId) ?? []),
+    ...(ownershipIndex.directContainerIdsByParentId.get(parentId) ?? []),
   ].sort((left, right) => left.localeCompare(right));
   if (siblingIds.length < 2 || !siblingIds.includes(protectedContainerId)) {
     return document;
@@ -791,7 +842,7 @@ function resolveSiblingContainerCollisions(
       document,
       protectedContainerId,
       siblingIds,
-      stableIndex,
+      ownershipIndex,
       clearance,
     );
     if (rowLayout) return rowLayout;
@@ -846,7 +897,7 @@ function resolveSiblingContainerCollisions(
       id,
       target.x - current.bounds.x,
       target.y - current.bounds.y,
-      stableIndex,
+      ownershipIndex,
     );
     const moved = nextDocument.geometry.containers.find(
       (container) => container.id === id,
@@ -855,7 +906,7 @@ function resolveSiblingContainerCollisions(
   }
 
   if (parentId) {
-    return resizeContainerToContentBounds(nextDocument, parentId, stableIndex);
+    return resizeContainerToContentBounds(nextDocument, parentId, ownershipIndex);
   }
   return nextDocument;
 }
@@ -1022,24 +1073,34 @@ export function autoLayoutDocument(
     return { error: `Container ${scope.containerId} does not exist.` };
   }
 
+  const initialOwnershipIndex = buildChildIndex(document);
   let nextDocument =
     scope.kind === "project"
       ? layoutContainersBottomUp(
           document,
           document.geometry.containers.map((container) => container.id),
+          initialOwnershipIndex,
         )
-      : layoutContainersBottomUp(document, [scope.containerId]);
+      : layoutContainersBottomUp(document, [scope.containerId], initialOwnershipIndex);
 
   if (scope.kind === "project") {
-    nextDocument = packTopLevelContainers(nextDocument);
+    nextDocument = packTopLevelContainers(nextDocument, initialOwnershipIndex);
   } else {
     let protectedId = scope.containerId;
     while (true) {
-      nextDocument = resolveSiblingContainerCollisions(nextDocument, protectedId);
-      const index = buildChildIndex(nextDocument);
-      const parentId = index.parentByContainerId.get(protectedId) ?? null;
+      nextDocument = resolveSiblingContainerCollisions(
+        nextDocument,
+        protectedId,
+        initialOwnershipIndex,
+      );
+      const parentId =
+        initialOwnershipIndex.parentByContainerId.get(protectedId) ?? null;
       if (!parentId) break;
-      nextDocument = layoutDirectChildren(nextDocument, parentId);
+      nextDocument = layoutDirectChildren(
+        nextDocument,
+        parentId,
+        initialOwnershipIndex,
+      );
       protectedId = parentId;
     }
   }

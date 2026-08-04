@@ -164,6 +164,148 @@ function expectSubtreeShifted(
   }
 }
 
+
+function innerBounds(container: ProjectContainer): Bounds {
+  return {
+    x: container.bounds.x + 28,
+    y: container.bounds.y + 82,
+    width: container.bounds.width - 56,
+    height: container.bounds.height - 110,
+  };
+}
+
+function containsBounds(outer: Bounds, inner: Bounds): boolean {
+  return (
+    inner.x >= outer.x &&
+    inner.y >= outer.y &&
+    inner.x + inner.width <= outer.x + outer.width &&
+    inner.y + inner.height <= outer.y + outer.height
+  );
+}
+
+function boundsIntersect(left: Bounds, right: Bounds): boolean {
+  return (
+    left.x < right.x + right.width &&
+    left.x + left.width > right.x &&
+    left.y < right.y + right.height &&
+    left.y + left.height > right.y
+  );
+}
+
+function entryCallEscapeFixture(): ProjectDocument {
+  const base = parseProjectJson(exampleJson);
+  const entryFunction: ProjectElement = {
+    id: "entry_function",
+    kind: "function",
+    bounds: { x: 78, y: 92, width: 96, height: 44 },
+    properties: {
+      templateId: "escaped_helper",
+      parameterType: "unit",
+      resultType: "unit",
+      captures: [],
+    },
+    portAnchors: [{ port: "value", x: 174, y: 114 }],
+  };
+  const escapedApply: ProjectElement = {
+    id: "entry_apply_escape",
+    kind: "apply",
+    bounds: { x: 360, y: 94, width: 110, height: 72 },
+    properties: { parameterType: "unit", resultType: "unit" },
+    portAnchors: [
+      { port: "function", x: 360, y: 112 },
+      { port: "argument", x: 360, y: 148 },
+      { port: "result", x: 470, y: 130 },
+    ],
+  };
+  const escapedDrop: ProjectElement = {
+    id: "entry_drop_escape",
+    kind: "drop",
+    bounds: { x: 500, y: 106, width: 64, height: 44 },
+    properties: {
+      type: "unit",
+      provenance: {
+        kind: "auto_function_output_drop",
+        sourceElementId: "entry_apply_escape",
+      },
+    },
+    portAnchors: [{ port: "input", x: 500, y: 128 }],
+  };
+  const neighbor = container("container_template_1", {
+    x: 320,
+    y: 0,
+    width: 260,
+    height: 220,
+  });
+  const stable = container("container_template_2", {
+    x: 760,
+    y: 0,
+    width: 260,
+    height: 220,
+  });
+  const wires: ProjectWire[] = [
+    {
+      id: "entry_function_apply_wire",
+      points: [
+        { x: 174, y: 114 },
+        { x: 360, y: 112 },
+      ],
+      sourceHint: {
+        kind: "element_port",
+        elementId: "entry_function",
+        port: "value",
+      },
+      targetHint: {
+        kind: "element_port",
+        elementId: "entry_apply_escape",
+        port: "function",
+      },
+    },
+    {
+      id: "entry_apply_drop_wire",
+      points: [
+        { x: 470, y: 130 },
+        { x: 500, y: 128 },
+      ],
+      sourceHint: {
+        kind: "element_port",
+        elementId: "entry_apply_escape",
+        port: "result",
+      },
+      targetHint: {
+        kind: "element_port",
+        elementId: "entry_drop_escape",
+        port: "input",
+      },
+    },
+  ];
+  return {
+    ...base,
+    geometry: {
+      ...base.geometry,
+      containers: [...base.geometry.containers, neighbor, stable],
+      elements: [
+        ...base.geometry.elements,
+        entryFunction,
+        escapedApply,
+        escapedDrop,
+      ],
+      wires: [...base.geometry.wires, ...wires],
+    },
+    surfaceLibraryCalls: [
+      ...(base.surfaceLibraryCalls ?? []),
+      {
+        id: "entry_call_escape_metadata",
+        library: "tilefold.std",
+        functionId: "test.escape",
+        templateId: "escaped_helper",
+        version: "test",
+        functionElementId: "entry_function",
+        applyElementIds: ["entry_apply_escape"],
+      },
+    ],
+  };
+}
+
 describe("auto layout", () => {
   it("arranges overlapped entry nodes without changing semantic fields", () => {
     const before = overlapEntryNodes(parseProjectJson(exampleJson));
@@ -350,6 +492,75 @@ describe("auto layout", () => {
     expect(repeated.changedWireIds).toEqual([]);
   });
 
+  it("contains metadata-owned entry descendants after scoped top-level layout", () => {
+    const before = entryCallEscapeFixture();
+    const beforeSemantic = stripLayoutForComparison(before);
+    expect(
+      boundsIntersect(
+        byElementId(before, "entry_apply_escape").bounds,
+        byContainerId(before, "container_template_1").bounds,
+      ),
+    ).toBe(true);
+    expect(
+      boundsIntersect(
+        byElementId(before, "entry_drop_escape").bounds,
+        byContainerId(before, "container_template_1").bounds,
+      ),
+    ).toBe(true);
+
+    const result = autoLayoutDocument(before, {
+      kind: "container",
+      containerId: "entry",
+    });
+    expect("error" in result ? result.error : undefined).toBeUndefined();
+    if ("error" in result) return;
+
+    expect(stripLayoutForComparison(result.document)).toEqual(beforeSemantic);
+    const entryInner = innerBounds(byContainerId(result.document, "entry"));
+    for (const id of ["entry_function", "entry_apply_escape", "entry_drop_escape"]) {
+      expect(
+        containsBounds(entryInner, byElementId(result.document, id).bounds),
+        id,
+      ).toBe(true);
+    }
+
+    for (const id of ["container_template_1", "container_template_2"]) {
+      const siblingInterior = byContainerId(result.document, id).bounds;
+      for (const elementId of ["entry_function", "entry_apply_escape", "entry_drop_escape"]) {
+        expect(
+          boundsIntersect(byElementId(result.document, elementId).bounds, siblingInterior),
+          `${elementId} vs ${id}`,
+        ).toBe(false);
+      }
+    }
+    expectNoOverlap(topLevelContainerBounds(result.document));
+    const functionAnchor = byElementId(
+      result.document,
+      "entry_function",
+    ).portAnchors[0]!;
+    expect(byWireId(result.document, "entry_function_apply_wire").points[0]).toEqual({
+      x: functionAnchor.x,
+      y: functionAnchor.y,
+    });
+    const dropAnchor = byElementId(
+      result.document,
+      "entry_drop_escape",
+    ).portAnchors[0]!;
+    expect(byWireId(result.document, "entry_apply_drop_wire").points.at(-1)).toEqual({
+      x: dropAnchor.x,
+      y: dropAnchor.y,
+    });
+
+    const repeated = autoLayoutDocument(result.document, {
+      kind: "container",
+      containerId: "entry",
+    });
+    expect("error" in repeated ? repeated.error : undefined).toBeUndefined();
+    if ("error" in repeated) return;
+    expect(repeated.changedContainerIds).toEqual([]);
+    expect(repeated.changedElementIds).toEqual([]);
+    expect(repeated.changedWireIds).toEqual([]);
+  });
   it("uses the nearest deterministic side when resolving boxed-in siblings", () => {
     const before = addContainers(overlapEntryNodes(parseProjectJson(exampleJson)), [
       container("neighbor", { x: 400, y: 0, width: 220, height: 140 }),

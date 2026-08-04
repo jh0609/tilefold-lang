@@ -127,6 +127,18 @@ function boxesOverlap(
   );
 }
 
+
+function containsBox(
+  outer: { x: number; y: number; width: number; height: number },
+  inner: { x: number; y: number; width: number; height: number },
+) {
+  return (
+    inner.x >= outer.x &&
+    inner.y >= outer.y &&
+    inner.x + inner.width <= outer.x + outer.width &&
+    inner.y + inner.height <= outer.y + outer.height
+  );
+}
 function boxesOverlapWithGap(
   left: { x: number; y: number; width: number; height: number },
   right: { x: number; y: number; width: number; height: number },
@@ -801,6 +813,11 @@ test("scoped auto layout displaces overlapping top-level sibling containers", as
   const beforeEntry = await containerProjectRect(page, "entry");
   const beforeNeighbor = await containerProjectRect(page, "neighbor");
   const beforeStable = await containerProjectRect(page, "stable");
+  const beforeNeighborDrop = await svgRect(element(page, "neighbor_drop"));
+  const beforeNeighborUnit = await svgRect(element(page, "neighbor_unit"));
+  const beforeNeighborWire = parsePoints(
+    await page.getByTestId("wire-neighbor_result_wire").getAttribute("points"),
+  );
 
   await page.locator('g.container-shape[data-container-id="entry"]').focus();
   await page.keyboard.press("Enter");
@@ -816,6 +833,30 @@ test("scoped auto layout displaces overlapping top-level sibling containers", as
   expect(boxesOverlapWithGap(afterEntry, afterNeighbor, 120)).toBe(false);
   expect(boxesOverlapWithGap(afterEntry, afterStable, 120)).toBe(false);
   expect(boxesOverlapWithGap(afterNeighbor, afterStable, 120)).toBe(false);
+
+  for (const id of ["node_nat_2", "node_succ"] as const) {
+    expect(containsBox(afterEntry, await svgRect(element(page, id))), id).toBe(true);
+  }
+
+  const dx = afterNeighbor.x - beforeNeighbor.x;
+  const dy = afterNeighbor.y - beforeNeighbor.y;
+  const afterNeighborDrop = await svgRect(element(page, "neighbor_drop"));
+  const afterNeighborUnit = await svgRect(element(page, "neighbor_unit"));
+  expect(afterNeighborDrop.x - beforeNeighborDrop.x).toBe(dx);
+  expect(afterNeighborDrop.y - beforeNeighborDrop.y).toBe(dy);
+  expect(afterNeighborUnit.x - beforeNeighborUnit.x).toBe(dx);
+  expect(afterNeighborUnit.y - beforeNeighborUnit.y).toBe(dy);
+  const afterNeighborWire = parsePoints(
+    await page.getByTestId("wire-neighbor_result_wire").getAttribute("points"),
+  );
+  expect(afterNeighborWire[0]).toEqual({
+    x: beforeNeighborWire[0]!.x + dx,
+    y: beforeNeighborWire[0]!.y + dy,
+  });
+  expect(afterNeighborWire.at(-1)).toEqual({
+    x: afterNeighbor.x + afterNeighbor.width,
+    y: afterNeighbor.y + 84,
+  });
 
   await page.getByRole("button", { name: "Run" }).click();
   await expect(page.getByText(/Result:/)).toContainText("Nat(3)");

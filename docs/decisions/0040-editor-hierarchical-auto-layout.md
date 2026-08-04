@@ -45,6 +45,26 @@ element port anchors, boundary ports, wire endpoint hints, and semantic
 ownership are not rewritten. Non-colliding sibling containers keep their
 existing bounds byte-for-byte.
 
+A single Auto Layout run builds a stable ownership snapshot before moving or
+resizing any geometry. That snapshot is used for descendant selection,
+bottom-up layout, content bounds, recursive container shifts, and sibling
+collision resolution. Coordinates remain stored and calculated in world-space
+bounds and absolute port anchors; container membership is not recomputed from
+intermediate world bounds after each move. This prevents a selected container
+child that temporarily lies inside a neighboring container from being adopted
+by that neighbor during the same layout pass.
+
+The ownership snapshot starts from the editor spatial index and is augmented by
+semantic editor metadata that already records managed call structure. Physical
+Apply nodes recorded by surface library call metadata are owned by the same
+container as their function element, and auto-created function-output Drop
+nodes are owned by the same container as their source element. These semantic
+ownership facts override ambiguous or stale visual containment for layout
+membership only. Auto Layout still changes geometry only: it may move those
+nodes back inside their owning container, but it must not rewrite call
+metadata, wire endpoint hints, ports, node kinds, or container IDs to create the
+appearance of containment.
+
 The scoped sibling resolver uses the same 120 px clearance as the top-level
 container horizontal gap. When the protected top-level container is the
 leftmost container, the existing left-to-right row is preserved: siblings are
@@ -73,7 +93,11 @@ For nested scoped layout, resolving a child level may resize that child's parent
 to preserve containment before the algorithm proceeds outward. Each affected
 ancestor is then laid out and its own sibling level is resolved. Unrelated
 subtree internals are not relaid out; only a colliding sibling subtree may be
-translated to restore clearance.
+translated to restore clearance. Containment is recursive: every direct and
+transitive descendant selected by the ownership snapshot must fit within the
+padded inner bounds of its owning container after the pass, and descendants of
+a selected top-level container must not visually intersect the interior of any
+other top-level container.
 
 Before a layout result is applied, the editor validates that all node,
 container, and wire IDs still exist; all coordinates and sizes are finite; and
