@@ -2,14 +2,15 @@
 
 ## Status
 
-Implementation complete locally. Push and Production deployment are pending.
+Complete, pushed, deployed, and Production-verified.
 
 ## SHAs
 
 - Starting HEAD: `871e6fd Queue scoped auto layout collision fix`
 - Validated implementation SHA: `9ccbf2b3f17a8ec004e588e31232cd9ff0f99e36`
 - Branch: `main`
-- Final pushed SHA: pending
+- Final pushed SHA before deployment follow-up:
+  `f75f8d466244b8b41eb3add73debd55c3900bfc9`
 
 ## Summary
 
@@ -121,11 +122,36 @@ Notes:
 
 ## Deployment
 
-Pending.
+Production deployment from pushed SHA
+`f75f8d466244b8b41eb3add73debd55c3900bfc9`:
+
+- Deployment ID: `dpl_DnoSCst9TGWU5jEMF88CapFFc6j5`
+- Vercel state: `READY`
+- Source branch/SHA: `main` /
+  `f75f8d466244b8b41eb3add73debd55c3900bfc9`
+- Deployment URL: `https://tilefold-editor-34ura3gdd-draftgame.vercel.app`
+- Production URL: `https://tilefold-editor.vercel.app`
+- Aliases: `tilefold-editor.vercel.app`,
+  `tilefold-editor-draftgame.vercel.app`,
+  `tilefold-editor-git-main-draftgame.vercel.app`
+
+Production verification against `https://tilefold-editor.vercel.app`:
+
+- Dedicated scoped collision E2E:
+  `PLAYWRIGHT_BASE_URL=https://tilefold-editor.vercel.app npx playwright test e2e/geometry-routing.spec.ts -g "scoped auto layout displaces"`:
+  passed, 1 Chromium test.
+- Production-safe full Chromium coverage:
+  `PLAYWRIGHT_BASE_URL=https://tilefold-editor.vercel.app npx playwright test`:
+  passed, 72 Chromium tests.
+- Console errors: none observed by Playwright issue watchers.
+- Page errors: none observed by Playwright issue watchers.
+- Vercel CLI log scan was not available because local CLI has no credentials;
+  Vercel deployment metadata showed `READY` with `aliasError: null`.
 
 ## Working Tree
 
-After implementation commit: clean except pending handoff documentation edits.
+After implementation and first handoff push: clean before this
+deployment-follow-up documentation edit.
 
 ## Limitations
 
