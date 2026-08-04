@@ -111,3 +111,54 @@ that a new task exists or that a task completed successfully. On notification:
 
 The watcher should deduplicate notifications by remote SHA so an intentionally
 behind local branch does not receive the same nudge repeatedly.
+
+## Task-ID Worker Contract
+
+Local automation must not control the Windows UI to wake an existing Codex
+session. Watchers must not use window activation, keyboard or mouse automation,
+clipboard access, Slack or messenger delivery, or paste fixed prompts into an
+interactive terminal.
+
+The supported local watcher shape is:
+
+1. poll `origin/main`;
+2. read `docs/agent-tasks/latest.md` from the remote revision;
+3. run only when the metadata contains `Status: pending` and a stable
+   `Task-ID`;
+4. verify the local repository is on clean `main`, has no merge/rebase/
+   cherry-pick in progress, is not ahead of `origin/main`, is not diverged, and
+   can fast-forward safely;
+5. fast-forward with `git pull --ff-only`;
+6. reread the task metadata and verify the same pending `Task-ID`;
+7. run `codex exec` in a new non-interactive process for that Task-ID;
+8. record the result, exit code, task state, log path, and completed Task-ID in
+   local state outside the repository;
+9. after Codex exits, fetch and verify that the task is cleared, handoff was
+   updated, the local tree is clean, and local `main` matches `origin/main`.
+
+`docs/agent-tasks/latest.md` uses the following machine-readable metadata:
+
+```text
+Status: pending
+Task-ID: <stable-task-id>
+```
+
+`Status: none` means no task is queued. A watcher may safely fetch or
+fast-forward when the local tree is clean, but it must not start Codex.
+
+Task IDs are one-shot. A watcher must remember completed and failed Task IDs
+across restarts. A failed Task-ID must not be retried automatically; the next
+automated attempt requires an operator to publish a new Task-ID or explicitly
+reset local worker state. If a worker finds a stale `running` state after a
+restart, it must switch to `needs_review` instead of launching a second Codex
+process.
+
+The local Windows worker installed for this repository lives outside the source
+tree at:
+
+```text
+%LOCALAPPDATA%\TilefoldCodexWorker\
+```
+
+It stores configuration, status, logs, results, and backups locally. These files
+must not be committed and must not contain Codex credentials or API keys.
