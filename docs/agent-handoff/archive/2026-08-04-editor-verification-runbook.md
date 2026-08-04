@@ -7,7 +7,8 @@ Documentation-only clarification implemented and pushed.
 ## SHAs
 
 - Starting HEAD: `c1408b0f450657a538986970fc29ee585193c01a`
-- Final SHA: `6fcfca316b57a0d73ae9c0186eb9dcdcd89a85c5`
+- Final pushed SHA: see the Git commit containing the latest version of this
+  archive and the completion report.
 - Branch: `main`
 
 ## Summary
