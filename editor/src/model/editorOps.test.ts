@@ -2,6 +2,7 @@ import exampleJson from "../../../examples/nat-succ.tilefold.json?raw";
 import { describe, expect, it } from "vitest";
 import {
   addElement,
+  addListBuilderItem,
   addFunctionCall,
   addFunctionReferenceToPort,
   addFunctionTemplate,
@@ -20,6 +21,7 @@ import {
   findOpenElementCenter,
   moveContainer,
   moveElement,
+  removeListBuilderItem,
   nextStableId,
   nextFunctionTemplateId,
   callableFunctionTemplates,
@@ -125,6 +127,41 @@ describe("editor operations", () => {
       ],
     });
     expect(() => parseProjectJson(exportProjectJson(project))).not.toThrow();
+  });
+
+  it("resizes a List Builder when item inputs are added and removed", () => {
+    let project = parseProjectJson(exampleJson);
+    const created = addElement(project, "list_builder", { x: 520, y: 220 });
+    project = created.document;
+    const initialHeight = created.element.bounds.height;
+
+    const first = addListBuilderItem(project, created.element.id);
+    project = first.document;
+    const afterFirst = project.geometry.elements.find(
+      (element) => element.id === created.element.id,
+    )!;
+    expect(afterFirst.bounds.height).toBe(initialHeight);
+
+    const second = addListBuilderItem(project, created.element.id);
+    project = second.document;
+    const afterSecond = project.geometry.elements.find(
+      (element) => element.id === created.element.id,
+    )!;
+    expect(afterSecond.bounds.height).toBeGreaterThan(afterFirst.bounds.height);
+
+    const removed = removeListBuilderItem(
+      project,
+      created.element.id,
+      second.itemId!,
+    );
+    project = removed.document;
+    const afterRemove = project.geometry.elements.find(
+      (element) => element.id === created.element.id,
+    )!;
+    expect(afterRemove.bounds.height).toBe(afterFirst.bounds.height);
+    expect(
+      afterRemove.portAnchors.find((anchor) => anchor.port === "result")?.y,
+    ).toBe(afterRemove.bounds.y + afterRemove.bounds.height / 2);
   });
 
   it("updates disconnected List type parameters atomically", () => {

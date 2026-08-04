@@ -1,5 +1,6 @@
 import type { ExecutionResponse, ExecutionTraceEvent } from "./executionApi";
 import type { ProjectDocument } from "./project";
+import { createLoweringSourceMap } from "./sourceDiagnostics";
 import type { TraceStore } from "./traceStore";
 
 export function initialTraceIndex(response: ExecutionResponse): number | null {
@@ -27,14 +28,15 @@ export function exactTraceElementId(
   event: ExecutionTraceEvent | null,
 ): string | null {
   if (!event) return null;
-  for (const element of document.geometry.elements) {
-    if (element.kind !== "list_builder") continue;
-    const prefix = `__list_builder_${element.id}_`;
-    if (event.subject.startsWith(prefix)) return element.id;
-  }
-  return document.geometry.elements.some(
-    (element) => element.id === event.subject,
-  )
-    ? event.subject
-    : null;
+  const sourceMap = createLoweringSourceMap(document);
+  const sources =
+    sourceMap.coreToSurface.get(`core-node:${event.subject}`) ??
+    sourceMap.coreToSurface.get(`surface-element:${event.subject}`) ??
+    [];
+  const elementSource = sources.find(
+    (source) =>
+      source.kind === "element" &&
+      document.geometry.elements.some((element) => element.id === source.elementId),
+  );
+  return elementSource?.kind === "element" ? elementSource.elementId : null;
 }

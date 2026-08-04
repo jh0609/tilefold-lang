@@ -1931,22 +1931,28 @@ let list_builder_generated_scene (element : element) =
           | Ok id -> id
           | Error _ -> assert false
         in
+        let builder_bounds = geometry_bounds element.bounds in
+        let clamp low high value = max low (min high value) in
         let point index =
           if index = 0 then result_point
-          else { G.x = result_point.x - (index * 64); y = result_point.y + (index * 28) }
+          else
+            {
+              G.x =
+                clamp (element.bounds.x + 12)
+                  (element.bounds.x + element.bounds.width - 12)
+                  (result_point.x - (index * 24));
+              y =
+                clamp (element.bounds.y + 12)
+                  (element.bounds.y + element.bounds.height - 12)
+                  (result_point.y + (index * 8));
+            }
         in
         let nil_value = point (List.length item_ids) in
         let nil =
           {
             G.id = generated_element_id "nil";
             kind = C.Nil item_type;
-            bounds =
-              {
-                G.left = nil_value.x - 64;
-                top = nil_value.y - 28;
-                right = nil_value.x;
-                bottom = nil_value.y + 28;
-              };
+            bounds = builder_bounds;
             ports = [ (C.Port_key.value, nil_value) ];
           }
         in
@@ -1956,8 +1962,14 @@ let list_builder_generated_scene (element : element) =
                  let value_point = point index in
                  let tail_point =
                    {
-                     G.x = value_point.x - 32;
-                     y = value_point.y + 18;
+                     G.x =
+                       clamp (element.bounds.x + 12)
+                         (element.bounds.x + element.bounds.width - 12)
+                         (value_point.x - 32);
+                     y =
+                       clamp (element.bounds.y + 12)
+                         (element.bounds.y + element.bounds.height - 12)
+                         (value_point.y + 18);
                    }
                  in
                  let next_value = point (index + 1) in
@@ -1967,13 +1979,7 @@ let list_builder_generated_scene (element : element) =
                    {
                      G.id = cons_id;
                      kind = C.Cons item_type;
-                     bounds =
-                       {
-                         G.left = min head_point.x tail_point.x;
-                         top = min head_point.y value_point.y - 16;
-                         right = max value_point.x tail_point.x;
-                         bottom = max head_point.y tail_point.y + 16;
-                       };
+                     bounds = builder_bounds;
                      ports =
                        [
                          (C.Port_key.head, head_point);

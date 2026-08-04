@@ -4623,13 +4623,14 @@ const LIST_BUILDER_HEADER_HEIGHT = 48;
 const LIST_BUILDER_MAX_ITEMS = 16;
 
 function listBuilderBounds(bounds: Bounds, itemCount: number): Bounds {
+  const height = Math.max(
+    NEW_ELEMENT_SIZE.list_builder.height,
+    LIST_BUILDER_HEADER_HEIGHT + Math.max(1, itemCount) * LIST_BUILDER_ROW_HEIGHT,
+  );
   return {
     ...bounds,
     width: Math.max(bounds.width, NEW_ELEMENT_SIZE.list_builder.width),
-    height: Math.max(
-      NEW_ELEMENT_SIZE.list_builder.height,
-      LIST_BUILDER_HEADER_HEIGHT + Math.max(1, itemCount) * LIST_BUILDER_ROW_HEIGHT,
-    ),
+    height,
   };
 }
 

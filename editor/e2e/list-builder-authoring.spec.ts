@@ -123,6 +123,14 @@ async function runMode(page: Page, mode: "transparent" | "fast", result: string)
   await expect(page.getByText(/Result:/)).toContainText(result);
 }
 
+async function importJson(page: Page, json: string, name = "project.tilefold.json") {
+  await page.getByLabel("Open JSON file").setInputFiles({
+    name,
+    mimeType: "application/json",
+    buffer: Buffer.from(json),
+  });
+}
+
 async function orderedBuilderItemPorts(page: Page, builderId: string) {
   return await page
     .locator(
@@ -141,6 +149,264 @@ async function orderedBuilderItemPorts(page: Page, builderId: string) {
         .map((entry) => entry.name),
     );
 }
+
+const listRecLengthScaffold = JSON.stringify({
+  format: "tilefold-project",
+  version: 2,
+  geometry: {
+    snapTolerance: 8,
+    elements: [
+      {
+        id: "unit-drop",
+        kind: "drop",
+        bounds: { x: 80, y: 80, width: 88, height: 56 },
+        properties: { type: "unit" },
+        portAnchors: [{ port: "input", x: 80, y: 108 }],
+      },
+      {
+        id: "list-nil",
+        kind: "nil",
+        bounds: { x: 80, y: 250, width: 96, height: 56 },
+        properties: { itemType: "nat" },
+        portAnchors: [{ port: "value", x: 176, y: 278 }],
+      },
+      {
+        id: "base-zero",
+        kind: "nat_literal",
+        bounds: { x: 560, y: 250, width: 96, height: 56 },
+        properties: { value: "0" },
+        portAnchors: [{ port: "value", x: 656, y: 278 }],
+      },
+      {
+        id: "step-function",
+        kind: "function",
+        bounds: { x: 560, y: 90, width: 150, height: 80 },
+        properties: {
+          templateId: "builder-length-step",
+          parameterType: { product: ["nat", { product: [{ list: "nat" }, "nat"] }] },
+          resultType: "nat",
+          captures: [],
+        },
+        portAnchors: [{ port: "value", x: 710, y: 130 }],
+      },
+      {
+        id: "list-rec",
+        kind: "list_rec",
+        bounds: { x: 780, y: 150, width: 152, height: 120 },
+        properties: { itemType: "nat", resultType: "nat" },
+        portAnchors: [
+          { port: "list", x: 780, y: 174 },
+          { port: "base", x: 780, y: 198 },
+          { port: "step", x: 780, y: 222 },
+          { port: "result", x: 932, y: 210 },
+        ],
+      },
+      {
+        id: "step-unpair-outer",
+        kind: "unpair",
+        bounds: { x: 90, y: 620, width: 120, height: 84 },
+        properties: { leftType: "nat", rightType: { product: [{ list: "nat" }, "nat"] } },
+        portAnchors: [
+          { port: "value", x: 90, y: 662 },
+          { port: "left", x: 210, y: 648 },
+          { port: "right", x: 210, y: 676 },
+        ],
+      },
+      {
+        id: "drop-head",
+        kind: "drop",
+        bounds: { x: 280, y: 620, width: 88, height: 56 },
+        properties: { type: "nat" },
+        portAnchors: [{ port: "input", x: 280, y: 648 }],
+      },
+      {
+        id: "step-unpair-inner",
+        kind: "unpair",
+        bounds: { x: 280, y: 700, width: 120, height: 84 },
+        properties: { leftType: { list: "nat" }, rightType: "nat" },
+        portAnchors: [
+          { port: "value", x: 280, y: 742 },
+          { port: "left", x: 400, y: 728 },
+          { port: "right", x: 400, y: 756 },
+        ],
+      },
+      {
+        id: "drop-tail",
+        kind: "drop",
+        bounds: { x: 470, y: 700, width: 88, height: 56 },
+        properties: { type: { list: "nat" } },
+        portAnchors: [{ port: "input", x: 470, y: 728 }],
+      },
+      {
+        id: "succ-recursive",
+        kind: "succ",
+        bounds: { x: 600, y: 730, width: 100, height: 60 },
+        properties: {},
+        portAnchors: [
+          { port: "input", x: 600, y: 760 },
+          { port: "result", x: 700, y: 760 },
+        ],
+      },
+    ],
+    containers: [
+      {
+        id: "entry",
+        kind: {
+          kind: "entry",
+          templateId: "entry_template",
+          resultType: "nat",
+          dependencies: ["builder-length-step"],
+        },
+        bounds: { x: 0, y: 0, width: 1120, height: 520 },
+        boundaryPorts: [
+          { id: "entry-parameter", role: "parameter", type: "unit", anchor: { x: 0, y: 108 } },
+          { id: "entry-result", role: "result", type: "nat", anchor: { x: 1120, y: 210 } },
+        ],
+      },
+      {
+        id: "builder-length-step-container",
+        kind: {
+          kind: "template",
+          templateId: "builder-length-step",
+          parameterType: { product: ["nat", { product: [{ list: "nat" }, "nat"] }] },
+          resultType: "nat",
+          dependencies: [],
+        },
+        bounds: { x: 0, y: 560, width: 980, height: 360 },
+        boundaryPorts: [
+          {
+            id: "step-parameter",
+            role: "parameter",
+            type: { product: ["nat", { product: [{ list: "nat" }, "nat"] }] },
+            anchor: { x: 0, y: 170 },
+          },
+          { id: "step-result", role: "result", type: "nat", anchor: { x: 980, y: 170 } },
+        ],
+      },
+    ],
+    wires: [
+      {
+        id: "w-unit-drop",
+        points: [
+          { x: 0, y: 108 },
+          { x: 80, y: 108 },
+        ],
+        sourceHint: { kind: "boundary_port", containerId: "entry", boundaryId: "entry-parameter" },
+        targetHint: { kind: "element_port", elementId: "unit-drop", port: "input" },
+      },
+      {
+        id: "w-list-rec-list",
+        points: [
+          { x: 176, y: 278 },
+          { x: 780, y: 174 },
+        ],
+        sourceHint: { kind: "element_port", elementId: "list-nil", port: "value" },
+        targetHint: { kind: "element_port", elementId: "list-rec", port: "list" },
+      },
+      {
+        id: "w-list-rec-base",
+        points: [
+          { x: 656, y: 278 },
+          { x: 780, y: 198 },
+        ],
+        sourceHint: { kind: "element_port", elementId: "base-zero", port: "value" },
+        targetHint: { kind: "element_port", elementId: "list-rec", port: "base" },
+      },
+      {
+        id: "w-list-rec-step",
+        points: [
+          { x: 710, y: 130 },
+          { x: 780, y: 222 },
+        ],
+        sourceHint: { kind: "element_port", elementId: "step-function", port: "value" },
+        targetHint: { kind: "element_port", elementId: "list-rec", port: "step" },
+      },
+      {
+        id: "w-result",
+        points: [
+          { x: 932, y: 210 },
+          { x: 1120, y: 210 },
+        ],
+        sourceHint: { kind: "element_port", elementId: "list-rec", port: "result" },
+        targetHint: { kind: "boundary_port", containerId: "entry", boundaryId: "entry-result" },
+      },
+      {
+        id: "s-param-outer",
+        points: [
+          { x: 0, y: 730 },
+          { x: 90, y: 662 },
+        ],
+        sourceHint: {
+          kind: "boundary_port",
+          containerId: "builder-length-step-container",
+          boundaryId: "step-parameter",
+        },
+        targetHint: { kind: "element_port", elementId: "step-unpair-outer", port: "value" },
+      },
+      {
+        id: "s-drop-head",
+        points: [
+          { x: 210, y: 648 },
+          { x: 280, y: 648 },
+        ],
+        sourceHint: { kind: "element_port", elementId: "step-unpair-outer", port: "left" },
+        targetHint: { kind: "element_port", elementId: "drop-head", port: "input" },
+      },
+      {
+        id: "s-inner",
+        points: [
+          { x: 210, y: 676 },
+          { x: 280, y: 742 },
+        ],
+        sourceHint: { kind: "element_port", elementId: "step-unpair-outer", port: "right" },
+        targetHint: { kind: "element_port", elementId: "step-unpair-inner", port: "value" },
+      },
+      {
+        id: "s-drop-tail",
+        points: [
+          { x: 400, y: 728 },
+          { x: 470, y: 728 },
+        ],
+        sourceHint: { kind: "element_port", elementId: "step-unpair-inner", port: "left" },
+        targetHint: { kind: "element_port", elementId: "drop-tail", port: "input" },
+      },
+      {
+        id: "s-succ",
+        points: [
+          { x: 400, y: 756 },
+          { x: 600, y: 760 },
+        ],
+        sourceHint: { kind: "element_port", elementId: "step-unpair-inner", port: "right" },
+        targetHint: { kind: "element_port", elementId: "succ-recursive", port: "input" },
+      },
+      {
+        id: "s-result",
+        points: [
+          { x: 700, y: 760 },
+          { x: 980, y: 730 },
+        ],
+        sourceHint: { kind: "element_port", elementId: "succ-recursive", port: "result" },
+        targetHint: {
+          kind: "boundary_port",
+          containerId: "builder-length-step-container",
+          boundaryId: "step-result",
+        },
+      },
+    ],
+    junctions: [],
+  },
+  surfaceFunctions: [
+    {
+      name: "builderLengthStep",
+      templateId: "builder-length-step",
+      bodyContainerId: "builder-length-step-container",
+      parameters: [
+        { name: "frame", type: { product: ["nat", { product: [{ list: "nat" }, "nat"] }] } },
+      ],
+      result: { name: "result", type: "nat" },
+    },
+  ],
+});
 
 test("authors a List Builder through visible controls and preserves it across history and persistence", async ({
   page,
@@ -161,7 +427,7 @@ test("authors a List Builder through visible controls and preserves it across hi
   await page.getByLabel("Entry output type").selectOption("list");
 
   const builderId = await addNodeAndGetId(page, "Add List Builder", "list_builder");
-  await setElementPosition(page, builderId, 360, 140);
+  await setElementPosition(page, builderId, 260, 100);
   await element(page, builderId).focus();
   await page.keyboard.press("Enter");
   await page.getByRole("button", { name: "Add item input" }).click();
@@ -176,7 +442,7 @@ test("authors a List Builder through visible controls and preserves it across hi
     await addNodeAndGetId(page, "Add Nat", "nat_literal"),
   ];
   for (const [index, natId] of natIds.entries()) {
-    await setElementPosition(page, natId, 120, 130 + index * 60);
+    await setElementPosition(page, natId, 40, 70 + index * 60);
     await setNatValue(page, natId, String(index + 1));
   }
 
@@ -189,16 +455,29 @@ test("authors a List Builder through visible controls and preserves it across hi
       port(page, builderId, itemPort, "input"),
     );
   }
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Fit view" }).click();
+  await dragConnect(
+    page,
+    port(page, builderId, "result", "output"),
+    boundaryPort(page, "entry", "result", "input"),
+  );
+  await runMode(page, "transparent", "List[Nat(1), Nat(2), Nat(3)]");
+
   await element(page, builderId).focus();
   await page.keyboard.press("Enter");
   await page.getByRole("button", { name: "Move item 1 up" }).click();
   await expect(element(page, builderId)).toContainText("3 item(s) -> List<Nat>");
+  await runMode(page, "fast", "List[Nat(2), Nat(1), Nat(3)]");
   await page.getByRole("button", { name: "Undo" }).click();
   await expect(element(page, builderId)).toContainText("3 item(s) -> List<Nat>");
+  await runMode(page, "fast", "List[Nat(1), Nat(2), Nat(3)]");
   await page.getByRole("button", { name: "Redo" }).click();
   await expect(element(page, builderId)).toContainText("3 item(s) -> List<Nat>");
+  await runMode(page, "fast", "List[Nat(2), Nat(1), Nat(3)]");
   await page.getByRole("button", { name: "Undo" }).click();
   await expect(element(page, builderId)).toContainText("3 item(s) -> List<Nat>");
+  await runMode(page, "fast", "List[Nat(1), Nat(2), Nat(3)]");
 
   await page.locator('g.container-shape[data-container-id="entry"]').focus();
   await page.keyboard.press("Enter");
@@ -222,9 +501,63 @@ test("authors a List Builder through visible controls and preserves it across hi
   await page.getByLabel("Open JSON file").setInputFiles(savedPath);
   await expect(element(page, builderId)).toBeVisible();
   await expect(orderedBuilderItemPorts(page, builderId)).resolves.toHaveLength(3);
+  await runMode(page, "fast", "List[Nat(1), Nat(2), Nat(3)]");
 
   await page.getByLabel("Open JSON file").setInputFiles(savedPath);
   await expect(element(page, builderId)).toBeVisible();
+  await runMode(page, "transparent", "List[Nat(1), Nat(2), Nat(3)]");
+
+  await expectNoBrowserIssues(issues);
+});
+
+test("feeds an authored List Builder into ListRec length", async ({ page }) => {
+  const issues = watchBrowserIssues(page);
+  await page.goto("/");
+  await importJson(page, listRecLengthScaffold, "listrec-length-scaffold.tilefold.json");
+
+  await selectAndDelete(page, page.getByTestId("wire-w-list-rec-list"));
+  await selectAndDelete(page, element(page, "list-nil"));
+
+  const builderId = await addNodeAndGetId(page, "Add List Builder", "list_builder");
+  await setElementPosition(page, builderId, 300, 100);
+  await element(page, builderId).focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: "Add item input" }).click();
+  await page.getByRole("button", { name: "Add item input" }).click();
+  await page.getByRole("button", { name: "Add item input" }).click();
+
+  const natIds = [
+    await addNodeAndGetId(page, "Add Nat", "nat_literal"),
+    await addNodeAndGetId(page, "Add Nat", "nat_literal"),
+    await addNodeAndGetId(page, "Add Nat", "nat_literal"),
+  ];
+  for (const [index, natId] of natIds.entries()) {
+    await setElementPosition(page, natId, 80, 80 + index * 70);
+    await setNatValue(page, natId, String(index + 1));
+  }
+
+  const itemPorts = await orderedBuilderItemPorts(page, builderId);
+  expect(itemPorts).toHaveLength(3);
+  for (const [index, itemPort] of itemPorts.entries()) {
+    await dragConnect(
+      page,
+      port(page, natIds[index]!, "value", "output"),
+      port(page, builderId, itemPort, "input"),
+    );
+  }
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Fit view" }).click();
+  await dragConnect(
+    page,
+    port(page, builderId, "result", "output"),
+    port(page, "list-rec", "list", "input"),
+  );
+
+  await runMode(page, "transparent", "Nat(3)");
+  await expect
+    .poll(() => page.locator(".trace-event-button", { hasText: "ListRecCons" }).count())
+    .toBeGreaterThanOrEqual(1);
+  await runMode(page, "fast", "Nat(3)");
 
   await expectNoBrowserIssues(issues);
 });
