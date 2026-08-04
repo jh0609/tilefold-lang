@@ -10,7 +10,10 @@ Protocol:
 
 Pending task:
 
-- None. `docs/agent-tasks/latest.md` is `Status: none`.
+- `2026-08-04-list-builder-geometry-e2e` — add dedicated Chromium regression
+  coverage for connected List Builder wire endpoints and repeated Auto Layout
+  idempotence; see
+  [`docs/agent-tasks/latest.md`](../agent-tasks/latest.md).
 
 Latest archive:
 
