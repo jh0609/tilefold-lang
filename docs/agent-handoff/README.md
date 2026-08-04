@@ -30,6 +30,12 @@ When a task changes the repository, archive a handoff containing:
   follow-up work;
 - any pre-existing user changes kept outside the task.
 
+For editor or browser-runner work, consult
+`../editor-verification-runbook.md` before reporting OCaml reference checks or
+runner differential checks as unavailable. The handoff should distinguish a
+command that passed from a command that could not start in the local Windows
+environment, and should record any WSL fallback attempt.
+
 Do not describe an existing regression suite as dedicated coverage for a new
 feature. State separately:
 

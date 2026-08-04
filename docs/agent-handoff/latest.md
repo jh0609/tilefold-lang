@@ -14,6 +14,7 @@ Pending task:
 
 Latest archive:
 
+- [2026-08-04-editor-verification-runbook.md](archive/2026-08-04-editor-verification-runbook.md)
 - [2026-08-04-ce5c766-entry-auto-layout-containment.md](archive/2026-08-04-ce5c766-entry-auto-layout-containment.md)
 - [2026-08-04-025be9e-entry-auto-layout-row.md](archive/2026-08-04-025be9e-entry-auto-layout-row.md)
 - [2026-08-04-codex-exec-worker.md](archive/2026-08-04-codex-exec-worker.md)

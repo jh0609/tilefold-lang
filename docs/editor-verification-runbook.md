@@ -9,8 +9,13 @@ specification and does not change the required validation commands in
 
 - Treat `dune build` and `dune runtest` as mandatory before any merge to
   `main`.
+- A missing native Windows OCaml tool is not a passing result. Try the WSL
+  fallback below before reporting the OCaml checks as unavailable.
 - Run OCaml commands sequentially. Do not start concurrent `dune` commands that
   can contend for `_build/.lock`.
+- Treat `runner:differential` timeout as an operations problem first. Rerun with
+  a longer command timeout and record the fixture count; do not shrink the
+  fixture set to make the command pass.
 - Keep local preview servers and Playwright storage state out of paths that
   Playwright may clean.
 - Verify Vercel preview authentication before interpreting missing editor
@@ -46,16 +51,40 @@ git rev-parse "origin/main^{tree}"
 
 On this workstation, native Windows `opam` may not have a valid opam root even
 when the repository contains `_opam`. If Windows `opam` reports an invalid root,
-use WSL explicitly and record that environment in the final report:
+`opam.exe` exits with `Access denied`, or `dune` is not found on PATH, treat
+that as a local tooling limitation and use WSL explicitly before marking the
+OCaml checks unavailable. Record the exact environment in the final report:
 
 ```powershell
 wsl bash -lc 'cd /mnt/c/Users/박준형/Desktop/tilefold-lang && opam install . --deps-only --with-test -y'
 wsl bash -lc 'cd /mnt/c/Users/박준형/Desktop/tilefold-lang && opam lint tilefold.opam && opam exec -- dune build && opam exec -- dune runtest'
 ```
 
+If the local switch already exists, a shorter revalidation is usually enough:
+
+```powershell
+wsl bash -lc 'cd /mnt/c/Users/박준형/Desktop/tilefold-lang && eval "$(opam env --shell=sh --switch=. 2>/dev/null || true)" && opam lint tilefold.opam && opam exec -- dune build && opam exec -- dune runtest'
+```
+
 Known non-blocking warning: `tilefold.opam` currently reports SPDX warning 62
 for `LicenseRef-UNLICENSED`. Record it, but do not hide new lint failures behind
 that known warning.
+
+Avoid direct PowerShell execution of extensionless programs under `_opam/bin`.
+Windows can open a file-association prompt for files such as `_opam/bin/dune`.
+Invoke them through `opam exec -- dune ...` in WSL, or through a shell that is
+known to resolve the switch correctly.
+
+When documenting OCaml validation, use precise language:
+
+- `passed`: the command ran in the recorded environment and exited 0;
+- `unavailable`: the command could not be started after the native and WSL
+  paths above were checked;
+- `failed`: the command ran and reported a repository error.
+
+Do not write "dune not found" as if it were a successful validation. It is an
+unavailable check and should remain a completion caveat unless WSL revalidation
+fills the gap.
 
 ## Editor Verification Order
 
@@ -83,6 +112,35 @@ git diff --check
 If `runner:differential` takes longer than the default command timeout, rerun it
 with a longer timeout. Do not reduce fixtures or weaken assertions to make it
 finish faster.
+
+`runner:differential` exercises the browser runner against the OCaml reference
+runner and is the main guard against Trace/Fast or TypeScript/OCaml drift. On
+this workstation it may fail through native Windows `opam` even when the editor
+unit, browser-runner freshness, and Playwright suites pass. Diagnose it in this
+order:
+
+1. Confirm `npm run runner:check` passes so the generated browser runner is
+   fresh.
+2. Run `npm run runner:differential` from `editor` with a command timeout long
+   enough for the full fixture set.
+3. If it reports `opam.exe` access errors, rerun the OCaml build/test commands
+   through WSL as described above, then rerun the differential command from a
+   shell that can reach the same OCaml tooling.
+4. If the command times out, record the timeout value and rerun with a longer
+   timeout before declaring it unavailable.
+5. If it runs and reports mismatched results, treat that as a real regression
+   until the fixture, TypeScript runner, and OCaml runner outputs are compared.
+
+Completion reports and handoffs should include the differential fixture count
+when the command passes. If it cannot be completed, record the exact failure
+mode (`opam.exe Access denied`, `dune not found`, timeout duration, or semantic
+mismatch) and the fallback attempts made.
+
+For automated `codex exec` workers, the prompt should explicitly tell the agent
+to read this runbook before declaring OCaml or differential validation
+unavailable. A worker should not clear a pending task solely because Windows
+native OCaml tooling is missing; it should either use the WSL fallback or leave
+an accurate `needs_review`/blocked handoff.
 
 ## Local Preview And Playwright
 
