@@ -10,7 +10,8 @@ Protocol:
 
 Pending task:
 
-- none
+- `2026-08-04-entry-auto-layout-containment`
+- [Task specification](../agent-tasks/latest.md)
 
 Latest archive:
 
