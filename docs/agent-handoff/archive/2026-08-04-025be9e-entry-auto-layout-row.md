@@ -2,14 +2,17 @@
 
 ## Status
 
-Implemented and locally validated. Not pushed or deployed.
+Implemented, pushed, deployed, and Production-verified.
 
 ## SHAs
 
 - Starting HEAD: `a8d4a48 Document Task-ID Codex worker`
-- Validated implementation SHA: `025be9e6e4978505f670cca7f0224961a7296c60`
+- Locally validated implementation SHA: `025be9e6e4978505f670cca7f0224961a7296c60`
+- Equivalent pushed implementation tree SHA:
+  `3febefb552afbcdfec8cc00e5f068079efe5093a`
+- Pushed handoff SHA: `b1548cc82a0a6d430535e6ddc3c0eddde53d5d55`
 - Branch: `main`
-- Push: pending explicit user approval
+- Push: complete
 
 ## Summary
 
@@ -85,8 +88,37 @@ startup because the Chromium executable was absent. No E2E assertion ran.
 
 ## Production
 
-The old Production behavior was independently reproduced. The fixed commit has
-not been pushed, deployed, or Production-verified.
+The old Production behavior was independently reproduced before the fix. The
+validated implementation tree was then pushed through the connected GitHub
+integration as source commit
+`3febefb552afbcdfec8cc00e5f068079efe5093a`; the documentation handoff source
+commit was `b1548cc82a0a6d430535e6ddc3c0eddde53d5d55`.
+
+- Production deployment ID: `dpl_9RfMBrwD6pPEev9dQMYL27iRrhiV`
+- Deployment state: `READY`
+- Production URL: `https://tilefold-editor.vercel.app`
+- Deployment URL: `https://tilefold-editor-5i3eusrx2-draftgame.vercel.app`
+- Production source branch: `main`
+- Production source SHA: `b1548cc82a0a6d430535e6ddc3c0eddde53d5d55`
+
+Production browser verification loaded the supplied
+`01-project.tilefold-3-.json`, selected `entry`, and ran `Auto Layout entry`.
+The resulting top-level container bounds were:
+
+```text
+entry                 0,    0 ·  474×546
+divides             594,    0 ·  522×437
+isPrime            1236,    0 ·  671×1352
+isPrimeStep        2027,    0 ·  829×487
+sqrtApprox         2976,    0 · 1286×718
+```
+
+All top-level containers preserved `y = 0` with 120 px gaps. A second scoped
+Auto Layout produced identical coordinates, independently confirming
+idempotence on Production. No application-origin console warning or error was
+observed. The cloud browser extension emitted unrelated metadata transport
+errors from its own `chrome-extension://` URL; these were not Tilefold runtime
+errors. No page error was observed.
 
 ## Working Tree
 
