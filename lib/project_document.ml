@@ -1909,7 +1909,13 @@ let project_call_generated_scene document (element : element) =
                     (function_element :: apply_elements, internal_wires)))
   | _ -> ([], [])
 
-let list_builder_generated_scene (element : element) =
+let list_builder_generated_id builder_id suffix =
+  "__list_builder_" ^ builder_id ^ "_" ^ suffix
+
+let list_builder_generated_wire_id builder_id suffix =
+  "__list_builder_" ^ builder_id ^ "_wire_" ^ suffix
+
+let list_builder_generated_expansion (element : element) =
   match element.kind with
   | ListBuilder { item_type; item_ids } -> (
       let result_anchor = anchor_named element.port_anchors "result" in
@@ -1920,24 +1926,13 @@ let list_builder_generated_scene (element : element) =
       if Option.is_none result_anchor || List.exists (fun (_, anchor) -> Option.is_none anchor) item_anchors then
         ([], [])
       else
-        let result_point = point_of_anchor (Option.get result_anchor) in
-        let generated_element_id suffix =
-          match S.Element_id.of_string ("__list_builder_" ^ element.id ^ "_" ^ suffix) with
-          | Ok id -> id
-          | Error _ -> assert false
-        in
-        let generated_wire_id suffix =
-          match G.Wire_id.of_string ("__list_builder_" ^ element.id ^ "_" ^ suffix) with
-          | Ok id -> id
-          | Error _ -> assert false
-        in
-        let builder_bounds = geometry_bounds element.bounds in
+        let result_point = (Option.get result_anchor).at in
         let clamp low high value = max low (min high value) in
         let point index =
           if index = 0 then result_point
           else
             {
-              G.x =
+              x =
                 clamp (element.bounds.x + 12)
                   (element.bounds.x + element.bounds.width - 12)
                   (result_point.x - (index * 24));
@@ -1950,10 +1945,10 @@ let list_builder_generated_scene (element : element) =
         let nil_value = point (List.length item_ids) in
         let nil =
           {
-            G.id = generated_element_id "nil";
-            kind = C.Nil item_type;
-            bounds = builder_bounds;
-            ports = [ (C.Port_key.value, nil_value) ];
+            id = list_builder_generated_id element.id "nil";
+            kind = Nil item_type;
+            bounds = element.bounds;
+            port_anchors = [ { port = "value"; at = nil_value } ];
           }
         in
         let cons_entries =
@@ -1962,7 +1957,7 @@ let list_builder_generated_scene (element : element) =
                  let value_point = point index in
                  let tail_point =
                    {
-                     G.x =
+                     x =
                        clamp (element.bounds.x + 12)
                          (element.bounds.x + element.bounds.width - 12)
                          (value_point.x - 32);
@@ -1973,24 +1968,40 @@ let list_builder_generated_scene (element : element) =
                    }
                  in
                  let next_value = point (index + 1) in
-                 let head_point = point_of_anchor (Option.get anchor) in
-                 let cons_id = generated_element_id ("cons_" ^ item_id) in
+                 let head_point = (Option.get anchor).at in
+                 let cons_id = list_builder_generated_id element.id ("cons_" ^ item_id) in
                  let cons =
                    {
-                     G.id = cons_id;
-                     kind = C.Cons item_type;
-                     bounds = builder_bounds;
-                     ports =
+                     id = cons_id;
+                     kind = Cons item_type;
+                     bounds = element.bounds;
+                     port_anchors =
                        [
-                         (C.Port_key.head, head_point);
-                         (C.Port_key.tail, tail_point);
-                         (C.Port_key.value, value_point);
+                         { port = "head"; at = head_point };
+                         { port = "tail"; at = tail_point };
+                         { port = "value"; at = value_point };
                        ];
                    }
                  in
                  let wire =
-                   generated_wire (generated_wire_id ("tail_" ^ item_id))
-                     next_value tail_point
+                   {
+                     id = list_builder_generated_wire_id element.id ("tail_" ^ item_id);
+                     points = [ next_value; tail_point ];
+                     source_hint =
+                       Some
+                         (Element_port
+                            {
+                              element_id =
+                                (match List.nth_opt item_ids (index + 1) with
+                                | Some next_item_id ->
+                                    list_builder_generated_id element.id
+                                      ("cons_" ^ next_item_id)
+                                | None -> list_builder_generated_id element.id "nil");
+                              port = "value";
+                            });
+                     target_hint =
+                       Some (Element_port { element_id = cons_id; port = "tail" });
+                   }
                  in
                  (cons, wire, next_value))
             item_anchors
@@ -2003,6 +2014,73 @@ let list_builder_generated_scene (element : element) =
         in
         (nil :: cons_nodes, wires))
   | _ -> ([], [])
+
+let list_builder_output_endpoint builder_id item_ids =
+  match item_ids with
+  | [] ->
+      Element_port { element_id = list_builder_generated_id builder_id "nil"; port = "value" }
+  | first :: _ ->
+      Element_port
+        {
+          element_id = list_builder_generated_id builder_id ("cons_" ^ first);
+          port = "value";
+        }
+
+let expand_list_builders document =
+  let builders =
+    document.elements
+    |> List.filter_map (fun (element : element) ->
+           match element.kind with
+           | ListBuilder { item_ids; _ } -> Some (element.id, item_ids)
+           | _ -> None)
+  in
+  let builder_item_target element_id port =
+    match List.assoc_opt element_id builders with
+    | Some item_ids when List.exists (String.equal port) item_ids ->
+        Some
+          (Element_port
+             {
+               element_id = list_builder_generated_id element_id ("cons_" ^ port);
+               port = "head";
+             })
+    | _ -> None
+  in
+  let remap_endpoint = function
+    | Some (Element_port { element_id; port = "result" }) -> (
+        match List.assoc_opt element_id builders with
+        | Some item_ids -> Some (list_builder_output_endpoint element_id item_ids)
+        | None -> Some (Element_port { element_id; port = "result" }))
+    | Some (Element_port { element_id; port }) -> (
+        match builder_item_target element_id port with
+        | Some endpoint -> Some endpoint
+        | None -> Some (Element_port { element_id; port }))
+    | other -> other
+  in
+  let generated_elements, generated_wires =
+    document.elements
+    |> List.map list_builder_generated_expansion
+    |> List.fold_left
+         (fun (elements, wires) (next_elements, next_wires) ->
+           (elements @ next_elements, wires @ next_wires))
+         ([], [])
+  in
+  let elements =
+    document.elements
+    |> List.filter (fun (element : element) ->
+           match element.kind with ListBuilder _ -> false | _ -> true)
+    |> fun elements -> elements @ generated_elements
+  in
+  let wires =
+    document.wires
+    |> List.map (fun (wire : wire) ->
+           {
+             wire with
+             source_hint = remap_endpoint wire.source_hint;
+             target_hint = remap_endpoint wire.target_hint;
+           })
+    |> fun wires -> wires @ generated_wires
+  in
+  { document with elements; wires }
 
 let multi_surface_function_for_body document container_id =
   document.surface_functions
@@ -2253,6 +2331,7 @@ let generated_curried_surface_scene document =
        ([], [], [], [])
 
 let to_raw_scene document =
+  let document = expand_list_builders document in
   let conversion_errors = ref [] in
   let invalid id message =
     conversion_errors := Conversion_error.Invalid_internal_id { id; message } :: !conversion_errors
@@ -2271,14 +2350,6 @@ let to_raw_scene document =
   let expanded_project_call_elements, expanded_project_call_wires =
     document.elements
     |> List.map (project_call_generated_scene document)
-    |> List.fold_left
-         (fun (elements, wires) (next_elements, next_wires) ->
-           (elements @ next_elements, wires @ next_wires))
-         ([], [])
-  in
-  let expanded_list_builder_elements, expanded_list_builder_wires =
-    document.elements
-    |> List.map list_builder_generated_scene
     |> List.fold_left
          (fun (elements, wires) (next_elements, next_wires) ->
            (elements @ next_elements, wires @ next_wires))
@@ -2308,7 +2379,7 @@ let to_raw_scene document =
            | _ -> None)
     |> fun elements ->
     elements @ expanded_library_elements @ expanded_project_call_elements
-    @ expanded_list_builder_elements @ generated_flat_elements
+    @ generated_flat_elements
   in
   let flat_info_for_container (container : container) =
     multi_surface_function_for_body document container.id
@@ -2484,8 +2555,7 @@ let to_raw_scene document =
                })
              (id G.Wire_id.of_string wire.id))
     |> fun wires ->
-    wires @ expanded_library_wires @ expanded_project_call_wires
-    @ expanded_list_builder_wires @ generated_flat_wires
+    wires @ expanded_library_wires @ expanded_project_call_wires @ generated_flat_wires
   in
   let core_junctions =
     document.junctions

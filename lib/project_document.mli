@@ -201,6 +201,14 @@ end
 
 val decode_json : string -> (t, Decode_error.t) result
 val encode_json : t -> string
+
+(** Expand Surface-only List Builder elements into generated Project Nil/Cons
+    elements and generated tail wires. This is the canonical editor-surface
+    lowering used by both raw-scene conversion and the Project Fast evaluator.
+    The returned document is transient execution input; exported Project JSON
+    preserves the original List Builder element. *)
+val expand_list_builders : t -> t
+
 val validate : t -> (validated, Validation_error.t list) result
 val document : validated -> t
 
