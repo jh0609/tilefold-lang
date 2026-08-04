@@ -389,6 +389,172 @@ let expect_mode_result_value project mode expected =
       ^ Yojson.Safe.to_string response);
   response
 
+let list_builder_project item_ids wires result_type =
+  Printf.sprintf
+    {json|{
+  "format": "tilefold-project",
+  "version": 2,
+  "geometry": {
+    "snapTolerance": 8,
+    "elements": [
+      {
+        "id": "unit-drop",
+        "kind": "drop",
+        "bounds": { "x": 80, "y": 80, "width": 88, "height": 56 },
+        "properties": { "type": "unit" },
+        "portAnchors": [{ "port": "input", "x": 80, "y": 108 }]
+      },
+      {
+        "id": "one",
+        "kind": "nat_literal",
+        "bounds": { "x": 120, "y": 170, "width": 96, "height": 56 },
+        "properties": { "value": "1" },
+        "portAnchors": [{ "port": "value", "x": 216, "y": 198 }]
+      },
+      {
+        "id": "two",
+        "kind": "nat_literal",
+        "bounds": { "x": 120, "y": 250, "width": 96, "height": 56 },
+        "properties": { "value": "2" },
+        "portAnchors": [{ "port": "value", "x": 216, "y": 278 }]
+      },
+      {
+        "id": "three",
+        "kind": "nat_literal",
+        "bounds": { "x": 120, "y": 330, "width": 96, "height": 56 },
+        "properties": { "value": "3" },
+        "portAnchors": [{ "port": "value", "x": 216, "y": 358 }]
+      },
+      {
+        "id": "builder",
+        "kind": "list_builder",
+        "bounds": { "x": 360, "y": 190, "width": 152, "height": 132 },
+        "properties": { "itemType": "nat", "itemIds": [%s] },
+        "portAnchors": [
+          { "port": "item-a", "x": 360, "y": 238 },
+          { "port": "item-b", "x": 360, "y": 266 },
+          { "port": "item-c", "x": 360, "y": 294 },
+          { "port": "result", "x": 512, "y": 256 }
+        ]
+      }
+    ],
+    "containers": [
+      {
+        "id": "entry",
+        "kind": {
+          "kind": "entry",
+          "templateId": "entry_template",
+          "resultType": %s,
+          "dependencies": []
+        },
+        "bounds": { "x": 0, "y": 0, "width": 720, "height": 460 },
+        "boundaryPorts": [
+          { "id": "entry-parameter", "role": "parameter", "type": "unit", "anchor": { "x": 0, "y": 108 } },
+          { "id": "entry-result", "role": "result", "type": %s, "anchor": { "x": 720, "y": 256 } }
+        ]
+      }
+    ],
+    "wires": [
+      {
+        "id": "w-unit-drop",
+        "points": [{ "x": 0, "y": 108 }, { "x": 80, "y": 108 }],
+        "sourceHint": { "kind": "boundary_port", "containerId": "entry", "boundaryId": "entry-parameter" },
+        "targetHint": { "kind": "element_port", "elementId": "unit-drop", "port": "input" }
+      },
+      %s,
+      {
+        "id": "w-result",
+        "points": [{ "x": 512, "y": 256 }, { "x": 720, "y": 256 }],
+        "sourceHint": { "kind": "element_port", "elementId": "builder", "port": "result" },
+        "targetHint": { "kind": "boundary_port", "containerId": "entry", "boundaryId": "entry-result" }
+      }
+    ],
+    "junctions": []
+  }
+}
+|json}
+    item_ids result_type result_type wires
+
+let list_builder_three_project =
+  list_builder_project
+    {json|"item-a", "item-b", "item-c"|json}
+    {json|{
+        "id": "w-one",
+        "points": [{ "x": 216, "y": 198 }, { "x": 360, "y": 238 }],
+        "sourceHint": { "kind": "element_port", "elementId": "one", "port": "value" },
+        "targetHint": { "kind": "element_port", "elementId": "builder", "port": "item-a" }
+      },
+      {
+        "id": "w-two",
+        "points": [{ "x": 216, "y": 278 }, { "x": 360, "y": 266 }],
+        "sourceHint": { "kind": "element_port", "elementId": "two", "port": "value" },
+        "targetHint": { "kind": "element_port", "elementId": "builder", "port": "item-b" }
+      },
+      {
+        "id": "w-three",
+        "points": [{ "x": 216, "y": 358 }, { "x": 360, "y": 294 }],
+        "sourceHint": { "kind": "element_port", "elementId": "three", "port": "value" },
+        "targetHint": { "kind": "element_port", "elementId": "builder", "port": "item-c" }
+      }|json}
+    {json|{"list":"nat"}|json}
+
+let list_builder_empty_project =
+  {json|{
+  "format": "tilefold-project",
+  "version": 2,
+  "geometry": {
+    "snapTolerance": 8,
+    "elements": [
+      {
+        "id": "unit-drop",
+        "kind": "drop",
+        "bounds": { "x": 80, "y": 80, "width": 88, "height": 56 },
+        "properties": { "type": "unit" },
+        "portAnchors": [{ "port": "input", "x": 80, "y": 108 }]
+      },
+      {
+        "id": "builder",
+        "kind": "list_builder",
+        "bounds": { "x": 360, "y": 190, "width": 152, "height": 72 },
+        "properties": { "itemType": "nat", "itemIds": [] },
+        "portAnchors": [{ "port": "result", "x": 512, "y": 226 }]
+      }
+    ],
+    "containers": [
+      {
+        "id": "entry",
+        "kind": {
+          "kind": "entry",
+          "templateId": "entry_template",
+          "resultType": {"list":"nat"},
+          "dependencies": []
+        },
+        "bounds": { "x": 0, "y": 0, "width": 720, "height": 360 },
+        "boundaryPorts": [
+          { "id": "entry-parameter", "role": "parameter", "type": "unit", "anchor": { "x": 0, "y": 108 } },
+          { "id": "entry-result", "role": "result", "type": {"list":"nat"}, "anchor": { "x": 720, "y": 226 } }
+        ]
+      }
+    ],
+    "wires": [
+      {
+        "id": "w-unit-drop",
+        "points": [{ "x": 0, "y": 108 }, { "x": 80, "y": 108 }],
+        "sourceHint": { "kind": "boundary_port", "containerId": "entry", "boundaryId": "entry-parameter" },
+        "targetHint": { "kind": "element_port", "elementId": "unit-drop", "port": "input" }
+      },
+      {
+        "id": "w-result",
+        "points": [{ "x": 512, "y": 226 }, { "x": 720, "y": 226 }],
+        "sourceHint": { "kind": "element_port", "elementId": "builder", "port": "result" },
+        "targetHint": { "kind": "boundary_port", "containerId": "entry", "boundaryId": "entry-result" }
+      }
+    ],
+    "junctions": []
+  }
+}
+|json}
+
 let product_pair_project =
   {json|{
   "format": "tilefold-project",
@@ -734,6 +900,35 @@ let () =
   let malformed = E.run_json "{" |> Yojson.Safe.from_string in
   assert (member "status" malformed = `String "error");
   assert (member "stage" malformed = `String "decode");
+  let empty_transparent =
+    expect_mode_result_value list_builder_empty_project "transparent" "List[]"
+  in
+  let empty_fast =
+    expect_mode_result_value list_builder_empty_project "fast" "List[]"
+  in
+  assert (member "result" empty_transparent = member "result" empty_fast);
+  let builder_transparent =
+    expect_mode_result_value list_builder_three_project "transparent"
+      "List[Nat(1), Nat(2), Nat(3)]"
+  in
+  let builder_fast =
+    expect_mode_result_value list_builder_three_project "fast"
+      "List[Nat(1), Nat(2), Nat(3)]"
+  in
+  assert (member "result" builder_transparent = member "result" builder_fast);
+  let trace_subjects =
+    match member "trace" builder_transparent with
+    | `List events ->
+        events
+        |> List.filter_map (fun event ->
+               match member "subject" event with `String value -> Some value | _ -> None)
+    | _ -> []
+  in
+  assert (List.exists (String.equal "__list_builder_builder_nil") trace_subjects);
+  assert (
+    List.exists
+      (String.equal "__list_builder_builder_cons_item-a")
+      trace_subjects);
   let product_pair_transparent =
     expect_mode_result_value product_pair_project "transparent"
       "Product(Nat(3), Bool(True))"

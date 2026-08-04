@@ -278,6 +278,34 @@ function elementAt(value: unknown, path: string): ProjectElement {
         `${path}.properties.resultType`,
       );
       break;
+    case "list_builder": {
+      coreTypeAt(
+        required(properties, "itemType", `${path}.properties`),
+        `${path}.properties.itemType`,
+      );
+      const itemIds = arrayAt(
+        required(properties, "itemIds", `${path}.properties`),
+        `${path}.properties.itemIds`,
+      );
+      const seen = new Set<string>();
+      itemIds.forEach((itemId, index) => {
+        const id = stringAt(itemId, `${path}.properties.itemIds[${index}]`);
+        if (!id) {
+          throw new StructureError(
+            `${path}.properties.itemIds[${index}]`,
+            "item port ID must not be empty",
+          );
+        }
+        if (seen.has(id)) {
+          throw new StructureError(
+            `${path}.properties.itemIds[${index}]`,
+            `duplicate item port ${id}`,
+          );
+        }
+        seen.add(id);
+      });
+      break;
+    }
     case "nat_rec":
     case "bool_rec":
       coreTypeAt(
@@ -411,6 +439,25 @@ function elementAt(value: unknown, path: string): ProjectElement {
       .sort();
     if (!actual.includes("result") || actual.some((port) => port !== "result" && !/^arg_\d+$/.test(port))) {
       throw new StructureError(`${path}.portAnchors`, `invalid project call ports for ${templateId}`);
+    }
+  }
+  if (kind === "list_builder") {
+    const itemIds = arrayAt(
+      required(properties, "itemIds", `${path}.properties`),
+      `${path}.properties.itemIds`,
+    ).map((itemId, index) =>
+      stringAt(itemId, `${path}.properties.itemIds[${index}]`),
+    );
+    const expected = [...itemIds, "result"].sort();
+    const actual = anchors
+      .map((anchor, index) => {
+        const anchorPath = `${path}.portAnchors[${index}]`;
+        const record = objectAt(anchor, anchorPath);
+        return stringAt(required(record, "port", anchorPath), `${anchorPath}.port`);
+      })
+      .sort();
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      throw new StructureError(`${path}.portAnchors`, `expected ports ${expected.join(", ")}`);
     }
   }
   return element as unknown as ProjectElement;

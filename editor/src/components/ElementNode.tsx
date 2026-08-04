@@ -57,6 +57,7 @@ const KIND_LABELS: Record<ProjectElement["kind"], string> = {
   nil: "Nil",
   cons: "Cons",
   list_rec: "ListRec",
+  list_builder: "List Builder",
   function: "Function",
   library_call: "Library Call",
   project_call: "Call",
@@ -157,6 +158,12 @@ function nodeSignature(element: ProjectElement, ports: ConnectablePort[]) {
         ? `${formatCoreType(list)} · ${formatCoreType(base)} · ${formatCoreType(step)} -> ${formatCoreType(result)}`
         : "";
     }
+    case "list_builder": {
+      const result = output("result");
+      return result
+        ? `${element.properties.itemIds.length} item(s) -> ${formatCoreType(result)}`
+        : "";
+    }
     case "apply": {
       const argument = input("argument");
       const result = output("result");
@@ -218,6 +225,9 @@ function nodeDisplayLabel(
   }
   if (element.kind === "list_rec") {
     return `ListRec<${formatCoreType(element.properties.itemType)}, ${formatCoreType(element.properties.resultType)}>`;
+  }
+  if (element.kind === "list_builder") {
+    return `List Builder<${formatCoreType(element.properties.itemType)}>`;
   }
   if (element.kind === "function") {
     return (

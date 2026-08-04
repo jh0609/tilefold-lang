@@ -207,7 +207,16 @@ export function createLoweringSourceMap(
     const containerId = elementOwnerId(document, element);
     entries.push({
       surface: { kind: "element", containerId, elementId: element.id },
-      coreReferences: [`surface-element:${element.id}`],
+      coreReferences:
+        element.kind === "list_builder"
+          ? [
+              `surface-element:${element.id}`,
+              `core-node:__list_builder_${element.id}_nil`,
+              ...element.properties.itemIds.map(
+                (itemId) => `core-node:__list_builder_${element.id}_cons_${itemId}`,
+              ),
+            ]
+          : [`surface-element:${element.id}`],
     });
     for (const anchor of element.portAnchors) {
       entries.push({

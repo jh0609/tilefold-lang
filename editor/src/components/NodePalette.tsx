@@ -180,6 +180,15 @@ const PALETTE_GROUPS: PaletteGroup[] = [
         tone: "operation",
         action: { kind: "element", elementKind: "list_rec" },
       },
+      {
+        name: "List Builder",
+        symbol: "[+]",
+        signature: "item[0] · ... → List<A>",
+        description: "Author an ordered finite List without placing the Cons/Nil chain.",
+        keywords: "list builder literal ordered items surface",
+        tone: "operation",
+        action: { kind: "element", elementKind: "list_builder" },
+      },
     ],
   },
   {

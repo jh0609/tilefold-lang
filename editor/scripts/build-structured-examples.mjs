@@ -154,6 +154,75 @@ function listNatExample() {
   return project;
 }
 
+function listBuilderNatExample() {
+  return document({
+    elements: [
+      element("unit-drop", "drop", { x: 80, y: 80, width: 88, height: 56 }, { type: unit }, [
+        port("input", 80, 108),
+      ]),
+      element("nat-one", "nat_literal", { x: 120, y: 170, width: 96, height: 56 }, { value: "1" }, [
+        port("value", 216, 198),
+      ]),
+      element("nat-two", "nat_literal", { x: 120, y: 250, width: 96, height: 56 }, { value: "2" }, [
+        port("value", 216, 278),
+      ]),
+      element("nat-three", "nat_literal", { x: 120, y: 330, width: 96, height: 56 }, { value: "3" }, [
+        port("value", 216, 358),
+      ]),
+      element(
+        "list-builder",
+        "list_builder",
+        { x: 360, y: 190, width: 152, height: 132 },
+        { itemType: nat, itemIds: ["item-a", "item-b", "item-c"] },
+        [
+          port("item-a", 360, 238),
+          port("item-b", 360, 266),
+          port("item-c", 360, 294),
+          port("result", 512, 256),
+        ],
+      ),
+    ],
+    containers: [
+      {
+        id: "entry",
+        kind: {
+          kind: "entry",
+          templateId: "entry_template",
+          resultType: listNat,
+          dependencies: [],
+        },
+        bounds: { x: 0, y: 0, width: 720, height: 460 },
+        boundaryPorts: [
+          boundary("entry-parameter", "parameter", unit, 0, 108),
+          boundary("entry-result", "result", listNat, 720, 256),
+        ],
+      },
+    ],
+    wires: [
+      wire("w-unit-drop", b("entry", "entry-parameter"), e("unit-drop", "input"), [
+        { x: 0, y: 108 },
+        { x: 80, y: 108 },
+      ]),
+      wire("w-one", e("nat-one", "value"), e("list-builder", "item-a"), [
+        { x: 216, y: 198 },
+        { x: 360, y: 238 },
+      ]),
+      wire("w-two", e("nat-two", "value"), e("list-builder", "item-b"), [
+        { x: 216, y: 278 },
+        { x: 360, y: 266 },
+      ]),
+      wire("w-three", e("nat-three", "value"), e("list-builder", "item-c"), [
+        { x: 216, y: 358 },
+        { x: 360, y: 294 },
+      ]),
+      wire("w-result", e("list-builder", "result"), b("entry", "entry-result"), [
+        { x: 512, y: 256 },
+        { x: 720, y: 256 },
+      ]),
+    ],
+  });
+}
+
 function optionFallbackExample() {
   const project = document({
     elements: [
@@ -353,6 +422,7 @@ function withLeftDrop(project) {
 
 const examples = new Map([
   ["list-nat.tilefold.json", listNatExample()],
+  ["list-builder-nat.tilefold.json", listBuilderNatExample()],
   ["option-safe-pred-get-or-else.tilefold.json", withLeftDrop(optionFallbackExample())],
 ]);
 

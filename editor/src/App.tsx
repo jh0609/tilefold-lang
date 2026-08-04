@@ -1475,6 +1475,27 @@ export function App() {
               after: itemType,
             });
           }}
+          onListBuilderItemTypeChange={(id, itemType: CoreType) => {
+            const element = document.geometry.elements.find(
+              (candidate) => candidate.id === id,
+            );
+            if (!element || element.kind !== "list_builder") return;
+            runCommand({
+              type: "set_list_builder_item_type",
+              id,
+              before: element.properties.itemType,
+              after: itemType,
+            });
+          }}
+          onAddListBuilderItem={(id) => {
+            runCommand({ type: "add_list_builder_item", id });
+          }}
+          onRemoveListBuilderItem={(id, itemId) => {
+            runCommand({ type: "remove_list_builder_item", id, itemId });
+          }}
+          onMoveListBuilderItem={(id, itemId, delta) => {
+            runCommand({ type: "move_list_builder_item", id, itemId, delta });
+          }}
           onListRecTypesChange={(
             id,
             itemType: CoreType,

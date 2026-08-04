@@ -25,6 +25,7 @@ type element_kind =
   | Nil of Core_type.t
   | Cons of Core_type.t
   | ListRec of { item_type : Core_type.t; result_type : Core_type.t }
+  | ListBuilder of { item_type : Core_type.t; item_ids : string list }
   | Function of {
       template_id : string;
       parameter_type : Core_type.t;
@@ -370,6 +371,15 @@ let decode_captures path json =
   in
   loop 0 [] values
 
+let duplicate_strings values =
+  let sorted = List.sort String.compare values in
+  let rec loop = function
+    | left :: right :: _ when String.equal left right -> Some left
+    | _ :: rest -> loop rest
+    | [] -> None
+  in
+  loop sorted
+
 let decode_drop_provenance path fields =
   match optional_field "provenance" fields with
   | None -> Ok ()
@@ -516,6 +526,18 @@ let decode_element_kind path json =
       let* item_type = type_field "itemType" in
       let* result_type = type_field "resultType" in
       Ok (ListRec { item_type; result_type })
+  | "list_builder" ->
+      let* () = reject_unknown path [ "kind"; "itemType"; "itemIds" ] fields in
+      let* item_type = type_field "itemType" in
+      let* item_ids_json = field path "itemIds" fields in
+      let* item_ids = decode_string_array (path ^ ".itemIds") item_ids_json in
+      if List.exists (String.equal "") item_ids then
+        error (path ^ ".itemIds") (Invalid_value "item port ID must not be empty")
+      else
+        (match duplicate_strings item_ids with
+        | Some duplicate ->
+            error (path ^ ".itemIds") (Invalid_value ("duplicate item port " ^ duplicate))
+        | None -> Ok (ListBuilder { item_type; item_ids }))
   | "nat_rec" ->
       let* () = reject_unknown path [ "kind"; "type" ] fields in
       let* typ = type_field "type" in
@@ -1053,6 +1075,13 @@ let json_element_kind = function
             ("itemType", json_type item_type);
             ("resultType", json_type result_type);
           ] )
+  | ListBuilder { item_type; item_ids } ->
+      ( "list_builder",
+        `Assoc
+          [
+            ("itemType", json_type item_type);
+            ("itemIds", `List (List.map (fun id -> `String id) item_ids));
+          ] )
   | NatRec typ -> ("nat_rec", `Assoc [ ("type", json_type typ) ])
   | BoolRec typ -> ("bool_rec", `Assoc [ ("type", json_type typ) ])
   | Apply { parameter_type; result_type } ->
@@ -1384,6 +1413,7 @@ let core_kind = function
                    { template_id; parameter_type; result_type; captures })))
   | Library_call _ -> Error ()
   | Project_call _ -> Error ()
+  | ListBuilder _ -> Error ()
 
 let duplicate_values values =
   let sorted = List.sort String.compare values in
@@ -1404,6 +1434,13 @@ let validate document =
     add (Validation_error.Invalid_snap_tolerance document.snap_tolerance);
   let ids =
     List.map (fun (element : element) -> ("elements", element.id)) document.elements
+    @ List.concat_map
+        (fun (element : element) ->
+          match element.kind with
+          | ListBuilder { item_ids; _ } ->
+              List.map (fun id -> ("listBuilderItems", id)) item_ids
+          | _ -> [])
+        document.elements
     @ List.map (fun (container : container) -> ("containers", container.id)) document.containers
     @ List.concat_map
         (fun (container : container) ->
@@ -1499,6 +1536,17 @@ let validate document =
                     add
                       (Validation_error.Invalid_port_anchor
                          { element_id = element.id; port }))
+          | ListBuilder { item_ids; _ } ->
+              let expected = (item_ids @ [ "result" ]) |> List.sort String.compare in
+              let actual =
+                element.port_anchors
+                |> List.map (fun (anchor : port_anchor) -> anchor.port)
+                |> List.sort String.compare
+              in
+              let invalid = expected <> actual || duplicate_values actual <> [] in
+              if invalid then
+                let port = String.concat "," actual in
+                add (Validation_error.Invalid_port_anchor { element_id = element.id; port })
           | _ -> ())
       | Ok kind ->
           let expected =
@@ -1861,6 +1909,95 @@ let project_call_generated_scene document (element : element) =
                     (function_element :: apply_elements, internal_wires)))
   | _ -> ([], [])
 
+let list_builder_generated_scene (element : element) =
+  match element.kind with
+  | ListBuilder { item_type; item_ids } -> (
+      let result_anchor = anchor_named element.port_anchors "result" in
+      let item_anchors =
+        item_ids
+        |> List.map (fun item_id -> (item_id, anchor_named element.port_anchors item_id))
+      in
+      if Option.is_none result_anchor || List.exists (fun (_, anchor) -> Option.is_none anchor) item_anchors then
+        ([], [])
+      else
+        let result_point = point_of_anchor (Option.get result_anchor) in
+        let generated_element_id suffix =
+          match S.Element_id.of_string ("__list_builder_" ^ element.id ^ "_" ^ suffix) with
+          | Ok id -> id
+          | Error _ -> assert false
+        in
+        let generated_wire_id suffix =
+          match G.Wire_id.of_string ("__list_builder_" ^ element.id ^ "_" ^ suffix) with
+          | Ok id -> id
+          | Error _ -> assert false
+        in
+        let point index =
+          if index = 0 then result_point
+          else { G.x = result_point.x - (index * 64); y = result_point.y + (index * 28) }
+        in
+        let nil_value = point (List.length item_ids) in
+        let nil =
+          {
+            G.id = generated_element_id "nil";
+            kind = C.Nil item_type;
+            bounds =
+              {
+                G.left = nil_value.x - 64;
+                top = nil_value.y - 28;
+                right = nil_value.x;
+                bottom = nil_value.y + 28;
+              };
+            ports = [ (C.Port_key.value, nil_value) ];
+          }
+        in
+        let cons_entries =
+          List.mapi
+            (fun index (item_id, anchor) ->
+                 let value_point = point index in
+                 let tail_point =
+                   {
+                     G.x = value_point.x - 32;
+                     y = value_point.y + 18;
+                   }
+                 in
+                 let next_value = point (index + 1) in
+                 let head_point = point_of_anchor (Option.get anchor) in
+                 let cons_id = generated_element_id ("cons_" ^ item_id) in
+                 let cons =
+                   {
+                     G.id = cons_id;
+                     kind = C.Cons item_type;
+                     bounds =
+                       {
+                         G.left = min head_point.x tail_point.x;
+                         top = min head_point.y value_point.y - 16;
+                         right = max value_point.x tail_point.x;
+                         bottom = max head_point.y tail_point.y + 16;
+                       };
+                     ports =
+                       [
+                         (C.Port_key.head, head_point);
+                         (C.Port_key.tail, tail_point);
+                         (C.Port_key.value, value_point);
+                       ];
+                   }
+                 in
+                 let wire =
+                   generated_wire (generated_wire_id ("tail_" ^ item_id))
+                     next_value tail_point
+                 in
+                 (cons, wire, next_value))
+            item_anchors
+        in
+        let cons_nodes, wires, _last_value =
+          List.fold_right
+            (fun (cons, wire, _next_value) (nodes, wires, last) ->
+              (cons :: nodes, wire :: wires, last))
+            cons_entries ([], [], nil_value)
+        in
+        (nil :: cons_nodes, wires))
+  | _ -> ([], [])
+
 let multi_surface_function_for_body document container_id =
   document.surface_functions
   |> List.find_opt (fun function_info ->
@@ -2133,6 +2270,14 @@ let to_raw_scene document =
            (elements @ next_elements, wires @ next_wires))
          ([], [])
   in
+  let expanded_list_builder_elements, expanded_list_builder_wires =
+    document.elements
+    |> List.map list_builder_generated_scene
+    |> List.fold_left
+         (fun (elements, wires) (next_elements, next_wires) ->
+           (elements @ next_elements, wires @ next_wires))
+         ([], [])
+  in
   let
     ( generated_flat_containers,
       generated_flat_boundaries,
@@ -2157,7 +2302,7 @@ let to_raw_scene document =
            | _ -> None)
     |> fun elements ->
     elements @ expanded_library_elements @ expanded_project_call_elements
-    @ generated_flat_elements
+    @ expanded_list_builder_elements @ generated_flat_elements
   in
   let flat_info_for_container (container : container) =
     multi_surface_function_for_body document container.id
@@ -2334,7 +2479,7 @@ let to_raw_scene document =
              (id G.Wire_id.of_string wire.id))
     |> fun wires ->
     wires @ expanded_library_wires @ expanded_project_call_wires
-    @ generated_flat_wires
+    @ expanded_list_builder_wires @ generated_flat_wires
   in
   let core_junctions =
     document.junctions

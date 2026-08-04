@@ -11,6 +11,7 @@ describe("example projects", () => {
       "Multiplication — 3 × 4 = 12",
       "Option fallback — safePred/getOrElse",
       "List — [1, 2, 3]",
+      "List Builder — [1, 2, 3]",
     ]);
     expect(
       exampleProjectById(
@@ -25,6 +26,7 @@ describe("example projects", () => {
     "multiplication",
     "option-safe-pred-get-or-else",
     "list-nat",
+    "list-builder-nat",
   ] as const)(
     "round-trips the %s Project JSON without semantic data loss",
     (id) => {

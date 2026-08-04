@@ -4,6 +4,7 @@ import additionJson from "../../../examples/addition.tilefold.json?raw";
 import multiplicationJson from "../../../examples/multiplication.tilefold.json?raw";
 import optionSafePredGetOrElseJson from "../../../examples/option-safe-pred-get-or-else.tilefold.json?raw";
 import listNatJson from "../../../examples/list-nat.tilefold.json?raw";
+import listBuilderNatJson from "../../../examples/list-builder-nat.tilefold.json?raw";
 
 export const EXAMPLE_PROJECTS = [
   {
@@ -41,6 +42,12 @@ export const EXAMPLE_PROJECTS = [
     name: "List — [1, 2, 3]",
     fileName: "list-nat.tilefold.json",
     projectJson: listNatJson,
+  },
+  {
+    id: "list-builder-nat",
+    name: "List Builder — [1, 2, 3]",
+    fileName: "list-builder-nat.tilefold.json",
+    projectJson: listBuilderNatJson,
   },
 ] as const;
 

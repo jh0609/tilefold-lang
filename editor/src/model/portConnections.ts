@@ -181,6 +181,13 @@ function elementPortType(
       return port === "result"
         ? { direction: "output", type: element.properties.resultType }
         : null;
+    case "list_builder":
+      if (element.properties.itemIds.includes(port)) {
+        return { direction: "input", type: element.properties.itemType };
+      }
+      return port === "result"
+        ? { direction: "output", type: { list: element.properties.itemType } }
+        : null;
     case "apply":
       if (port === "function")
         return {
@@ -354,6 +361,11 @@ function elementPortLabel(
     const match = /^arg_(\d+)$/.exec(port);
     if (match) return functionInfo.parameters[Number(match[1])]?.name;
     if (port === "result") return functionInfo.result.name;
+  }
+  if (element.kind === "list_builder") {
+    const index = element.properties.itemIds.indexOf(port);
+    if (index >= 0) return `item[${index}]`;
+    if (port === "result") return "result";
   }
   return undefined;
 }

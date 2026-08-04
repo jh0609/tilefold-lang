@@ -44,6 +44,11 @@ const STRUCTURED_EXAMPLES = [
     fileName: "list-nat.tilefold.json",
     result: "List[Nat(1), Nat(2), Nat(3)]",
   },
+  {
+    id: "list-builder-nat",
+    fileName: "list-builder-nat.tilefold.json",
+    result: "List[Nat(1), Nat(2), Nat(3)]",
+  },
 ] as const;
 
 function watchBrowserIssues(page: Page): BrowserIssues {
@@ -96,6 +101,7 @@ test("lists the original and natural-number examples in canonical order", async 
     "Multiplication — 3 × 4 = 12",
     "Option fallback — safePred/getOrElse",
     "List — [1, 2, 3]",
+    "List Builder — [1, 2, 3]",
   ]);
   await expectNoBrowserIssues(issues);
 });

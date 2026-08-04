@@ -88,6 +88,13 @@ defines port names, directions, and types through `Core_graph.ports_of_node_kind
 A document must provide each fixed port exactly once and cannot redefine its
 direction or type.
 
+Project JSON v2 also permits the Surface-only `list_builder` element. Its
+properties are `itemType` and an explicit ordered `itemIds` array. Each item ID
+is a stable input port name and must have exactly one matching `portAnchors`
+entry; `result` is the single output port. The builder lowers to ordinary Core
+`Cons`/`Nil` nodes as described in
+[`0041-surface-list-builder.md`](decisions/0041-surface-list-builder.md).
+
 ## Containers and boundaries
 
 A container has an ID, bounds, kind, and boundary ports. An `entry` kind stores

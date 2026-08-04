@@ -479,6 +479,17 @@ module Fast = struct
             | Ok _, Ok _, Ok _ -> fail "ListRec inputs do not match its declared types."
             | Error message, _, _ | _, Error message, _ | _, _, Error message ->
                 fail message)
+        | P.ListBuilder { item_type; item_ids }, "result" ->
+            let rec collect acc = function
+              | [] -> Ok (List (item_type, List.rev acc))
+              | item_id :: rest -> (
+                  match eval_input state document env element_id item_id with
+                  | Ok value when type_matches item_type value ->
+                      collect (value :: acc) rest
+                  | Ok _ -> fail "List Builder item input does not match its item type."
+                  | Error _ as error -> error)
+            in
+            collect [] item_ids
         | P.Unpair _, "left" -> (
             match eval_input state document env element_id "value" with
             | Ok (Product (left, _right)) -> Ok left

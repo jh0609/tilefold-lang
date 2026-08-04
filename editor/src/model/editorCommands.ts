@@ -27,6 +27,10 @@ import {
   updateCaseTypes,
   updateSumTypes,
   updateListItemType,
+  updateListBuilderItemType,
+  addListBuilderItem,
+  removeListBuilderItem,
+  moveListBuilderItem,
   updateListRecTypes,
   type AddableElementKind,
   type FunctionTemplateDraft,
@@ -198,6 +202,27 @@ export type EditorCommand =
       id: string;
       before: CoreType;
       after: CoreType;
+    }
+  | {
+      type: "set_list_builder_item_type";
+      id: string;
+      before: CoreType;
+      after: CoreType;
+    }
+  | {
+      type: "add_list_builder_item";
+      id: string;
+    }
+  | {
+      type: "remove_list_builder_item";
+      id: string;
+      itemId: string;
+    }
+  | {
+      type: "move_list_builder_item";
+      id: string;
+      itemId: string;
+      delta: -1 | 1;
     }
   | {
       type: "set_list_rec_types";
@@ -579,6 +604,14 @@ export function applyEditorCommand(
       );
     case "set_list_item_type":
       return updateListItemType(document, command.id, command.after);
+    case "set_list_builder_item_type":
+      return updateListBuilderItemType(document, command.id, command.after);
+    case "add_list_builder_item":
+      return addListBuilderItem(document, command.id);
+    case "remove_list_builder_item":
+      return removeListBuilderItem(document, command.id, command.itemId);
+    case "move_list_builder_item":
+      return moveListBuilderItem(document, command.id, command.itemId, command.delta);
     case "set_list_rec_types":
       return updateListRecTypes(
         document,
@@ -606,6 +639,7 @@ const ELEMENT_LABELS: Record<AddableElementKind, string> = {
   nil: "Nil",
   cons: "Cons",
   list_rec: "ListRec",
+  list_builder: "List Builder",
   apply: "Apply",
   bool_rec: "BoolRec",
   nat_rec: "NatRec",
@@ -667,8 +701,15 @@ export function editorCommandLabel(command: EditorCommand): string {
     case "set_sum_types":
     case "set_case_types":
     case "set_list_item_type":
+    case "set_list_builder_item_type":
     case "set_list_rec_types":
       return `Edit types for ${command.id}`;
+    case "add_list_builder_item":
+      return `Add item input to ${command.id}`;
+    case "remove_list_builder_item":
+      return `Remove item input from ${command.id}`;
+    case "move_list_builder_item":
+      return `Reorder item input on ${command.id}`;
     case "set_entry_result_type":
       return "Edit entry result type";
   }
@@ -726,7 +767,12 @@ export function isNoOpCommand(command: EditorCommand): boolean {
         coreTypeEqual(command.before.resultType, command.after.resultType)
       );
     case "set_list_item_type":
+    case "set_list_builder_item_type":
       return coreTypeEqual(command.before, command.after);
+    case "add_list_builder_item":
+    case "remove_list_builder_item":
+    case "move_list_builder_item":
+      return false;
     case "set_list_rec_types":
       return (
         coreTypeEqual(command.before.itemType, command.after.itemType) &&

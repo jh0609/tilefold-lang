@@ -161,6 +161,7 @@ const NEW_ELEMENT_SIZE: Record<
   nil: { width: 96, height: 56 },
   cons: { width: 120, height: 84 },
   list_rec: { width: 152, height: 120 },
+  list_builder: { width: 152, height: 72 },
   apply: { width: 120, height: 90 },
   bool_rec: { width: 136, height: 112 },
   nat_rec: { width: 128, height: 112 },
@@ -271,6 +272,11 @@ export function nextStableId(
 export function collectStableIds(document: ProjectDocument): Set<string> {
   const ids = new Set<string>();
   document.geometry.elements.forEach((element) => ids.add(element.id));
+  document.geometry.elements.forEach((element) => {
+    if (element.kind === "list_builder") {
+      element.properties.itemIds.forEach((itemId) => ids.add(itemId));
+    }
+  });
   document.geometry.containers.forEach((container) => {
     ids.add(container.id);
     container.boundaryPorts.forEach((boundary) => ids.add(boundary.id));
@@ -4022,6 +4028,7 @@ export function addElement(
     nil: "node_nil_",
     cons: "node_cons_",
     list_rec: "node_list_rec_",
+    list_builder: "node_list_builder_",
     apply: "node_apply_",
     bool_rec: "node_bool_rec_",
     nat_rec: "node_nat_rec_",
@@ -4203,6 +4210,23 @@ export function addElement(
         ],
       };
       break;
+    case "list_builder": {
+      const builderBounds = listBuilderBounds(bounds, 0);
+      element = {
+        id,
+        kind,
+        bounds: builderBounds,
+        properties: { itemType: "nat", itemIds: [] },
+        portAnchors: [
+          {
+            port: "result",
+            x: builderBounds.x + builderBounds.width,
+            y: Math.round(builderBounds.y + builderBounds.height / 2),
+          },
+        ],
+      };
+      break;
+    }
     case "bool_rec":
       element = {
         id,
@@ -4590,6 +4614,71 @@ export function moveElement(
         ...movedDocument.geometry,
         wires,
       },
+    },
+  };
+}
+
+const LIST_BUILDER_ROW_HEIGHT = 28;
+const LIST_BUILDER_HEADER_HEIGHT = 48;
+const LIST_BUILDER_MAX_ITEMS = 16;
+
+function listBuilderBounds(bounds: Bounds, itemCount: number): Bounds {
+  return {
+    ...bounds,
+    width: Math.max(bounds.width, NEW_ELEMENT_SIZE.list_builder.width),
+    height: Math.max(
+      NEW_ELEMENT_SIZE.list_builder.height,
+      LIST_BUILDER_HEADER_HEIGHT + Math.max(1, itemCount) * LIST_BUILDER_ROW_HEIGHT,
+    ),
+  };
+}
+
+function listBuilderAnchors(element: Extract<ProjectElement, { kind: "list_builder" }>): ProjectElement["portAnchors"] {
+  const bounds = listBuilderBounds(element.bounds, element.properties.itemIds.length);
+  const itemCount = element.properties.itemIds.length;
+  const itemAnchors = element.properties.itemIds.map((itemId, index) => ({
+    port: itemId,
+    x: bounds.x,
+    y: Math.round(bounds.y + LIST_BUILDER_HEADER_HEIGHT + index * LIST_BUILDER_ROW_HEIGHT),
+  }));
+  return [
+    ...itemAnchors,
+    {
+      port: "result",
+      x: bounds.x + bounds.width,
+      y: Math.round(bounds.y + bounds.height / 2),
+    },
+  ];
+}
+
+function withMovedElementWireEndpoints(
+  document: ProjectDocument,
+  elementId: string,
+  beforeAnchors: readonly { port: string; x: number; y: number }[],
+  afterAnchors: readonly { port: string; x: number; y: number }[],
+): ProjectDocument {
+  const before = new Map(beforeAnchors.map((anchor) => [anchor.port, anchor]));
+  const after = new Map(afterAnchors.map((anchor) => [anchor.port, anchor]));
+  return {
+    ...document,
+    geometry: {
+      ...document.geometry,
+      wires: document.geometry.wires.map((wire) => {
+        let points = wire.points;
+        if (wire.sourceHint?.kind === "element_port" && wire.sourceHint.elementId === elementId) {
+          const next = after.get(wire.sourceHint.port);
+          if (next && before.has(wire.sourceHint.port) && points[0]) {
+            points = [{ x: next.x, y: next.y }, ...points.slice(1)];
+          }
+        }
+        if (wire.targetHint?.kind === "element_port" && wire.targetHint.elementId === elementId) {
+          const next = after.get(wire.targetHint.port);
+          if (next && before.has(wire.targetHint.port) && points.at(-1)) {
+            points = [...points.slice(0, -1), { x: next.x, y: next.y }];
+          }
+        }
+        return points === wire.points ? wire : { ...wire, points };
+      }),
     },
   };
 }
@@ -5297,6 +5386,158 @@ export function updateListItemType(
         ),
       },
     },
+  };
+}
+
+function listBuilderById(
+  document: ProjectDocument,
+  id: string,
+): Extract<ProjectElement, { kind: "list_builder" }> | undefined {
+  return document.geometry.elements.find(
+    (candidate): candidate is Extract<ProjectElement, { kind: "list_builder" }> =>
+      candidate.id === id && candidate.kind === "list_builder",
+  );
+}
+
+export function updateListBuilderItemType(
+  document: ProjectDocument,
+  id: string,
+  itemType: CoreType,
+): { document: ProjectDocument; error?: string } {
+  const element = listBuilderById(document, id);
+  if (!element) return { document, error: `Element ${id} is not a List Builder.` };
+  const references = elementReferences(document, id);
+  if (references.length > 0) {
+    return {
+      document,
+      error: `Disconnect wire(s) before changing ${id} List Builder item type: ${references.join(", ")}`,
+    };
+  }
+  return {
+    document: {
+      ...document,
+      geometry: {
+        ...document.geometry,
+        elements: document.geometry.elements.map((candidate) =>
+          candidate.id === id && candidate.kind === "list_builder"
+            ? { ...candidate, properties: { ...candidate.properties, itemType } }
+            : candidate,
+        ),
+      },
+    },
+  };
+}
+
+export function addListBuilderItem(
+  document: ProjectDocument,
+  id: string,
+): { document: ProjectDocument; error?: string; itemId?: string } {
+  const element = listBuilderById(document, id);
+  if (!element) return { document, error: `Element ${id} is not a List Builder.` };
+  if (element.properties.itemIds.length >= LIST_BUILDER_MAX_ITEMS) {
+    return { document, error: `List Builder supports at most ${LIST_BUILDER_MAX_ITEMS} item inputs.` };
+  }
+  const itemId = nextStableId(document, `${id}_item_`);
+  const beforeAnchors = element.portAnchors;
+  const nextElement: Extract<ProjectElement, { kind: "list_builder" }> = {
+    ...element,
+    bounds: listBuilderBounds(element.bounds, element.properties.itemIds.length + 1),
+    properties: {
+      ...element.properties,
+      itemIds: [...element.properties.itemIds, itemId],
+    },
+  };
+  nextElement.portAnchors = listBuilderAnchors(nextElement);
+  const changed: ProjectDocument = {
+    ...document,
+    geometry: {
+      ...document.geometry,
+      elements: document.geometry.elements.map((candidate) =>
+        candidate.id === id ? nextElement : candidate,
+      ),
+    },
+  };
+  return {
+    document: withMovedElementWireEndpoints(changed, id, beforeAnchors, nextElement.portAnchors),
+    itemId,
+  };
+}
+
+export function removeListBuilderItem(
+  document: ProjectDocument,
+  id: string,
+  itemId: string,
+): { document: ProjectDocument; error?: string } {
+  const element = listBuilderById(document, id);
+  if (!element) return { document, error: `Element ${id} is not a List Builder.` };
+  if (!element.properties.itemIds.includes(itemId)) {
+    return { document, error: `List Builder item ${itemId} does not exist.` };
+  }
+  const beforeAnchors = element.portAnchors;
+  const nextItemIds = element.properties.itemIds.filter((candidate) => candidate !== itemId);
+  const nextElement: Extract<ProjectElement, { kind: "list_builder" }> = {
+    ...element,
+    bounds: listBuilderBounds(element.bounds, nextItemIds.length),
+    properties: { ...element.properties, itemIds: nextItemIds },
+  };
+  nextElement.portAnchors = listBuilderAnchors(nextElement);
+  const changed: ProjectDocument = {
+    ...document,
+    geometry: {
+      ...document.geometry,
+      elements: document.geometry.elements.map((candidate) =>
+        candidate.id === id ? nextElement : candidate,
+      ),
+      wires: document.geometry.wires.filter(
+        (wire) =>
+          !(
+            (wire.sourceHint?.kind === "element_port" &&
+              wire.sourceHint.elementId === id &&
+              wire.sourceHint.port === itemId) ||
+            (wire.targetHint?.kind === "element_port" &&
+              wire.targetHint.elementId === id &&
+              wire.targetHint.port === itemId)
+          ),
+      ),
+    },
+  };
+  return {
+    document: withMovedElementWireEndpoints(changed, id, beforeAnchors, nextElement.portAnchors),
+  };
+}
+
+export function moveListBuilderItem(
+  document: ProjectDocument,
+  id: string,
+  itemId: string,
+  delta: -1 | 1,
+): { document: ProjectDocument; error?: string } {
+  const element = listBuilderById(document, id);
+  if (!element) return { document, error: `Element ${id} is not a List Builder.` };
+  const index = element.properties.itemIds.indexOf(itemId);
+  const target = index + delta;
+  if (index < 0 || target < 0 || target >= element.properties.itemIds.length) {
+    return { document };
+  }
+  const beforeAnchors = element.portAnchors;
+  const itemIds = [...element.properties.itemIds];
+  [itemIds[index], itemIds[target]] = [itemIds[target]!, itemIds[index]!];
+  const nextElement: Extract<ProjectElement, { kind: "list_builder" }> = {
+    ...element,
+    properties: { ...element.properties, itemIds },
+  };
+  nextElement.portAnchors = listBuilderAnchors(nextElement);
+  const changed: ProjectDocument = {
+    ...document,
+    geometry: {
+      ...document.geometry,
+      elements: document.geometry.elements.map((candidate) =>
+        candidate.id === id ? nextElement : candidate,
+      ),
+    },
+  };
+  return {
+    document: withMovedElementWireEndpoints(changed, id, beforeAnchors, nextElement.portAnchors),
   };
 }
 

@@ -142,6 +142,72 @@ describe("Project JSON v2 import and export", () => {
     });
   });
 
+  it("round-trips List Builder item type, order, and stable item IDs", () => {
+    const input = JSON.parse(exampleJson);
+    input.geometry.containers[0].kind.resultType = { list: "nat" };
+    input.geometry.containers[0].boundaryPorts[1].type = { list: "nat" };
+    input.geometry.elements.push({
+      id: "builder_1",
+      kind: "list_builder",
+      properties: {
+        itemType: { product: ["nat", { sum: ["unit", "bool"] }] },
+        itemIds: ["item_c", "item_a", "item_b"],
+      },
+      bounds: { x: 320, y: 120, width: 152, height: 132 },
+      portAnchors: [
+        { port: "item_c", x: 320, y: 168 },
+        { port: "item_a", x: 320, y: 196 },
+        { port: "item_b", x: 320, y: 224 },
+        { port: "result", x: 472, y: 186 },
+      ],
+    });
+
+    const parsed = parseProjectJson(JSON.stringify(input));
+    const builder = parsed.geometry.elements.find(
+      (element) => element.id === "builder_1",
+    );
+    expect(builder).toMatchObject({
+      kind: "list_builder",
+      properties: {
+        itemIds: ["item_c", "item_a", "item_b"],
+      },
+    });
+    expect(parseProjectJson(exportProjectJson(parsed))).toEqual(parsed);
+  });
+
+  it("rejects malformed List Builder JSON", () => {
+    const input = JSON.parse(exampleJson);
+    const builder = {
+      id: "builder_1",
+      kind: "list_builder",
+      properties: { itemType: "nat", itemIds: ["item_a"] },
+      bounds: { x: 320, y: 120, width: 152, height: 80 },
+      portAnchors: [
+        { port: "item_a", x: 320, y: 168 },
+        { port: "result", x: 472, y: 160 },
+      ],
+    };
+    input.geometry.elements.push(builder);
+    const missingType = structuredClone(input);
+    delete missingType.geometry.elements.at(-1).properties.itemType;
+    expect(() => parseProjectJson(JSON.stringify(missingType))).toThrow(
+      "$.geometry.elements[3].properties.itemType",
+    );
+    const duplicate = structuredClone(input);
+    duplicate.geometry.elements.at(-1).properties.itemIds = ["item_a", "item_a"];
+    expect(() => parseProjectJson(JSON.stringify(duplicate))).toThrow(
+      "duplicate item port item_a",
+    );
+    const missingAnchor = structuredClone(input);
+    missingAnchor.geometry.elements.at(-1).portAnchors =
+      missingAnchor.geometry.elements.at(-1).portAnchors.filter(
+        (anchor: { port: string }) => anchor.port !== "item_a",
+      );
+    expect(() => parseProjectJson(JSON.stringify(missingAnchor))).toThrow(
+      "$.geometry.elements[3].portAnchors",
+    );
+  });
+
   it("requires the container and boundary Core type fields used by OCaml", () => {
     const missingContainerResult = JSON.parse(exampleJson);
     delete missingContainerResult.geometry.containers[0].kind.resultType;

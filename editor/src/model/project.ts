@@ -106,6 +106,10 @@ export type ProjectElement =
       properties: { itemType: CoreType; resultType: CoreType };
     })
   | (ElementBase & {
+      kind: "list_builder";
+      properties: { itemType: CoreType; itemIds: StableId[] };
+    })
+  | (ElementBase & {
       kind: "nat_rec";
       properties: { type: CoreType };
     })
@@ -329,6 +333,7 @@ export const ELEMENT_KINDS = [
   "nil",
   "cons",
   "list_rec",
+  "list_builder",
   "function",
   "library_call",
   "project_call",

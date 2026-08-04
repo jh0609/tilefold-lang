@@ -54,6 +54,10 @@ interface InspectorProps {
     resultType: CoreType,
   ) => void;
   onListItemTypeChange: (id: string, itemType: CoreType) => void;
+  onListBuilderItemTypeChange: (id: string, itemType: CoreType) => void;
+  onAddListBuilderItem: (id: string) => void;
+  onRemoveListBuilderItem: (id: string, itemId: string) => void;
+  onMoveListBuilderItem: (id: string, itemId: string, delta: -1 | 1) => void;
   onListRecTypesChange: (
     id: string,
     itemType: CoreType,
@@ -604,6 +608,7 @@ function NumberField({
 }
 
 function ElementInspector({
+  document,
   element,
   connectedWires,
   surfaceFunction,
@@ -616,11 +621,16 @@ function ElementInspector({
   onSumTypesChange,
   onCaseTypesChange,
   onListItemTypeChange,
+  onListBuilderItemTypeChange,
+  onAddListBuilderItem,
+  onRemoveListBuilderItem,
+  onMoveListBuilderItem,
   onListRecTypesChange,
   onFocusTemplate,
   onOpenStandardLibraryDefinition,
   onError,
 }: {
+  document: ProjectDocument;
   element: ProjectElement;
   connectedWires: string[];
   surfaceFunction?: NonNullable<ProjectDocument["surfaceFunctions"]>[number];
@@ -650,6 +660,10 @@ function ElementInspector({
     resultType: CoreType,
   ) => void;
   onListItemTypeChange: (id: string, itemType: CoreType) => void;
+  onListBuilderItemTypeChange: (id: string, itemType: CoreType) => void;
+  onAddListBuilderItem: (id: string) => void;
+  onRemoveListBuilderItem: (id: string, itemId: string) => void;
+  onMoveListBuilderItem: (id: string, itemId: string, delta: -1 | 1) => void;
   onListRecTypesChange: (
     id: string,
     itemType: CoreType,
@@ -911,6 +925,80 @@ function ElementInspector({
           </p>
         </>
       )}
+      {element.kind === "list_builder" && (
+        <>
+          <CoreTypeField
+            label="Item type"
+            value={element.properties.itemType}
+            disabled={connectedWires.length > 0}
+            onChange={(itemType) =>
+              onListBuilderItemTypeChange(element.id, itemType)
+            }
+          />
+          <section className="readout" aria-label="List Builder items">
+            <h3>Items</h3>
+            <span>{element.properties.itemIds.length} ordered item input(s)</span>
+            <button
+              type="button"
+              onClick={() => onAddListBuilderItem(element.id)}
+              aria-label={`Add item input to ${element.id}`}
+            >
+              Add item input
+            </button>
+            {element.properties.itemIds.map((itemId, index) => (
+              <div className="row" key={itemId}>
+                <code>{`item[${index}]`}</code>
+                <span>{itemId}</span>
+                <button
+                  type="button"
+                  onClick={() => onMoveListBuilderItem(element.id, itemId, -1)}
+                  disabled={index === 0}
+                  aria-label={`Move item ${index} up`}
+                >
+                  Up
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onMoveListBuilderItem(element.id, itemId, 1)}
+                  disabled={index === element.properties.itemIds.length - 1}
+                  aria-label={`Move item ${index} down`}
+                >
+                  Down
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const connected = document.geometry.wires.some(
+                      (wire) =>
+                        (wire.sourceHint?.kind === "element_port" &&
+                          wire.sourceHint.elementId === element.id &&
+                          wire.sourceHint.port === itemId) ||
+                        (wire.targetHint?.kind === "element_port" &&
+                          wire.targetHint.elementId === element.id &&
+                          wire.targetHint.port === itemId),
+                    );
+                    if (
+                      !connected ||
+                      window.confirm(
+                        `Remove item[${index}] and its connected wire(s)? This can be undone.`,
+                      )
+                    ) {
+                      onRemoveListBuilderItem(element.id, itemId);
+                    }
+                  }}
+                  aria-label={`Remove item ${index}`}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </section>
+          <p className="limitation">
+            List Builder lowers to a right-associated Cons/Nil chain in this
+            explicit item order.
+          </p>
+        </>
+      )}
       {element.kind === "list_rec" && (
         <>
           <CoreTypeField
@@ -1113,6 +1201,10 @@ export function Inspector({
   onSumTypesChange,
   onCaseTypesChange,
   onListItemTypeChange,
+  onListBuilderItemTypeChange,
+  onAddListBuilderItem,
+  onRemoveListBuilderItem,
+  onMoveListBuilderItem,
   onListRecTypesChange,
   onEntryResultTypeChange,
   canDelete,
@@ -1252,6 +1344,7 @@ export function Inspector({
       content = (
         <>
           <ElementInspector
+            document={document}
             element={element}
             connectedWires={connectedWires}
             surfaceFunction={
@@ -1271,6 +1364,10 @@ export function Inspector({
             onSumTypesChange={onSumTypesChange}
             onCaseTypesChange={onCaseTypesChange}
             onListItemTypeChange={onListItemTypeChange}
+            onListBuilderItemTypeChange={onListBuilderItemTypeChange}
+            onAddListBuilderItem={onAddListBuilderItem}
+            onRemoveListBuilderItem={onRemoveListBuilderItem}
+            onMoveListBuilderItem={onMoveListBuilderItem}
             onListRecTypesChange={onListRecTypesChange}
             onFocusTemplate={onFocusTemplate}
             onOpenStandardLibraryDefinition={onOpenStandardLibraryDefinition}

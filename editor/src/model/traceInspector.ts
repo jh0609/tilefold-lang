@@ -27,6 +27,11 @@ export function exactTraceElementId(
   event: ExecutionTraceEvent | null,
 ): string | null {
   if (!event) return null;
+  for (const element of document.geometry.elements) {
+    if (element.kind !== "list_builder") continue;
+    const prefix = `__list_builder_${element.id}_`;
+    if (event.subject.startsWith(prefix)) return element.id;
+  }
   return document.geometry.elements.some(
     (element) => element.id === event.subject,
   )

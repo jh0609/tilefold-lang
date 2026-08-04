@@ -160,6 +160,7 @@ describe("Tilefold editor UI", () => {
       "Multiplication — 3 × 4 = 12",
       "Option fallback — safePred/getOrElse",
       "List — [1, 2, 3]",
+      "List Builder — [1, 2, 3]",
     ]);
     await user.selectOptions(picker, "addition");
     await user.click(screen.getByRole("button", { name: "Open example" }));

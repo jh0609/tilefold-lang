@@ -680,12 +680,61 @@ function listEntryNodes(items) {
     tailX = x + 120;
     tailY = y + 42;
   }
-  return { elements, wires, output: { elementId: tailElement, x: tailX, y: tailY } };
+  return { elements, wires, output: { elementId: tailElement, port: "value", x: tailX, y: tailY } };
 }
 
-function listRecProject({ id, items, resultType, stepElements, stepWires, stepOrder, entryBaseElement, entryBasePort, expectedSurfaceLibraryCalls = [] }) {
+function listBuilderEntryNodes(items) {
+  const itemIds = items.map((_, index) => `builder-item-${index}`);
+  const height = Math.max(72, 48 + Math.max(1, items.length) * 28);
+  const builder = {
+    id: "list-builder",
+    kind: "list_builder",
+    bounds: { x: 360, y: 180, width: 152, height },
+    properties: { itemType: "nat", itemIds },
+    portAnchors: [
+      ...itemIds.map((itemId, index) => ({
+        port: itemId,
+        x: 360,
+        y: 228 + index * 28,
+      })),
+      { port: "result", x: 512, y: 180 + Math.round(height / 2) },
+    ],
+  };
+  const elements = [builder];
+  const wires = [];
+  for (const [index, value] of items.entries()) {
+    const itemId = itemIds[index];
+    const natId = `builder-nat-${index}`;
+    const natY = 170 + index * 80;
+    elements.push({
+      id: natId,
+      kind: "nat_literal",
+      bounds: { x: 120, y: natY, width: 96, height: 56 },
+      properties: { value: String(value) },
+      portAnchors: [{ port: "value", x: 216, y: natY + 28 }],
+    });
+    wires.push(
+      wire(`w-${natId}-${itemId}`, elementPort(natId, "value"), elementPort("list-builder", itemId), [
+        { x: 216, y: natY + 28 },
+        { x: 360, y: 228 + index * 28 },
+      ]),
+    );
+  }
+  return {
+    elements,
+    wires,
+    output: {
+      elementId: "list-builder",
+      port: "result",
+      x: 512,
+      y: 180 + Math.round(height / 2),
+    },
+  };
+}
+
+function listRecProject({ id, items, resultType, stepElements, stepWires, stepOrder, entryBaseElement, entryBasePort, expectedSurfaceLibraryCalls = [], listFactory = listEntryNodes }) {
   const stepParameter = listStepParameter(resultType);
-  const list = listEntryNodes(items);
+  const list = listFactory(items);
   const entryElements = [
     {
       id: "unit-drop",
@@ -727,7 +776,7 @@ function listRecProject({ id, items, resultType, stepElements, stepWires, stepOr
       { x: 80, y: 108 },
     ]),
     ...list.wires,
-    wire("w-list-rec-list", elementPort(list.output.elementId, "value"), elementPort("list-rec", "list"), [
+    wire("w-list-rec-list", elementPort(list.output.elementId, list.output.port), elementPort("list-rec", "list"), [
       { x: list.output.x, y: list.output.y },
       { x: 830, y: 174 },
     ]),
@@ -844,6 +893,59 @@ function lengthFixture(items) {
       wire("s-drop-tail", elementPort("step-unpair-inner", "left"), elementPort("drop-tail", "input"), [{ x: 400, y: 728 }, { x: 470, y: 728 }]),
       wire("s-succ", elementPort("step-unpair-inner", "right"), elementPort("succ-recursive", "input"), [{ x: 400, y: 756 }, { x: 600, y: 760 }]),
       wire("s-result", elementPort("succ-recursive", "result"), boundaryPort(`length-${items.length}-step-container`, "step-result"), [{ x: 700, y: 760 }, { x: 980, y: 730 }]),
+    ],
+    stepOrder: [],
+  });
+}
+
+function listBuilderLengthFixture(items) {
+  return listRecProject({
+    id: `builder-length-${items.length}`,
+    items,
+    resultType: "nat",
+    listFactory: listBuilderEntryNodes,
+    entryBaseElement: {
+      id: "base-zero",
+      kind: "nat_literal",
+      bounds: { x: 610, y: 230, width: 96, height: 56 },
+      properties: { value: "0" },
+      portAnchors: [{ port: "value", x: 706, y: 258 }],
+    },
+    entryBasePort: "value",
+    stepElements: [
+      {
+        id: "step-unpair-outer",
+        kind: "unpair",
+        bounds: { x: 90, y: 620, width: 120, height: 84 },
+        properties: { leftType: "nat", rightType: { product: [listNat, "nat"] } },
+        portAnchors: [
+          { port: "value", x: 90, y: 662 },
+          { port: "left", x: 210, y: 648 },
+          { port: "right", x: 210, y: 676 },
+        ],
+      },
+      { id: "drop-head", kind: "drop", bounds: { x: 280, y: 620, width: 88, height: 56 }, properties: { type: "nat" }, portAnchors: [{ port: "input", x: 280, y: 648 }] },
+      {
+        id: "step-unpair-inner",
+        kind: "unpair",
+        bounds: { x: 280, y: 700, width: 120, height: 84 },
+        properties: { leftType: listNat, rightType: "nat" },
+        portAnchors: [
+          { port: "value", x: 280, y: 742 },
+          { port: "left", x: 400, y: 728 },
+          { port: "right", x: 400, y: 756 },
+        ],
+      },
+      { id: "drop-tail", kind: "drop", bounds: { x: 470, y: 700, width: 88, height: 56 }, properties: { type: listNat }, portAnchors: [{ port: "input", x: 470, y: 728 }] },
+      { id: "succ-recursive", kind: "succ", bounds: { x: 600, y: 730, width: 100, height: 60 }, properties: {}, portAnchors: [{ port: "input", x: 600, y: 760 }, { port: "result", x: 700, y: 760 }] },
+    ],
+    stepWires: [
+      wire("s-param-outer", boundaryPort(`builder-length-${items.length}-step-container`, "step-parameter"), elementPort("step-unpair-outer", "value"), [{ x: 0, y: 730 }, { x: 90, y: 662 }]),
+      wire("s-drop-head", elementPort("step-unpair-outer", "left"), elementPort("drop-head", "input"), [{ x: 210, y: 648 }, { x: 280, y: 648 }]),
+      wire("s-inner", elementPort("step-unpair-outer", "right"), elementPort("step-unpair-inner", "value"), [{ x: 210, y: 676 }, { x: 280, y: 742 }]),
+      wire("s-drop-tail", elementPort("step-unpair-inner", "left"), elementPort("drop-tail", "input"), [{ x: 400, y: 728 }, { x: 470, y: 728 }]),
+      wire("s-succ", elementPort("step-unpair-inner", "right"), elementPort("succ-recursive", "input"), [{ x: 400, y: 756 }, { x: 600, y: 760 }]),
+      wire("s-result", elementPort("succ-recursive", "result"), boundaryPort(`builder-length-${items.length}-step-container`, "step-result"), [{ x: 700, y: 760 }, { x: 980, y: 730 }]),
     ],
     stepOrder: [],
   });
@@ -1309,6 +1411,8 @@ fixtures.set("list-length-one", lengthFixture([1]));
 fixtures.set("list-length-one-fast", { mode: "fast", projectJson: lengthFixture([1]) });
 fixtures.set("list-length-three", lengthFixture([1, 2, 3]));
 fixtures.set("list-length-three-fast", { mode: "fast", projectJson: lengthFixture([1, 2, 3]) });
+fixtures.set("list-builder-length-three", listBuilderLengthFixture([1, 2, 3]));
+fixtures.set("list-builder-length-three-fast", { mode: "fast", projectJson: listBuilderLengthFixture([1, 2, 3]) });
 fixtures.set("list-sum-empty", sumFixture([]));
 fixtures.set("list-sum-empty-fast", { mode: "fast", projectJson: sumFixture([]) });
 fixtures.set("list-sum-three", sumFixture([1, 2, 3]));
@@ -1385,6 +1489,8 @@ const resultExpectations = new Map([
   ["list-length-one-fast", "Nat(1)"],
   ["list-length-three", "Nat(3)"],
   ["list-length-three-fast", "Nat(3)"],
+  ["list-builder-length-three", "Nat(3)"],
+  ["list-builder-length-three-fast", "Nat(3)"],
   ["list-sum-empty", "Nat(0)"],
   ["list-sum-empty-fast", "Nat(0)"],
   ["list-sum-three", "Nat(6)"],
@@ -1397,6 +1503,8 @@ const resultExpectations = new Map([
   ["option-safe-pred-get-or-else-fast", "Nat(4)"],
   ["list-nat", "List[Nat(1), Nat(2), Nat(3)]"],
   ["list-nat-fast", "List[Nat(1), Nat(2), Nat(3)]"],
+  ["list-builder-nat", "List[Nat(1), Nat(2), Nat(3)]"],
+  ["list-builder-nat-fast", "List[Nat(1), Nat(2), Nat(3)]"],
 ]);
 for (const [name] of naturalNumberExpectations) {
   const projectJson = await readFile(
@@ -1412,6 +1520,7 @@ for (const [name] of naturalNumberExpectations) {
 for (const name of [
   "option-safe-pred-get-or-else",
   "list-nat",
+  "list-builder-nat",
 ]) {
   const projectJson = await readFile(
     resolve(repositoryRoot, `examples/${name}.tilefold.json`),

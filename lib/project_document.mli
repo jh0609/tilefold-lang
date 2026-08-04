@@ -37,6 +37,7 @@ type element_kind =
   | Nil of Core_type.t
   | Cons of Core_type.t
   | ListRec of { item_type : Core_type.t; result_type : Core_type.t }
+  | ListBuilder of { item_type : Core_type.t; item_ids : string list }
   | Function of {
       template_id : string;
       parameter_type : Core_type.t;
