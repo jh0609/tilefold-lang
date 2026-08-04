@@ -2,12 +2,14 @@
 
 Task-ID: `2026-08-04-surface-list-builder`
 
-Status: completed locally and prepared for push/deployment follow-up.
+Status: completed, pushed, deployed, and Production-verified.
 
 ## SHAs
 
 - Starting HEAD: `91603ad147b2fcdd335dfa90f3596ee8af501d4a`
 - Implementation commit: `27b0fd6bfd4f450947a18c28784e24022fb89d11`
+- Handoff commit used for Production deployment:
+  `15ad9d2d2e7146f42d2c6cf51903563e2b2e4b90`
 - Branch: `main`
 
 ## Summary
@@ -90,6 +92,41 @@ Passed:
   `$env:CI='1'; npm run test:e2e`: 74 passed.
 - `git diff --check`: passed; Git printed CRLF conversion warnings only.
 
+## Production
+
+Local Vercel CLI deployment was unavailable because no saved Vercel CLI
+credentials were present:
+
+```text
+Error: No existing credentials found. Please run `vercel login` or pass "--token"
+```
+
+GitHub-connected Vercel Production deployment completed automatically after
+push:
+
+- GitHub deployment ID: `5738792026`
+- GitHub deployment status ID: `16320117682`
+- Deployment state: `success`
+- Environment: `Production`
+- Production URL: `https://tilefold-editor.vercel.app`
+- Deployment URL: `https://tilefold-editor-5g5knfux8-draftgame.vercel.app`
+- Production source SHA:
+  `15ad9d2d2e7146f42d2c6cf51903563e2b2e4b90`
+- Response evidence: `Server: Vercel`, `X-Vercel-Cache: HIT`,
+  `X-Vercel-Id: icn1::ktcpc-1785823548555-9c527c3dd4ad`.
+
+Production Chromium verification against
+`PLAYWRIGHT_BASE_URL=https://tilefold-editor.vercel.app` passed:
+
+- `npx playwright test e2e/list-builder-authoring.spec.ts --timeout=90000`:
+  2 passed.
+- `npx playwright test e2e/natural-number-examples.spec.ts --timeout=90000`:
+  6 passed.
+
+The public production JavaScript bundle contains `List Builder`, and
+`/tilefold_runner.meta.json` reports browser runner hash
+`2bd35c5b986e6d96b8edae0b0865197d561d11d2af2878ab91c32d1f2b0487c5`.
+
 ## Coverage Notes
 
 - Fresh Chromium authoring covers creating a builder through visible controls,
@@ -103,6 +140,4 @@ Passed:
 
 ## Follow-Up
 
-- Push and Production deployment verification should use implementation commit
-  `27b0fd6bfd4f450947a18c28784e24022fb89d11` plus this handoff commit.
 - No unresolved semantic questions.
