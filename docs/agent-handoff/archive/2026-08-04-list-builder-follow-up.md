@@ -105,9 +105,12 @@ The `list-builder-authoring` Chromium suite now covers:
 
 ## Deployment
 
-Implementation and handoff were pushed to `origin/main`.
+Implementation and handoff were pushed to `origin/main`. A later
+documentation-only follow-up records this deployment evidence; the executable
+Production source remains the pushed handoff SHA below.
 
-- Final pushed SHA: `9c8eda0e33d729009619594d8ba9005cf5bc3d19`
+- Pushed executable/handoff SHA:
+  `9c8eda0e33d729009619594d8ba9005cf5bc3d19`
 - GitHub deployment ID: `5739298966`
 - GitHub deployment status ID: `16321553852`
 - Deployment state: `success`
