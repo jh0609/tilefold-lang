@@ -14,6 +14,7 @@ Pending task:
 
 Latest archive:
 
+- [2026-08-04-list-builder-shared-lowering.md](archive/2026-08-04-list-builder-shared-lowering.md)
 - [2026-08-04-list-builder-follow-up.md](archive/2026-08-04-list-builder-follow-up.md)
 - [2026-08-04-surface-list-builder.md](archive/2026-08-04-surface-list-builder.md)
 - [2026-08-04-editor-verification-runbook.md](archive/2026-08-04-editor-verification-runbook.md)
