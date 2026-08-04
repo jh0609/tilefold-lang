@@ -14,6 +14,7 @@ Pending task:
 
 Latest archive:
 
+- [2026-08-04-025be9e-entry-auto-layout-row.md](archive/2026-08-04-025be9e-entry-auto-layout-row.md)
 - [2026-08-04-codex-exec-worker.md](archive/2026-08-04-codex-exec-worker.md)
 - [2026-08-03-9ccbf2b-scoped-auto-layout-collision.md](archive/2026-08-03-9ccbf2b-scoped-auto-layout-collision.md)
 - [2026-08-03-fc36992-extract-function-hardening.md](archive/2026-08-03-fc36992-extract-function-hardening.md)
