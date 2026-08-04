@@ -45,6 +45,55 @@ async function center(locator: Locator) {
   return { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 };
 }
 
+function parsePoints(points: string | null) {
+  expect(points).not.toBeNull();
+  return points!.split(" ").map((pair) => {
+    const [x, y] = pair.split(",").map(Number);
+    return { x, y };
+  });
+}
+
+function expectPointNear(
+  actual: { x: number; y: number } | undefined,
+  expected: { x: number; y: number },
+  label: string,
+) {
+  expect(actual, label).toBeTruthy();
+  expect(Math.abs(actual!.x - expected.x), `${label} x`).toBeLessThanOrEqual(1);
+  expect(Math.abs(actual!.y - expected.y), `${label} y`).toBeLessThanOrEqual(1);
+}
+
+function expectPointMoved(
+  before: { x: number; y: number },
+  after: { x: number; y: number },
+  label: string,
+) {
+  expect(
+    Math.hypot(after.x - before.x, after.y - before.y),
+    `${label} moved from its previous endpoint`,
+  ).toBeGreaterThan(20);
+}
+
+async function svgRect(locator: Locator) {
+  return locator.evaluate((node) => {
+    const rect = node.querySelector("rect.element-body");
+    if (!(rect instanceof SVGRectElement)) throw new Error("missing body");
+    return {
+      x: Number(rect.getAttribute("x")),
+      y: Number(rect.getAttribute("y")),
+      width: Number(rect.getAttribute("width")),
+      height: Number(rect.getAttribute("height")),
+    };
+  });
+}
+
+async function portAnchor(locator: Locator) {
+  return locator.evaluate((node) => ({
+    x: Number(node.getAttribute("cx")),
+    y: Number(node.getAttribute("cy")),
+  }));
+}
+
 async function dragBy(page: Page, locator: Locator, dx: number, dy: number) {
   const from = await center(locator);
   await page.mouse.move(from.x, from.y);
@@ -148,6 +197,116 @@ async function orderedBuilderItemPorts(page: Page, builderId: string) {
         .sort((left, right) => left.y - right.y)
         .map((entry) => entry.name),
     );
+}
+
+function itemWire(page: Page, builderId: string, itemPort: string) {
+  return page.locator(
+    `polyline[data-target-node-id="${builderId}"][data-target-port-name="${itemPort}"]`,
+  );
+}
+
+function resultWire(page: Page, builderId: string) {
+  return page.locator(
+    `polyline[data-source-node-id="${builderId}"][data-source-port-name="result"][data-target-container-id="entry"][data-target-port-name="result"]`,
+  );
+}
+
+async function expectResultInTraceAndFast(page: Page, result: string) {
+  await runMode(page, "transparent", result);
+  await runMode(page, "fast", result);
+}
+
+type BuilderGeometrySnapshot = {
+  builderBounds: Awaited<ReturnType<typeof svgRect>>;
+  itemOrder: string[];
+  itemWires: Record<
+    string,
+    {
+      sourceNodeId: string;
+      points: { x: number; y: number }[];
+      builderEndpoint: { x: number; y: number };
+    }
+  >;
+  resultWire: {
+    points: { x: number; y: number }[];
+    builderEndpoint: { x: number; y: number };
+  };
+  natBounds: Record<string, Awaited<ReturnType<typeof svgRect>>>;
+};
+
+async function captureBuilderGeometry(
+  page: Page,
+  builderId: string,
+  natIds: readonly string[],
+): Promise<BuilderGeometrySnapshot> {
+  const itemOrder = await orderedBuilderItemPorts(page, builderId);
+  expect(itemOrder).toHaveLength(3);
+  const itemWires: BuilderGeometrySnapshot["itemWires"] = {};
+  for (const itemPort of itemOrder) {
+    const wire = itemWire(page, builderId, itemPort);
+    await expect(wire, `wire for ${itemPort}`).toHaveCount(1);
+    const points = parsePoints(await wire.getAttribute("points"));
+    const builderEndpoint = points.at(-1)!;
+    const expectedEndpoint = await portAnchor(
+      port(page, builderId, itemPort, "input"),
+    );
+    expectPointNear(builderEndpoint, expectedEndpoint, `${itemPort} endpoint`);
+    itemWires[itemPort] = {
+      sourceNodeId: (await wire.getAttribute("data-source-node-id")) ?? "",
+      points,
+      builderEndpoint,
+    };
+  }
+
+  const builderResultWire = resultWire(page, builderId);
+  await expect(builderResultWire, "builder result wire").toHaveCount(1);
+  const resultPoints = parsePoints(await builderResultWire.getAttribute("points"));
+  const resultEndpoint = resultPoints[0]!;
+  expectPointNear(
+    resultEndpoint,
+    await portAnchor(port(page, builderId, "result", "output")),
+    "result endpoint",
+  );
+
+  const natBounds: BuilderGeometrySnapshot["natBounds"] = {};
+  for (const natId of natIds) {
+    natBounds[natId] = await svgRect(element(page, natId));
+  }
+
+  return {
+    builderBounds: await svgRect(element(page, builderId)),
+    itemOrder,
+    itemWires,
+    resultWire: {
+      points: resultPoints,
+      builderEndpoint: resultEndpoint,
+    },
+    natBounds,
+  };
+}
+
+function expectStableItemWireIdentity(
+  snapshot: BuilderGeometrySnapshot,
+  expectedByPort: ReadonlyMap<string, string>,
+) {
+  for (const [itemPort, natId] of expectedByPort) {
+    expect(snapshot.itemWires[itemPort]?.sourceNodeId, itemPort).toBe(natId);
+  }
+}
+
+function comparableGeometry(snapshot: BuilderGeometrySnapshot) {
+  return {
+    builderBounds: snapshot.builderBounds,
+    itemOrder: snapshot.itemOrder,
+    itemWires: Object.fromEntries(
+      Object.entries(snapshot.itemWires).map(([portName, wire]) => [
+        portName,
+        { sourceNodeId: wire.sourceNodeId, points: wire.points },
+      ]),
+    ),
+    resultWirePoints: snapshot.resultWire.points,
+    natBounds: snapshot.natBounds,
+  };
 }
 
 const listRecLengthScaffold = JSON.stringify({
@@ -506,6 +665,120 @@ test("authors a List Builder through visible controls and preserves it across hi
   await page.getByLabel("Open JSON file").setInputFiles(savedPath);
   await expect(element(page, builderId)).toBeVisible();
   await runMode(page, "transparent", "List[Nat(1), Nat(2), Nat(3)]");
+
+  await expectNoBrowserIssues(issues);
+});
+
+test("keeps connected List Builder wire geometry stable across move and repeated Auto Layout", async ({
+  page,
+}) => {
+  const issues = watchBrowserIssues(page);
+  await page.goto("/");
+
+  await page.locator('g.container-shape[data-container-id="entry"]').focus();
+  await page.keyboard.press("Enter");
+  await dragBy(page, page.getByTestId("container-entry-resize-south-east"), 520, 320);
+
+  await selectAndDelete(page, page.getByTestId("wire-wire_result"));
+  await selectAndDelete(page, element(page, "node_succ"));
+  await selectAndDelete(page, element(page, "node_nat_2"));
+
+  await page.locator('g.container-shape[data-container-id="entry"]').focus();
+  await page.keyboard.press("Enter");
+  await page.getByLabel("Entry output type").selectOption("list");
+
+  const builderId = await addNodeAndGetId(page, "Add List Builder", "list_builder");
+  await setElementPosition(page, builderId, 260, 100);
+  await element(page, builderId).focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: "Add item input" }).click();
+  await page.getByRole("button", { name: "Add item input" }).click();
+  await page.getByRole("button", { name: "Add item input" }).click();
+
+  const natIds = [
+    await addNodeAndGetId(page, "Add Nat", "nat_literal"),
+    await addNodeAndGetId(page, "Add Nat", "nat_literal"),
+    await addNodeAndGetId(page, "Add Nat", "nat_literal"),
+  ];
+  for (const [index, natId] of natIds.entries()) {
+    await setElementPosition(page, natId, 40, 70 + index * 60);
+    await setNatValue(page, natId, String(index + 1));
+  }
+
+  const initialItemPorts = await orderedBuilderItemPorts(page, builderId);
+  expect(initialItemPorts).toHaveLength(3);
+  const expectedSourceByPort = new Map<string, string>();
+  for (const [index, itemPort] of initialItemPorts.entries()) {
+    expectedSourceByPort.set(itemPort, natIds[index]!);
+    await dragConnect(
+      page,
+      port(page, natIds[index]!, "value", "output"),
+      port(page, builderId, itemPort, "input"),
+    );
+  }
+  await expect(
+    page.locator(`polyline[data-target-node-id="${builderId}"]`),
+  ).toHaveCount(3);
+
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Fit view" }).click();
+  await dragConnect(
+    page,
+    port(page, builderId, "result", "output"),
+    boundaryPort(page, "entry", "result", "input"),
+  );
+  await expect(resultWire(page, builderId)).toHaveCount(1);
+
+  const beforeMove = await captureBuilderGeometry(page, builderId, natIds);
+  expect(beforeMove.itemOrder).toEqual(initialItemPorts);
+  expectStableItemWireIdentity(beforeMove, expectedSourceByPort);
+  await expectResultInTraceAndFast(page, "List[Nat(1), Nat(2), Nat(3)]");
+
+  await dragBy(page, element(page, builderId), 80, 30);
+  const afterMove = await captureBuilderGeometry(page, builderId, natIds);
+  expect(afterMove.itemOrder).toEqual(initialItemPorts);
+  expectStableItemWireIdentity(afterMove, expectedSourceByPort);
+  for (const itemPort of initialItemPorts) {
+    expectPointMoved(
+      beforeMove.itemWires[itemPort]!.builderEndpoint,
+      afterMove.itemWires[itemPort]!.builderEndpoint,
+      itemPort,
+    );
+  }
+  expectPointMoved(
+    beforeMove.resultWire.builderEndpoint,
+    afterMove.resultWire.builderEndpoint,
+    "result",
+  );
+  await expectResultInTraceAndFast(page, "List[Nat(1), Nat(2), Nat(3)]");
+
+  await page.locator('g.container-shape[data-container-id="entry"]').focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: "Auto Layout entry" }).click();
+  const scopedOnce = await captureBuilderGeometry(page, builderId, natIds);
+  expect(scopedOnce.itemOrder).toEqual(initialItemPorts);
+  expectStableItemWireIdentity(scopedOnce, expectedSourceByPort);
+  await expectResultInTraceAndFast(page, "List[Nat(1), Nat(2), Nat(3)]");
+
+  await page.locator('g.container-shape[data-container-id="entry"]').focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: "Auto Layout entry" }).click();
+  const scopedTwice = await captureBuilderGeometry(page, builderId, natIds);
+  expect(comparableGeometry(scopedTwice)).toEqual(comparableGeometry(scopedOnce));
+  expectStableItemWireIdentity(scopedTwice, expectedSourceByPort);
+  await expectResultInTraceAndFast(page, "List[Nat(1), Nat(2), Nat(3)]");
+
+  await page.getByRole("button", { name: "Auto Layout project" }).click();
+  const projectOnce = await captureBuilderGeometry(page, builderId, natIds);
+  expect(projectOnce.itemOrder).toEqual(initialItemPorts);
+  expectStableItemWireIdentity(projectOnce, expectedSourceByPort);
+  await expectResultInTraceAndFast(page, "List[Nat(1), Nat(2), Nat(3)]");
+
+  await page.getByRole("button", { name: "Auto Layout project" }).click();
+  const projectTwice = await captureBuilderGeometry(page, builderId, natIds);
+  expect(comparableGeometry(projectTwice)).toEqual(comparableGeometry(projectOnce));
+  expectStableItemWireIdentity(projectTwice, expectedSourceByPort);
+  await expectResultInTraceAndFast(page, "List[Nat(1), Nat(2), Nat(3)]");
 
   await expectNoBrowserIssues(issues);
 });
