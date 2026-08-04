@@ -2,17 +2,19 @@
 
 ## Status
 
-Implemented locally. Production deployment follow-up is required after this
-handoff is pushed.
+Implemented, pushed, deployed, and Production-verified.
 
 ## SHAs
 
 - Starting HEAD: `fe85cc72468f9bf76c511a1c0f218268b8a78573`
 - Implementation commit SHA:
   `ce5c766a356b58d555ff83e3484fd0ce0a3ff905`
+- Handoff/task commit SHA:
+  `30866c83562c95bca32169a2a3cbe9dbc52ba8c6`
 - Branch: `main`
 - Local branch state before implementation: equal to `origin/main`
-- Final pushed SHA: pending deployment follow-up
+- Pushed SHA verified on Production:
+  `30866c83562c95bca32169a2a3cbe9dbc52ba8c6`
 
 ## Summary
 
@@ -126,20 +128,103 @@ Independently unavailable or incomplete:
 
 ## Deployment
 
-Pending after push. Required follow-up:
+Vercel CLI deployment from the local shell was unavailable because the saved
+token was invalid:
 
-- deploy from the pushed final SHA;
-- verify `https://tilefold-editor.vercel.app`;
-- record deployment ID, deployment state, source SHA, public URL, top-level
-  bounds/gaps, descendant bounds/containment, semantic owner preservation,
-  idempotence, wire/port alignment, console errors, and page errors.
+```text
+Error: The specified token is not valid. Use `vercel login` to generate a new token.
+```
+
+GitHub-connected Vercel Production deployment succeeded automatically after
+push:
+
+- Project: `tilefold-editor`
+- Team: `draftgame` / `team_XJ2pKmBL23SYGgxiY5RJdOO6`
+- Project ID: `prj_sv8VFJezCyFOp1KyQC5n8r1nIUZi`
+- Production deployment ID: `dpl_2fZVCymdAnSoiXTjnEHyxxM9sFt8`
+- Deployment state: `READY`
+- Production URL: `https://tilefold-editor.vercel.app`
+- Deployment URL:
+  `https://tilefold-editor-m15kr60jr-draftgame.vercel.app`
+- Inspector URL:
+  `https://vercel.com/draftgame/tilefold-editor/2fZVCymdAnSoiXTjnEHyxxM9sFt8`
+- Production source branch: `main`
+- Production source SHA:
+  `30866c83562c95bca32169a2a3cbe9dbc52ba8c6`
+
+Production Chromium verification against
+`PLAYWRIGHT_BASE_URL=https://tilefold-editor.vercel.app`:
+
+- Focused strengthened flow:
+  `npx playwright test e2e/geometry-routing.spec.ts -g "scoped auto layout displaces" --project=chromium --reporter=list`:
+  1 passed.
+- Full Chromium suite:
+  `npx playwright test --project=chromium --reporter=list`: 72 passed.
+
+Production probe using the original supplied file
+`C:/Users/박준형/Downloads/project.tilefold (3).json`:
+
+- Selected container: `entry`
+- Action: `Auto Layout entry`
+- Console warnings/errors: none
+- Page errors: none
+- Geometry-only semantic preservation: true
+- `surfaceLibraryCalls` unchanged: true
+- `surfaceProjectCalls` unchanged: true
+- Second identical Auto Layout idempotent: true
+
+Top-level bounds before:
+
+```text
+entry                   0, 0 ·  240×832
+divides               320, 0 ·  522×437
+isPrime               922, 0 ·  671×1352
+isPrimeStep          1615, 0 ·  829×487
+sqrtApprox           2524, 0 · 1286×718
+```
+
+Top-level bounds after:
+
+```text
+entry                   0, 0 ·  474×546
+divides               594, 0 ·  522×437
+isPrime              1236, 0 ·  671×1352
+isPrimeStep          2027, 0 ·  829×487
+sqrtApprox           2976, 0 · 1286×718
+```
+
+All top-level containers stayed on `y = 0`; each adjacent top-level gap was
+exactly 120 px.
+
+Entry padded inner bounds after layout: `28,82 418×436`.
+
+Entry descendant world bounds after layout:
+
+```text
+drop_unit          28,  82 ·  20×20  contained=true
+node_function_1    28, 174 · 128×72  contained=true
+node_apply_1      326,  82 · 120×90  contained=true
+node_nat_1         28, 318 ·  96×56  contained=true
+node_function_3    28, 446 · 128×72  contained=true
+node_drop_1       326, 244 ·  88×56  contained=true
+```
+
+Every listed entry descendant had `false` intersection with each sibling
+top-level container (`divides`, `isPrime`, `isPrimeStep`, `sqrtApprox`).
+
+Wire/port alignment sample after first and second layout was identical for
+`wire_18`, ending at the `entry` result boundary:
+
+```text
+(446,127) -> (465,127) -> (465,190) -> (436,190) -> (436,364) -> (474,364)
+```
 
 ## Working Tree
 
-Expected to contain documentation-only handoff/task edits after the
-implementation commit until the handoff commit is created.
+Clean after push of the implementation and initial handoff commits. This
+deployment follow-up is documentation-only and does not change executable,
+generated, fixture, or configuration content.
 
 ## Unresolved Questions
 
-- None for the layout model. Production verification remains the only pending
-  completion step at the time this archive is first written.
+- None.
