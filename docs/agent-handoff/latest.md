@@ -10,7 +10,9 @@ Protocol:
 
 Pending task:
 
-- none
+- `2026-08-04-surface-list-builder` — add a transparent Surface List Builder
+  that lowers deterministically to existing Core `Nil`/`Cons`; see
+  [`docs/agent-tasks/latest.md`](../agent-tasks/latest.md)
 
 Latest archive:
 
