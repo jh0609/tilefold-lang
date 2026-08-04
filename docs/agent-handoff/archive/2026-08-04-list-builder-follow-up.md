@@ -4,6 +4,7 @@ Task context: follow-up review for the Surface List Builder implementation.
 
 Starting HEAD: `009885b28ef1030b5b9afd2352642c1ee358db80`
 Implementation SHA: `dab0fd01a83855eea0b5c85e31999ae3601524bb`
+Handoff SHA: `9c8eda0e33d729009619594d8ba9005cf5bc3d19`
 Branch: `main`
 Pre-existing worktree changes: none.
 
@@ -104,9 +105,31 @@ The `list-builder-authoring` Chromium suite now covers:
 
 ## Deployment
 
-Push and production deployment were not yet performed at the time this archive
-was written. Update this archive or add a linked deployment follow-up after
-push/deploy verification.
+Implementation and handoff were pushed to `origin/main`.
+
+- Final pushed SHA: `9c8eda0e33d729009619594d8ba9005cf5bc3d19`
+- GitHub deployment ID: `5739298966`
+- GitHub deployment status ID: `16321553852`
+- Deployment state: `success`
+- Environment: `Production`
+- Production URL: `https://tilefold-editor.vercel.app`
+- Deployment URL: `https://tilefold-editor-ll44jbynq-draftgame.vercel.app`
+- Production source SHA: `9c8eda0e33d729009619594d8ba9005cf5bc3d19`
+- Production runner hash:
+  `0e1c00abb4af272f27662d99e7664906e20891ffa1b4908db4d8df2579a35878`
+- Response evidence: `Status=200`, `Server=Vercel`,
+  `X-Vercel-Cache=MISS`,
+  `X-Vercel-Id=icn1::ctz5l-1785826462930-68eb6974a99b`.
+
+Production Chromium verification against
+`PLAYWRIGHT_BASE_URL=https://tilefold-editor.vercel.app` passed:
+
+- `npm run test:e2e -- e2e/list-builder-authoring.spec.ts --timeout=120000 --reporter=list`
+  - passed; 3 Chromium tests
+
+An earlier Production E2E run also passed all 3 tests, but Playwright returned
+exit code 1 because `editor/playwright-report/index.html` was locked. The same
+test command with `--reporter=list` passed with exit code 0.
 
 ## Known Limitations
 
