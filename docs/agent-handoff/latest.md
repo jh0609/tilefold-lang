@@ -10,7 +10,10 @@ Protocol:
 
 Pending task:
 
-- None. See [docs/agent-tasks/latest.md](../agent-tasks/latest.md).
+- `2026-08-05-trace-rule-node-filters-v1` - add exact rule and Surface-node
+  filters to the existing Trace inspector and close the actual List-example
+  browser reload coverage gap.
+- See [docs/agent-tasks/latest.md](../agent-tasks/latest.md).
 
 Latest archive:
 
