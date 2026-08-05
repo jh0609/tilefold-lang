@@ -137,7 +137,7 @@ export function ExecutionPanel({
             >
               Continue
             </button>
-            <button type="button" onClick={onStepStop} disabled={state.phase === "starting"}>
+            <button type="button" onClick={onStepStop}>
               Stop
             </button>
           </div>

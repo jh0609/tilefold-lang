@@ -125,4 +125,35 @@ describe("ExecutionPanel trace replay", () => {
     expect(screen.getByRole("button", { name: "Next Rewrite" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
   });
+
+  it("keeps only Stop available while Step Run is starting", () => {
+    const onStop = vi.fn();
+    render(
+      <ExecutionPanel
+        state={{
+          status: "stepping",
+          phase: "starting",
+          traceStore: new TraceStore(),
+          traceCount: 0,
+          traceVersion: 0,
+          selectedTraceIndex: null,
+        }}
+        traceSourceElementId={null}
+        onTraceSelect={vi.fn()}
+        onViewTrace={vi.fn()}
+        onStepNext={vi.fn()}
+        onStepContinue={vi.fn()}
+        onStepStop={onStop}
+        onDiagnosticSelect={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent("Starting Step Run...");
+    expect(screen.getByRole("button", { name: "Next Rewrite" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Stop" })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    expect(onStop).toHaveBeenCalledOnce();
+  });
 });

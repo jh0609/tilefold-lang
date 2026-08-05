@@ -434,6 +434,55 @@ describe("browser execution backend", () => {
     await expect(fresh).resolves.toMatchObject({ result: "Nat(5)" });
   });
 
+  it("aborts a pending Step Run start, ignores late start responses, and allows a fresh session", async () => {
+    const created: FakeWorker[] = [];
+    const backend = createBrowserExecutionBackend(() => {
+      const worker = new FakeWorker();
+      created.push(worker);
+      return worker;
+    });
+    const controller = new AbortController();
+    const start = backend.startStepRun("{}", { signal: controller.signal });
+    const lateMessage = created[0].onmessage;
+
+    expect(created[0].posted[0]).toMatchObject({ kind: "startStep" });
+    controller.abort();
+    await expect(start).rejects.toBeInstanceOf(ExecutionCanceledError);
+    expect(created[0].terminate).toHaveBeenCalledOnce();
+
+    lateMessage?.({
+      data: { requestId: 1, output: JSON.stringify({ status: "started" }) },
+    } as MessageEvent);
+    lateMessage?.({
+      data: {
+        requestId: 1,
+        output: JSON.stringify({
+          status: "completed",
+          result: "Nat(99)",
+          rewriteCount: 0,
+          trace: [],
+        }),
+      },
+    } as MessageEvent);
+
+    const freshStart = backend.startStepRun("{}");
+    expect(created).toHaveLength(2);
+    created[1].respond(2, { status: "started" });
+    const session = await freshStart;
+    if ("status" in session) throw new Error("expected session");
+
+    const next = session.next();
+    created[1].respond(3, {
+      status: "trace_batch",
+      rewriteCount: 1,
+      trace: [{ index: 0, rule: "Function", subject: "entry-function" }],
+    });
+    await expect(next).resolves.toMatchObject({
+      status: "paused",
+      trace: [{ index: 0, rule: "Function", subject: "entry-function" }],
+    });
+  });
+
   it("rejects concurrent Step Run requests", async () => {
     const worker = new FakeWorker();
     const backend = createBrowserExecutionBackend(() => worker);

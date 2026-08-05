@@ -945,6 +945,76 @@ describe("Tilefold editor UI", () => {
     );
   });
 
+  it("stops a pending Step Run start without accepting stale worker responses", async () => {
+    const user = userEvent.setup();
+    const workers: Array<{
+      onmessage: ((event: MessageEvent) => void) | null;
+      postMessage: ReturnType<typeof vi.fn>;
+      terminate: ReturnType<typeof vi.fn>;
+    }> = [];
+    class WorkerMock {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+      onmessageerror: ((event: MessageEvent) => void) | null = null;
+      postMessage = vi.fn();
+      terminate = vi.fn();
+      constructor() {
+        workers.push(this);
+      }
+    }
+    vi.stubGlobal("Worker", WorkerMock);
+    render(<App />);
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Execution mode" }),
+      "transparent",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Start stepping" }));
+    expect(screen.getByRole("status")).toHaveTextContent("Starting Step Run...");
+    expect(screen.getByRole("button", { name: "Stop" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Next Rewrite" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
+    const staleMessage = workers[0].onmessage;
+
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+    expect(screen.getByRole("status")).toHaveTextContent("Step Run stopped.");
+    expect(workers[0].terminate).toHaveBeenCalledOnce();
+
+    staleMessage?.({
+      data: { requestId: 1, output: JSON.stringify({ status: "started" }) },
+    } as MessageEvent);
+    staleMessage?.({
+      data: {
+        requestId: 1,
+        output: JSON.stringify({
+          status: "completed",
+          mode: "transparent",
+          result: "Nat(99)",
+          rewriteCount: 1,
+          trace: [{ index: 0, rule: "Late", subject: "late_node" }],
+        }),
+      },
+    } as MessageEvent);
+    staleMessage?.({
+      data: {
+        requestId: 1,
+        workerError: "late failure",
+      },
+    } as MessageEvent);
+    expect(screen.getByRole("status")).toHaveTextContent("Step Run stopped.");
+    expect(screen.queryByText("Nat(99)")).not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Rewrite trace" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Start stepping" }));
+    expect(workers).toHaveLength(2);
+    workers[1].onmessage?.({
+      data: { requestId: 2, output: JSON.stringify({ status: "started" }) },
+    } as MessageEvent);
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Step Run paused · 0 rewrites",
+    );
+  });
+
   it("navigates completed trace events and highlights exact element IDs only", async () => {
     const user = userEvent.setup();
     class WorkerMock {
