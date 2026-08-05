@@ -10,7 +10,7 @@ Task-ID: `2026-08-05-function-value-explicit-drop-ux-v1`
 - Starting tree state: clean, local `main` matched `origin/main`
 - Implementation commit / validation SHA: `bb06a33515c8d299315849ff9e5ee2e90d5fc443`
 - Implementation + handoff pushed SHA: `6c1cb51198da5a0d6818b0802e6a2aa71b7c2a8a`
-- Final pushed SHA after deployment-blocker follow-up: pending until this documentation-only follow-up is pushed
+- Final pushed SHA after deployment-blocker follow-up: use `git rev-parse origin/main`; the completing agent's final report records the exact observed SHA
 - Pre-existing user changes: none observed
 
 ## Summary
