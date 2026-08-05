@@ -10,12 +10,11 @@ Protocol:
 
 Pending task:
 
-- `2026-08-05-list-sum-map-succ-official-examples` - promote the existing List
-  sum and map-Succ differential graphs to generated official picker examples.
-- See [docs/agent-tasks/latest.md](../agent-tasks/latest.md).
+- None. See [docs/agent-tasks/latest.md](../agent-tasks/latest.md).
 
 Latest archive:
 
+- [2026-08-05-list-sum-map-succ-official-examples.md](archive/2026-08-05-list-sum-map-succ-official-examples.md)
 - [2026-08-05-step-run-start-cancel-follow-up.md](archive/2026-08-05-step-run-start-cancel-follow-up.md)
 - [2026-08-05-step-run-ui-v1.md](archive/2026-08-05-step-run-ui-v1.md)
 - [2026-08-04-list-builder-geometry-e2e.md](archive/2026-08-04-list-builder-geometry-e2e.md)
@@ -25,4 +24,3 @@ Latest archive:
 - [2026-08-04-editor-verification-runbook.md](archive/2026-08-04-editor-verification-runbook.md)
 - [2026-08-04-ce5c766-entry-auto-layout-containment.md](archive/2026-08-04-ce5c766-entry-auto-layout-containment.md)
 - [2026-08-04-025be9e-entry-auto-layout-row.md](archive/2026-08-04-025be9e-entry-auto-layout-row.md)
-- [2026-08-04-codex-exec-worker.md](archive/2026-08-04-codex-exec-worker.md)
