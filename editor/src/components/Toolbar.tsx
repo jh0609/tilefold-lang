@@ -24,12 +24,14 @@ interface ToolbarProps {
   onUndo: () => void;
   onRedo: () => void;
   onRun: () => void;
+  onStepRun: () => void;
   onCancel: () => void;
   executionMode: ExecutionMode;
   onExecutionModeChange: (mode: ExecutionMode) => void;
   themePreference: ThemePreference;
   onThemePreferenceChange: (theme: ThemePreference) => void;
   running: boolean;
+  stepActive: boolean;
 }
 
 export function Toolbar({
@@ -50,12 +52,14 @@ export function Toolbar({
   onUndo,
   onRedo,
   onRun,
+  onStepRun,
   onCancel,
   executionMode,
   onExecutionModeChange,
   themePreference,
   onThemePreferenceChange,
   running,
+  stepActive,
 }: ToolbarProps) {
   return (
     <header className="toolbar">
@@ -157,7 +161,7 @@ export function Toolbar({
           <select
             aria-label="Execution mode"
             value={executionMode}
-            disabled={running}
+            disabled={running || stepActive}
             onChange={(event) =>
               onExecutionModeChange(event.target.value as ExecutionMode)
             }
@@ -171,9 +175,21 @@ export function Toolbar({
           className={running ? "run-button is-running" : "run-button"}
           onClick={running ? onCancel : onRun}
           aria-label={running ? "Cancel execution" : "Run"}
+          disabled={stepActive}
         >
           {running ? "Cancel" : "Run"}
         </button>
+        {executionMode === "transparent" && (
+          <button
+            type="button"
+            onClick={onStepRun}
+            aria-label="Start stepping"
+            disabled={running || stepActive}
+            title="Start Step Run"
+          >
+            Step Run
+          </button>
+        )}
       </div>
     </header>
   );

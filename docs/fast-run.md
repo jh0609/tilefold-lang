@@ -10,6 +10,23 @@ validated, converted through Surface symbolic inference, lowered to a
 rewrite at a time. The resulting Visual Trace contains the committed Core
 rewrite events and remains the mode to use when inspecting semantics.
 
+## Step Run
+
+Step Run is a manual Transparent execution flow over the same OCaml trace
+session boundary. Starting Step Run captures the current Project JSON snapshot,
+validates and lowers it once, opens one Worker-owned OCaml session, and pauses
+before the first rewrite. **Next Rewrite** requests `batch_size = 1`, so a
+successful response appends at most one Core rewrite event. After the final
+rewrite, the current engine reports completion on the following step request
+without inventing another event.
+
+**Continue** resumes the same session from its current machine state and
+streams bounded batches until completion. The completed result, rewrite count,
+and ordered trace match ordinary Trace Run for the same Project JSON. **Stop**,
+Worker disposal, component unmount, or any semantic Project JSON edit disposes
+the session; late responses from that session are ignored. Selection, trace
+navigation, zoom, pan, Fit, and Reset view do not invalidate the paused session.
+
 ## Fast Run
 
 Fast Run shares the same decode, validation, Surface inference, and

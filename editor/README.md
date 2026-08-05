@@ -38,6 +38,14 @@ reused; Worker errors, unreadable messages, semantic document changes, and
 editor unmount discard it. Request IDs plus Worker generations prevent late
 responses from older Workers from replacing the current result.
 
+**Step Run** is available while Transparent execution is selected. It validates
+and lowers the current Project JSON snapshot once, starts one OCaml trace
+session inside the Worker, and pauses before the first rewrite. **Next Rewrite**
+advances that same session with a single-rewrite batch; the returned event is
+selected in the Trace inspector and highlighted through the normal exact source
+mapping. **Continue** resumes the same session in bounded asynchronous batches
+until completion. **Stop** disposes the session and shows a stopped state.
+
 Explicit Cancel is shown as a neutral `Execution canceled` state. A semantic
 Project JSON edit, import, Undo, or Redo automatically cancels active work and
 clears results without presenting a user error. Selection, focus, zoom, pan,
@@ -45,10 +53,12 @@ Fit, and Reset view are UI-only and preserve completed results. Execution and
 cancellation never enter Project JSON or undo/redo history.
 
 Cancellation is process isolation through Worker termination, not an OCaml
-Engine rewrite or trace event. It does not return a partial trace and cannot be
-resumed. Cooperative cancellation, automatic timeouts, and pause/step execution
-are not implemented; large projects remain subject to browser time and memory
-limits.
+Engine rewrite or trace event. Ordinary Run cancellation does not return a
+partial trace and cannot be resumed. Step Run pause/continue state is
+ephemeral UI state; it is disposed on semantic edits, imports, Undo/Redo,
+Worker failure, unmount, or Stop, and is never exported or restored. Automatic
+timeouts are not implemented; large projects remain subject to browser time and
+memory limits.
 
 Completed runs with rewrite events provide a read-only **Trace inspector**.
 The first event is selected initially; Previous, Next, and the event list move
@@ -63,9 +73,11 @@ fallback. The editor never guesses provenance from prefixes, rule kinds,
 geometry, labels, or trace order. Semantic edits invalidate the completed trace;
 selection and camera-only changes preserve it.
 
-Trace inspection is not step execution or a new trace protocol. Streaming,
-partial traces, autoplay, filtering, search, breakpoints, and resume remain
-unsupported, and the OCaml Engine and Worker protocol are unchanged.
+Trace inspection after completion is read-only navigation and does not mutate
+Project JSON. Step Run is a control flow over the same OCaml trace-session APIs
+used by streamed Transparent Run; it does not slice a completed trace or add a
+TypeScript evaluator. Autoplay, filtering, search, breakpoints, reverse
+stepping, and persisted sessions remain unsupported.
 
 Failed runs use structured editor diagnostics instead of parsing error strings
 back into graph locations. Before sending a project to the Worker, the editor
@@ -643,4 +655,5 @@ The next editor layer can add:
 - wire bend-point and segment editing;
 - container movement with a specified deterministic group-translation policy;
 - complete source mapping for every OCaml validation and runtime failure;
-- step execution, trace filtering, and trace animation.
+- trace filtering, trace animation, reverse stepping, and persistent execution
+  sessions.

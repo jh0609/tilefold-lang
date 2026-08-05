@@ -1908,21 +1908,57 @@ let () =
   assert (member "status" first_batch = `String "trace_batch");
   assert (
     match member "trace" first_batch with
-    | `List [ _ ] -> true
+    | `List [ `Assoc fields ] ->
+        List.assoc "index" fields = `Int 0
+        && member "rewriteCount" first_batch = `Int 1
     | _ -> false);
-  let rec finish_trace_session () =
+  let second_batch =
+    E.trace_session_next_json ~session_id ~batch_size:1
+    |> Yojson.Safe.from_string
+  in
+  assert (member "status" second_batch = `String "trace_batch");
+  assert (
+    match member "trace" second_batch with
+    | `List [ `Assoc fields ] ->
+        List.assoc "index" fields = `Int 1
+        && member "rewriteCount" second_batch = `Int 2
+    | _ -> false);
+  let rec finish_trace_session saw_final_rewrite =
     let batch =
-      E.trace_session_next_json ~session_id ~batch_size:128
+      E.trace_session_next_json ~session_id ~batch_size:1
       |> Yojson.Safe.from_string
     in
     match member "status" batch with
-    | `String "trace_batch" -> finish_trace_session ()
-    | `String "completed" -> batch
+    | `String "trace_batch" ->
+        assert (
+          match member "trace" batch with
+          | `List [ _ ] -> true
+          | _ -> false);
+        finish_trace_session true
+    | `String "completed" ->
+        assert saw_final_rewrite;
+        assert (member "trace" batch = `List []);
+        batch
     | _ -> failwith "trace session returned an unexpected status"
   in
-  let trace_completed = finish_trace_session () in
+  let trace_completed = finish_trace_session false in
   assert (member "result" trace_completed = `String "Nat(5)");
   assert (member "rewriteCount" trace_completed <> `Int 0);
+  let disposed_start =
+    E.start_trace_session_json std_add_project |> Yojson.Safe.from_string
+  in
+  let disposed_session_id =
+    match member "sessionId" disposed_start with
+    | `Int id -> id
+    | _ -> failwith "trace session did not return an integer session ID"
+  in
+  E.dispose_trace_session ~session_id:disposed_session_id;
+  let disposed_next =
+    E.trace_session_next_json ~session_id:disposed_session_id ~batch_size:1
+    |> Yojson.Safe.from_string
+  in
+  assert (member "status" disposed_next = `String "error");
+  assert (member "stage" disposed_next = `String "execution");
   let std_cases =
     [
       ( "nat.add",

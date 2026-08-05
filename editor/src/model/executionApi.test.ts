@@ -18,8 +18,9 @@ class FakeWorker {
   onmessageerror: ((event: MessageEvent) => void) | null = null;
   posted: {
     requestId: number;
-    projectJson: string;
-    mode: string;
+    kind?: string;
+    projectJson?: string;
+    mode?: string;
     streamTrace?: boolean;
     traceBatchSize?: number;
   }[] = [];
@@ -27,8 +28,9 @@ class FakeWorker {
 
   postMessage(message: {
     requestId: number;
-    projectJson: string;
-    mode: string;
+    kind?: string;
+    projectJson?: string;
+    mode?: string;
     streamTrace?: boolean;
     traceBatchSize?: number;
   }) {
@@ -296,5 +298,157 @@ describe("browser execution backend", () => {
     expect(() => parseExecutionResponse('{"status":"completed"}')).toThrow(
       "invalid completed response",
     );
+  });
+
+  it("starts a Step Run and advances distinct single rewrites on the same session", async () => {
+    const worker = new FakeWorker();
+    const backend = createBrowserExecutionBackend(() => worker);
+    const start = backend.startStepRun("{}");
+    expect(worker.posted[0]).toMatchObject({
+      kind: "startStep",
+      projectJson: "{}",
+    });
+    worker.respond(1, { status: "started" });
+    const session = await start;
+    if ("status" in session) throw new Error("expected session");
+
+    const first = session.next();
+    expect(worker.posted[1]).toMatchObject({ kind: "stepNext" });
+    worker.respond(2, {
+      status: "trace_batch",
+      rewriteCount: 1,
+      trace: [{ index: 0, rule: "Function", subject: "entry-function" }],
+    });
+    await expect(first).resolves.toEqual({
+      status: "paused",
+      rewriteCount: 1,
+      trace: [{ index: 0, rule: "Function", subject: "entry-function" }],
+    });
+
+    const second = session.next();
+    worker.respond(3, {
+      status: "trace_batch",
+      rewriteCount: 2,
+      trace: [{ index: 1, rule: "ApplyEnter", subject: "entry-apply" }],
+    });
+    await expect(second).resolves.toMatchObject({
+      status: "paused",
+      trace: [{ index: 1, rule: "ApplyEnter", subject: "entry-apply" }],
+    });
+  });
+
+  it("rejects Step Run batches containing more than one rewrite", async () => {
+    const worker = new FakeWorker();
+    const backend = createBrowserExecutionBackend(() => worker);
+    const start = backend.startStepRun("{}");
+    worker.respond(1, { status: "started" });
+    const session = await start;
+    if ("status" in session) throw new Error("expected session");
+
+    const next = session.next();
+    worker.respond(2, {
+      status: "trace_batch",
+      rewriteCount: 2,
+      trace: [
+        { index: 0, rule: "Function", subject: "entry-function" },
+        { index: 1, rule: "ApplyEnter", subject: "entry-apply" },
+      ],
+    });
+    await expect(next).rejects.toThrow("single rewrite");
+  });
+
+  it("continues Step Run from the current session and merges ordered trace without duplicates", async () => {
+    const worker = new FakeWorker();
+    const backend = createBrowserExecutionBackend(() => worker);
+    const start = backend.startStepRun("{}");
+    worker.respond(1, { status: "started" });
+    const session = await start;
+    if ("status" in session) throw new Error("expected session");
+
+    const first = session.next();
+    worker.respond(2, {
+      status: "trace_batch",
+      rewriteCount: 1,
+      trace: [{ index: 0, rule: "Function", subject: "entry-function" }],
+    });
+    await first;
+
+    const continued = session.continue();
+    worker.traceBatch(3, {
+      status: "trace_batch",
+      trace: [{ index: 1, rule: "ApplyEnter", subject: "entry-apply" }],
+    });
+    worker.respond(3, {
+      status: "completed",
+      mode: "transparent",
+      result: "Nat(5)",
+      rewriteCount: 3,
+      trace: [{ index: 2, rule: "Succ", subject: "node_succ" }],
+    });
+    await expect(continued).resolves.toMatchObject({
+      result: "Nat(5)",
+      trace: [
+        { index: 0, rule: "Function", subject: "entry-function" },
+        { index: 1, rule: "ApplyEnter", subject: "entry-apply" },
+        { index: 2, rule: "Succ", subject: "node_succ" },
+      ],
+    });
+    await expect(session.next()).rejects.toBeInstanceOf(ExecutionCanceledError);
+  });
+
+  it("stops Step Run, ignores late responses, and allows a fresh run", async () => {
+    const created: FakeWorker[] = [];
+    const backend = createBrowserExecutionBackend(() => {
+      const worker = new FakeWorker();
+      created.push(worker);
+      return worker;
+    });
+    const start = backend.startStepRun("{}");
+    created[0].respond(1, { status: "started" });
+    const session = await start;
+    if ("status" in session) throw new Error("expected session");
+
+    const next = session.next();
+    const lateMessage = created[0].onmessage;
+    await session.stop();
+    await expect(next).rejects.toBeInstanceOf(ExecutionCanceledError);
+    lateMessage?.({
+      data: {
+        requestId: 2,
+        output: JSON.stringify({
+          status: "completed",
+          result: "Nat(99)",
+          rewriteCount: 0,
+          trace: [],
+        }),
+      },
+    } as MessageEvent);
+
+    const fresh = backend.run("{}");
+    created[1].respond(3, {
+      status: "completed",
+      result: "Nat(5)",
+      rewriteCount: 0,
+      trace: [],
+    });
+    await expect(fresh).resolves.toMatchObject({ result: "Nat(5)" });
+  });
+
+  it("rejects concurrent Step Run requests", async () => {
+    const worker = new FakeWorker();
+    const backend = createBrowserExecutionBackend(() => worker);
+    const start = backend.startStepRun("{}");
+    worker.respond(1, { status: "started" });
+    const session = await start;
+    if ("status" in session) throw new Error("expected session");
+
+    const first = session.next();
+    await expect(session.next()).rejects.toThrow("in flight");
+    worker.respond(2, {
+      status: "trace_batch",
+      rewriteCount: 1,
+      trace: [{ index: 0, rule: "Function", subject: "entry-function" }],
+    });
+    await expect(first).resolves.toMatchObject({ status: "paused" });
   });
 });

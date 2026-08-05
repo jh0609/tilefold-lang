@@ -10,6 +10,9 @@ function renderPanel(state: ExecutionState, onViewTrace = vi.fn()) {
       traceSourceElementId={null}
       onTraceSelect={vi.fn()}
       onViewTrace={onViewTrace}
+      onStepNext={vi.fn()}
+      onStepContinue={vi.fn()}
+      onStepStop={vi.fn()}
       onDiagnosticSelect={vi.fn()}
     />,
   );
@@ -68,5 +71,58 @@ describe("ExecutionPanel trace replay", () => {
       "aria-current",
       "step",
     );
+  });
+
+  it("shows paused Step Run controls and disables them while a request is pending", () => {
+    const traceStore = new TraceStore();
+    const onNext = vi.fn();
+    const { rerender } = render(
+      <ExecutionPanel
+        state={{
+          status: "stepping",
+          phase: "paused",
+          traceStore,
+          traceCount: 0,
+          traceVersion: 0,
+          selectedTraceIndex: null,
+        }}
+        traceSourceElementId={null}
+        onTraceSelect={vi.fn()}
+        onViewTrace={vi.fn()}
+        onStepNext={onNext}
+        onStepContinue={vi.fn()}
+        onStepStop={vi.fn()}
+        onDiagnosticSelect={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Step Run paused · 0 rewrites",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Next Rewrite" }));
+    expect(onNext).toHaveBeenCalledOnce();
+
+    rerender(
+      <ExecutionPanel
+        state={{
+          status: "stepping",
+          phase: "nexting",
+          traceStore,
+          traceCount: 0,
+          traceVersion: 0,
+          selectedTraceIndex: null,
+        }}
+        traceSourceElementId={null}
+        onTraceSelect={vi.fn()}
+        onViewTrace={vi.fn()}
+        onStepNext={onNext}
+        onStepContinue={vi.fn()}
+        onStepStop={vi.fn()}
+        onDiagnosticSelect={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Next Rewrite" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
   });
 });

@@ -27,7 +27,8 @@ try {
 
 type WorkerRequest = {
   requestId: number;
-  projectJson: string;
+  kind?: "run" | "startStep" | "stepNext" | "stepContinue" | "disposeStep";
+  projectJson?: string;
   mode?: string;
   streamTrace?: boolean;
   traceBatchSize?: number;
@@ -37,9 +38,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+let activeTraceSessionId: number | null = null;
+
+function disposeActiveTraceSession() {
+  if (activeTraceSessionId === null) return;
+  const sessionId = activeTraceSessionId;
+  activeTraceSessionId = null;
+  workerScope.TilefoldRunner?.disposeTraceSession?.(sessionId);
+}
+
 workerScope.onmessage = (event: MessageEvent<WorkerRequest>) => {
   const {
     requestId,
+    kind = "run",
     projectJson,
     mode = "transparent",
     streamTrace = false,
@@ -49,6 +60,99 @@ workerScope.onmessage = (event: MessageEvent<WorkerRequest>) => {
     if (!workerScope.TilefoldRunner) {
       throw new Error("OCaml runner is unavailable.");
     }
+    if (kind === "disposeStep") {
+      disposeActiveTraceSession();
+      workerScope.postMessage({
+        requestId,
+        output: JSON.stringify({ status: "disposed" }),
+      });
+      return;
+    }
+    if (kind === "startStep") {
+      if (!projectJson) throw new Error("Step Run requires Project JSON.");
+      if (
+        !workerScope.TilefoldRunner.startTraceProjectJson ||
+        !workerScope.TilefoldRunner.traceProjectJsonNext
+      ) {
+        throw new Error("OCaml trace sessions are unavailable.");
+      }
+      disposeActiveTraceSession();
+      const output = workerScope.TilefoldRunner.startTraceProjectJson(projectJson);
+      const parsed = JSON.parse(output) as unknown;
+      if (isRecord(parsed) && parsed.status === "started") {
+        if (
+          typeof parsed.sessionId !== "number" ||
+          !Number.isInteger(parsed.sessionId)
+        ) {
+          throw new Error("OCaml runner returned an invalid trace session.");
+        }
+        activeTraceSessionId = parsed.sessionId;
+        workerScope.postMessage({
+          requestId,
+          output: JSON.stringify({ status: "started" }),
+        });
+        return;
+      }
+      workerScope.postMessage({ requestId, output });
+      return;
+    }
+    if (kind === "stepNext" || kind === "stepContinue") {
+      if (
+        activeTraceSessionId === null ||
+        !workerScope.TilefoldRunner.traceProjectJsonNext
+      ) {
+        throw new Error("No active Step Run session.");
+      }
+      const sessionId = activeTraceSessionId;
+      if (kind === "stepNext") {
+        const output = workerScope.TilefoldRunner.traceProjectJsonNext(sessionId, 1);
+        const parsed = JSON.parse(output) as unknown;
+        if (isRecord(parsed) && parsed.status !== "trace_batch") {
+          activeTraceSessionId = null;
+        }
+        workerScope.postMessage({ requestId, output });
+        return;
+      }
+      const nextBatch = () => {
+        try {
+          if (activeTraceSessionId !== sessionId) return;
+          const output = workerScope.TilefoldRunner!.traceProjectJsonNext!(
+            sessionId,
+            traceBatchSize,
+          );
+          const parsed = JSON.parse(output) as unknown;
+          if (isRecord(parsed) && parsed.status === "trace_batch") {
+            workerScope.postMessage({
+              requestId,
+              traceBatch: output,
+            });
+            setTimeout(nextBatch, 0);
+            return;
+          }
+          activeTraceSessionId = null;
+          workerScope.postMessage({
+            requestId,
+            output,
+          });
+        } catch (error) {
+          try {
+            disposeActiveTraceSession();
+          } catch {
+            // Ignore cleanup failures after a runner error.
+          }
+          workerScope.postMessage({
+            requestId,
+            workerError:
+              error instanceof Error
+                ? error.message
+                : "Unknown OCaml runner failure.",
+          });
+        }
+      };
+      setTimeout(nextBatch, 0);
+      return;
+    }
+    if (!projectJson) throw new Error("Execution requires Project JSON.");
     if (
       mode === "transparent" &&
       streamTrace &&

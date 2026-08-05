@@ -57,7 +57,10 @@ import {
   type ExecutionMode,
   isExecutionCanceledError,
   type ExecutionBackend,
+  type ExecutionResponse,
+  type ExecutionStepSession,
   type ExecutionTraceEvent,
+  type StepRunResponse,
 } from "./model/executionApi";
 import {
   exactTraceElementId,
@@ -171,6 +174,7 @@ export function App() {
   const executionRequest = useRef(0);
   const executionBackend = useRef<ExecutionBackend | null>(null);
   const executionAbort = useRef<AbortController | null>(null);
+  const stepSession = useRef<ExecutionStepSession | null>(null);
   const [viewBox, setViewBox] = useState(savedViewBox(initialDocument.view));
   const referenceViewBox = savedViewBox(document.view);
   const spatialIndex = useMemo(
@@ -201,6 +205,9 @@ export function App() {
       : executionState.status === "running" &&
           executionState.selectedTraceIndex !== null
         ? (executionState.traceStore.get(executionState.selectedTraceIndex) ?? null)
+        : executionState.status === "stepping" &&
+            executionState.selectedTraceIndex !== null
+          ? (executionState.traceStore.get(executionState.selectedTraceIndex) ?? null)
         : null;
   const traceHighlightedElementId = useMemo(
     () => exactTraceElementId(document, selectedTraceEvent),
@@ -279,6 +286,9 @@ export function App() {
     executionRequest.current += 1;
     executionAbort.current?.abort();
     executionAbort.current = null;
+    const session = stepSession.current;
+    stepSession.current = null;
+    void session?.stop().catch(() => undefined);
     setExecutionState(nextState);
   }
 
@@ -293,7 +303,10 @@ export function App() {
   function appendTraceEvents(request: number, events: ExecutionTraceEvent[]) {
     if (events.length === 0) return;
     setExecutionState((current) => {
-      if (executionRequest.current !== request || current.status !== "running") {
+      if (
+        executionRequest.current !== request ||
+        (current.status !== "running" && current.status !== "stepping")
+      ) {
         return current;
       }
       const previousLength = current.traceCount;
@@ -317,6 +330,72 @@ export function App() {
     });
   }
 
+  function applyStepEvents(request: number, events: ExecutionTraceEvent[]) {
+    setExecutionState((current) => {
+      if (executionRequest.current !== request || current.status !== "stepping") {
+        return current;
+      }
+      if (events.length === 0) {
+        return { ...current, phase: "paused" };
+      }
+      current.traceStore.appendBatch(events);
+      const traceCount = current.traceStore.length;
+      return {
+        ...current,
+        phase: "paused",
+        traceCount,
+        traceVersion: current.traceVersion + 1,
+        selectedTraceIndex: traceCount - 1,
+      };
+    });
+  }
+
+  function completeTransparentExecution(
+    request: number,
+    response: Extract<ExecutionResponse, { status: "completed" }>,
+  ) {
+    setExecutionState((current) => {
+      const traceStore =
+        current.status === "running" || current.status === "stepping"
+          ? current.traceStore
+          : new TraceStore();
+      if (response.trace.length > 0) {
+        traceStore.appendBatch(response.trace);
+      }
+      const traceCount = traceStore.length;
+      return {
+        status: "completed",
+        response,
+        traceStore,
+        traceCount,
+        traceVersion:
+          current.status === "running" || current.status === "stepping"
+            ? current.traceVersion + 1
+            : 0,
+        selectedTraceIndex: selectedTraceIndexAfterRun(
+          current.status === "running" || current.status === "stepping"
+            ? { ...current, status: "running" as const, mode: "transparent" as const, traceCount }
+            : current,
+          response,
+        ),
+      };
+    });
+    if (executionRequest.current === request) {
+      stepSession.current = null;
+    }
+  }
+
+  function failFromRunner(stage: string, messages: string[], prefix: string) {
+    setExecutionState({
+      status: "failed",
+      message: prefix,
+      diagnostics: messages.map((message, index) => ({
+        ...runnerErrorDiagnostic(message, stage),
+        id: `diag:runner:${stage}:${index}`,
+      })),
+    });
+  }
+
   function selectedTraceIndexAfterRun(
     current: ExecutionState,
     response: Extract<ExecutionState, { status: "completed" }>["response"],
@@ -335,7 +414,7 @@ export function App() {
   }
 
   async function runProject() {
-    if (executionAbort.current) return;
+    if (executionAbort.current || stepSession.current) return;
     const request = executionRequest.current + 1;
     executionRequest.current = request;
     const controller = new AbortController();
@@ -447,6 +526,179 @@ export function App() {
     return result.history.present;
   }
 
+  async function startStepRun() {
+    if (executionAbort.current || stepSession.current) return;
+    const request = executionRequest.current + 1;
+    executionRequest.current = request;
+    const controller = new AbortController();
+    executionAbort.current = controller;
+    setExecutionState({
+      status: "stepping",
+      phase: "starting",
+      traceStore: new TraceStore(),
+      traceCount: 0,
+      traceVersion: 0,
+      selectedTraceIndex: null,
+    });
+    try {
+      const diagnostics = preflightProjectDiagnostics(document);
+      if (diagnostics.length > 0) {
+        if (executionRequest.current !== request) return;
+        setExecutionState({
+          status: "failed",
+          message: `${diagnostics.length} issue${diagnostics.length === 1 ? "" : "s"} must be fixed before running.`,
+          diagnostics,
+        });
+        return;
+      }
+      executionBackend.current ??= createBrowserExecutionBackend();
+      const started = await executionBackend.current.startStepRun(
+        exportProjectJson(document),
+        { signal: controller.signal },
+      );
+      if (executionRequest.current !== request) return;
+      if ("status" in started && started.status === "error") {
+        failFromRunner(
+          started.stage,
+          started.messages,
+          "The browser OCaml runner rejected the Step Run.",
+        );
+        return;
+      }
+      if ("status" in started && started.status === "completed") {
+        completeTransparentExecution(request, started);
+        return;
+      }
+      stepSession.current = started as ExecutionStepSession;
+      setExecutionState((current) =>
+        current.status === "stepping"
+          ? { ...current, phase: "paused" }
+          : current,
+      );
+    } catch (error) {
+      if (executionRequest.current !== request) return;
+      if (isExecutionCanceledError(error)) {
+        setExecutionState({ status: "canceled", message: "Step Run stopped." });
+      } else {
+        setExecutionState({
+          status: "failed",
+          message:
+            error instanceof Error ? error.message : "Unknown Step Run failure.",
+          diagnostics: [
+            runnerErrorDiagnostic(
+              error instanceof Error ? error.message : "Unknown Step Run failure.",
+            ),
+          ],
+        });
+      }
+    } finally {
+      if (executionRequest.current === request) executionAbort.current = null;
+    }
+  }
+
+  async function stepNextRewrite() {
+    const session = stepSession.current;
+    if (!session || executionAbort.current) return;
+    const request = executionRequest.current + 1;
+    executionRequest.current = request;
+    const controller = new AbortController();
+    executionAbort.current = controller;
+    setExecutionState((current) =>
+      current.status === "stepping" ? { ...current, phase: "nexting" } : current,
+    );
+    try {
+      const response: StepRunResponse = await session.next({
+        signal: controller.signal,
+      });
+      if (executionRequest.current !== request) return;
+      if (response.status === "error") {
+        stepSession.current = null;
+        failFromRunner(
+          response.stage,
+          response.messages,
+          "The browser OCaml runner rejected the Step Run.",
+        );
+      } else if (response.status === "completed") {
+        completeTransparentExecution(request, response);
+      } else {
+        applyStepEvents(request, response.trace);
+      }
+    } catch (error) {
+      if (executionRequest.current !== request) return;
+      stepSession.current = null;
+      if (isExecutionCanceledError(error)) {
+        setExecutionState({ status: "canceled", message: "Step Run stopped." });
+      } else {
+        setExecutionState({
+          status: "failed",
+          message:
+            error instanceof Error ? error.message : "Unknown Step Run failure.",
+          diagnostics: [
+            runnerErrorDiagnostic(
+              error instanceof Error ? error.message : "Unknown Step Run failure.",
+            ),
+          ],
+        });
+      }
+    } finally {
+      if (executionRequest.current === request) executionAbort.current = null;
+    }
+  }
+
+  async function stepContinue() {
+    const session = stepSession.current;
+    if (!session || executionAbort.current) return;
+    const request = executionRequest.current + 1;
+    executionRequest.current = request;
+    const controller = new AbortController();
+    executionAbort.current = controller;
+    setExecutionState((current) =>
+      current.status === "stepping"
+        ? { ...current, phase: "continuing" }
+        : current,
+    );
+    try {
+      const response = await session.continue({
+        signal: controller.signal,
+        onTraceBatch: (events) => appendTraceEvents(request, events),
+      });
+      if (executionRequest.current !== request) return;
+      if (response.status === "error") {
+        stepSession.current = null;
+        failFromRunner(
+          response.stage,
+          response.messages,
+          "The browser OCaml runner rejected the Step Run.",
+        );
+      } else {
+        completeTransparentExecution(request, response);
+      }
+    } catch (error) {
+      if (executionRequest.current !== request) return;
+      stepSession.current = null;
+      if (isExecutionCanceledError(error)) {
+        setExecutionState({ status: "canceled", message: "Step Run stopped." });
+      } else {
+        setExecutionState({
+          status: "failed",
+          message:
+            error instanceof Error ? error.message : "Unknown Step Run failure.",
+          diagnostics: [
+            runnerErrorDiagnostic(
+              error instanceof Error ? error.message : "Unknown Step Run failure.",
+            ),
+          ],
+        });
+      }
+    } finally {
+      if (executionRequest.current === request) executionAbort.current = null;
+    }
+  }
+
+  function stopStepRun() {
+    stopExecution({ status: "canceled", message: "Step Run stopped." });
+  }
+
   function selectTraceEvent(index: number) {
     setExecutionState((current) => {
       if (!Number.isInteger(index) || index < 0) return current;
@@ -460,6 +712,10 @@ export function App() {
         return { ...current, selectedTraceIndex: index };
       }
       if (current.status === "running") {
+        if (index >= current.traceCount) return current;
+        return { ...current, selectedTraceIndex: index };
+      }
+      if (current.status === "stepping") {
         if (index >= current.traceCount) return current;
         return { ...current, selectedTraceIndex: index };
       }
@@ -611,6 +867,7 @@ export function App() {
   async function viewTraceForFastResult() {
     if (
       executionAbort.current ||
+      stepSession.current ||
       executionState.status !== "completed" ||
       executionState.response.status !== "completed" ||
       executionState.response.mode !== "fast" ||
@@ -1179,6 +1436,7 @@ export function App() {
       executionRequest.current += 1;
       executionAbort.current?.abort();
       executionAbort.current = null;
+      stepSession.current = null;
       executionBackend.current?.dispose();
       executionBackend.current = null;
     },
@@ -1213,6 +1471,7 @@ export function App() {
         onUndo={undo}
         onRedo={redo}
         onRun={runProject}
+        onStepRun={startStepRun}
         onCancel={cancelExecution}
         executionMode={executionMode}
         onExecutionModeChange={(mode) => {
@@ -1222,6 +1481,7 @@ export function App() {
         themePreference={themePreference}
         onThemePreferenceChange={setThemePreference}
         running={executionState.status === "running"}
+        stepActive={executionState.status === "stepping"}
       />
       <div className="workspace">
         <NodePalette
@@ -1592,6 +1852,9 @@ export function App() {
           traceSourceElementId={traceHighlightedElementId}
           onTraceSelect={selectTraceEvent}
           onViewTrace={viewTraceForFastResult}
+          onStepNext={stepNextRewrite}
+          onStepContinue={stepContinue}
+          onStepStop={stopStepRun}
           onDiagnosticSelect={focusDiagnostic}
         />
       </div>
