@@ -1,6 +1,10 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import {
+  listMapSuccThreeExample,
+  listSumThreeExample,
+} from "./list-rec-official-examples.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(scriptDirectory, "../..");
@@ -423,6 +427,8 @@ function withLeftDrop(project) {
 const examples = new Map([
   ["list-nat.tilefold.json", listNatExample()],
   ["list-builder-nat.tilefold.json", listBuilderNatExample()],
+  ["list-sum-three.tilefold.json", listSumThreeExample()],
+  ["list-map-succ-three.tilefold.json", listMapSuccThreeExample()],
   ["option-safe-pred-get-or-else.tilefold.json", withLeftDrop(optionFallbackExample())],
 ]);
 

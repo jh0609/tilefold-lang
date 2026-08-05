@@ -292,21 +292,32 @@ The example registry imports Project JSON directly from `../examples/` through
 Vite raw imports; there is no manually maintained browser copy. Local imports
 perform only a protective structure check:
 
-The toolbar **Example** picker opens the original project and three independent
-Project JSON v2 natural-number examples:
+The toolbar **Example** picker opens the original project plus generated
+Project JSON v2 examples:
 
 - **Successor — 2 → 3** evaluates `Succ(2)` to `Nat(3)`;
 - **Addition — 2 + 3 = 5** applies a captured-operand addition template whose
   `NatRec[Nat]` step explicitly drops the predecessor and applies `Succ` to the
   accumulator;
 - **Multiplication — 3 × 4 = 12** uses `NatRec[Nat]` to accumulate four
-  applications of the included addition template.
+  applications of the included addition template;
+- **Option fallback — safePred/getOrElse** demonstrates Sum/Case fallback
+  handling and evaluates to `Nat(4)`;
+- **List — [1, 2, 3]** constructs the canonical Cons/Nil list and evaluates to
+  `List[Nat(1), Nat(2), Nat(3)]`;
+- **List Builder — [1, 2, 3]** constructs the same list through the editable
+  List Builder Surface node;
+- **List sum — [1, 2, 3] = 6** folds the canonical list with `ListRec[Nat]` and
+  the verified `tilefold.std.nat.add` call; and
+- **List map Succ — [1, 2, 3] = [2, 3, 4]** maps existing `Succ` over the
+  canonical list with `ListRec[List[Nat]]`.
 
-These are total primitive-recursive graphs, not general recursion or
-hard-coded result displays. Each file contains its own templates, captures,
-dependencies, boundaries, and entry graph, and **Run** obtains the displayed
-result only from the OCaml worker. Opening an example resets selection,
-execution output, and undo/redo history, then fits the complete graph.
+These are ordinary editable Surface documents, not hard-coded result displays.
+Recursive examples are total primitive-recursive graphs. Each file contains its
+own templates, captures, dependencies, boundaries, and entry graph, and **Run**
+obtains the displayed result only from the OCaml worker. Opening an example
+resets selection, execution output, and undo/redo history, then fits the
+complete graph.
 
 The checked-in files are generated deterministically and can be verified with
 `npm run examples:check`.

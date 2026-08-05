@@ -5,6 +5,8 @@ import multiplicationJson from "../../../examples/multiplication.tilefold.json?r
 import optionSafePredGetOrElseJson from "../../../examples/option-safe-pred-get-or-else.tilefold.json?raw";
 import listNatJson from "../../../examples/list-nat.tilefold.json?raw";
 import listBuilderNatJson from "../../../examples/list-builder-nat.tilefold.json?raw";
+import listSumThreeJson from "../../../examples/list-sum-three.tilefold.json?raw";
+import listMapSuccThreeJson from "../../../examples/list-map-succ-three.tilefold.json?raw";
 
 export const EXAMPLE_PROJECTS = [
   {
@@ -48,6 +50,18 @@ export const EXAMPLE_PROJECTS = [
     name: "List Builder — [1, 2, 3]",
     fileName: "list-builder-nat.tilefold.json",
     projectJson: listBuilderNatJson,
+  },
+  {
+    id: "list-sum-three",
+    name: "List sum — [1, 2, 3] = 6",
+    fileName: "list-sum-three.tilefold.json",
+    projectJson: listSumThreeJson,
+  },
+  {
+    id: "list-map-succ-three",
+    name: "List map Succ — [1, 2, 3] = [2, 3, 4]",
+    fileName: "list-map-succ-three.tilefold.json",
+    projectJson: listMapSuccThreeJson,
   },
 ] as const;
 

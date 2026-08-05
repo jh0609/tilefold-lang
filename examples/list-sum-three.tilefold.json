@@ -1,0 +1,951 @@
+{
+  "format": "tilefold-project",
+  "version": 2,
+  "geometry": {
+    "snapTolerance": 8,
+    "elements": [
+      {
+        "id": "unit-drop",
+        "kind": "drop",
+        "bounds": {
+          "x": 80,
+          "y": 80,
+          "width": 88,
+          "height": 56
+        },
+        "properties": {
+          "type": "unit"
+        },
+        "portAnchors": [
+          {
+            "port": "input",
+            "x": 80,
+            "y": 108
+          }
+        ]
+      },
+      {
+        "id": "list-nil",
+        "kind": "nil",
+        "bounds": {
+          "x": 80,
+          "y": 250,
+          "width": 96,
+          "height": 56
+        },
+        "properties": {
+          "itemType": "nat"
+        },
+        "portAnchors": [
+          {
+            "port": "value",
+            "x": 176,
+            "y": 278
+          }
+        ]
+      },
+      {
+        "id": "list-nat-2",
+        "kind": "nat_literal",
+        "bounds": {
+          "x": 250,
+          "y": 282,
+          "width": 96,
+          "height": 56
+        },
+        "properties": {
+          "value": "3"
+        },
+        "portAnchors": [
+          {
+            "port": "value",
+            "x": 346,
+            "y": 310
+          }
+        ]
+      },
+      {
+        "id": "list-cons-2",
+        "kind": "cons",
+        "bounds": {
+          "x": 400,
+          "y": 320,
+          "width": 120,
+          "height": 84
+        },
+        "properties": {
+          "itemType": "nat"
+        },
+        "portAnchors": [
+          {
+            "port": "head",
+            "x": 400,
+            "y": 348
+          },
+          {
+            "port": "tail",
+            "x": 400,
+            "y": 376
+          },
+          {
+            "port": "value",
+            "x": 520,
+            "y": 362
+          }
+        ]
+      },
+      {
+        "id": "list-nat-1",
+        "kind": "nat_literal",
+        "bounds": {
+          "x": 420,
+          "y": 212,
+          "width": 96,
+          "height": 56
+        },
+        "properties": {
+          "value": "2"
+        },
+        "portAnchors": [
+          {
+            "port": "value",
+            "x": 516,
+            "y": 240
+          }
+        ]
+      },
+      {
+        "id": "list-cons-1",
+        "kind": "cons",
+        "bounds": {
+          "x": 570,
+          "y": 250,
+          "width": 120,
+          "height": 84
+        },
+        "properties": {
+          "itemType": "nat"
+        },
+        "portAnchors": [
+          {
+            "port": "head",
+            "x": 570,
+            "y": 278
+          },
+          {
+            "port": "tail",
+            "x": 570,
+            "y": 306
+          },
+          {
+            "port": "value",
+            "x": 690,
+            "y": 292
+          }
+        ]
+      },
+      {
+        "id": "list-nat-0",
+        "kind": "nat_literal",
+        "bounds": {
+          "x": 590,
+          "y": 142,
+          "width": 96,
+          "height": 56
+        },
+        "properties": {
+          "value": "1"
+        },
+        "portAnchors": [
+          {
+            "port": "value",
+            "x": 686,
+            "y": 170
+          }
+        ]
+      },
+      {
+        "id": "list-cons-0",
+        "kind": "cons",
+        "bounds": {
+          "x": 740,
+          "y": 180,
+          "width": 120,
+          "height": 84
+        },
+        "properties": {
+          "itemType": "nat"
+        },
+        "portAnchors": [
+          {
+            "port": "head",
+            "x": 740,
+            "y": 208
+          },
+          {
+            "port": "tail",
+            "x": 740,
+            "y": 236
+          },
+          {
+            "port": "value",
+            "x": 860,
+            "y": 222
+          }
+        ]
+      },
+      {
+        "id": "base-zero",
+        "kind": "nat_literal",
+        "bounds": {
+          "x": 610,
+          "y": 230,
+          "width": 96,
+          "height": 56
+        },
+        "properties": {
+          "value": "0"
+        },
+        "portAnchors": [
+          {
+            "port": "value",
+            "x": 706,
+            "y": 258
+          }
+        ]
+      },
+      {
+        "id": "step-function",
+        "kind": "function",
+        "bounds": {
+          "x": 610,
+          "y": 90,
+          "width": 150,
+          "height": 80
+        },
+        "properties": {
+          "templateId": "sum-3-step",
+          "parameterType": {
+            "product": [
+              "nat",
+              {
+                "product": [
+                  {
+                    "list": "nat"
+                  },
+                  "nat"
+                ]
+              }
+            ]
+          },
+          "resultType": "nat",
+          "captures": []
+        },
+        "portAnchors": [
+          {
+            "port": "value",
+            "x": 760,
+            "y": 130
+          }
+        ]
+      },
+      {
+        "id": "list-rec",
+        "kind": "list_rec",
+        "bounds": {
+          "x": 830,
+          "y": 150,
+          "width": 152,
+          "height": 120
+        },
+        "properties": {
+          "itemType": "nat",
+          "resultType": "nat"
+        },
+        "portAnchors": [
+          {
+            "port": "list",
+            "x": 830,
+            "y": 174
+          },
+          {
+            "port": "base",
+            "x": 830,
+            "y": 198
+          },
+          {
+            "port": "step",
+            "x": 830,
+            "y": 222
+          },
+          {
+            "port": "result",
+            "x": 982,
+            "y": 210
+          }
+        ]
+      },
+      {
+        "id": "sum-unpair-outer",
+        "kind": "unpair",
+        "bounds": {
+          "x": 90,
+          "y": 620,
+          "width": 120,
+          "height": 84
+        },
+        "properties": {
+          "leftType": "nat",
+          "rightType": {
+            "product": [
+              {
+                "list": "nat"
+              },
+              "nat"
+            ]
+          }
+        },
+        "portAnchors": [
+          {
+            "port": "value",
+            "x": 90,
+            "y": 662
+          },
+          {
+            "port": "left",
+            "x": 210,
+            "y": 648
+          },
+          {
+            "port": "right",
+            "x": 210,
+            "y": 676
+          }
+        ]
+      },
+      {
+        "id": "sum-unpair-inner",
+        "kind": "unpair",
+        "bounds": {
+          "x": 280,
+          "y": 700,
+          "width": 120,
+          "height": 84
+        },
+        "properties": {
+          "leftType": {
+            "list": "nat"
+          },
+          "rightType": "nat"
+        },
+        "portAnchors": [
+          {
+            "port": "value",
+            "x": 280,
+            "y": 742
+          },
+          {
+            "port": "left",
+            "x": 400,
+            "y": 728
+          },
+          {
+            "port": "right",
+            "x": 400,
+            "y": 756
+          }
+        ]
+      },
+      {
+        "id": "sum-drop-tail",
+        "kind": "drop",
+        "bounds": {
+          "x": 470,
+          "y": 700,
+          "width": 88,
+          "height": 56
+        },
+        "properties": {
+          "type": {
+            "list": "nat"
+          }
+        },
+        "portAnchors": [
+          {
+            "port": "input",
+            "x": 470,
+            "y": 728
+          }
+        ]
+      },
+      {
+        "id": "sum-add",
+        "kind": "library_call",
+        "bounds": {
+          "x": 570,
+          "y": 630,
+          "width": 156,
+          "height": 106
+        },
+        "properties": {
+          "library": "tilefold.std",
+          "functionId": "nat.add",
+          "templateId": "tilefold.std.nat.add",
+          "version": "v1"
+        },
+        "portAnchors": [
+          {
+            "port": "arg_0",
+            "x": 570,
+            "y": 665
+          },
+          {
+            "port": "arg_1",
+            "x": 570,
+            "y": 701
+          },
+          {
+            "port": "result",
+            "x": 726,
+            "y": 683
+          }
+        ]
+      }
+    ],
+    "containers": [
+      {
+        "id": "entry",
+        "kind": {
+          "kind": "entry",
+          "templateId": "entry_template",
+          "resultType": "nat",
+          "dependencies": [
+            "sum-3-step"
+          ]
+        },
+        "bounds": {
+          "x": 0,
+          "y": 0,
+          "width": 1180,
+          "height": 520
+        },
+        "boundaryPorts": [
+          {
+            "id": "entry-parameter",
+            "role": "parameter",
+            "type": "unit",
+            "anchor": {
+              "x": 0,
+              "y": 108
+            }
+          },
+          {
+            "id": "entry-result",
+            "role": "result",
+            "type": "nat",
+            "anchor": {
+              "x": 1180,
+              "y": 210
+            }
+          }
+        ]
+      },
+      {
+        "id": "sum-3-step-container",
+        "kind": {
+          "kind": "template",
+          "templateId": "sum-3-step",
+          "parameterType": {
+            "product": [
+              "nat",
+              {
+                "product": [
+                  {
+                    "list": "nat"
+                  },
+                  "nat"
+                ]
+              }
+            ]
+          },
+          "resultType": "nat",
+          "dependencies": [
+            "tilefold.std.nat.add"
+          ]
+        },
+        "bounds": {
+          "x": 0,
+          "y": 560,
+          "width": 980,
+          "height": 360
+        },
+        "boundaryPorts": [
+          {
+            "id": "step-parameter",
+            "role": "parameter",
+            "type": {
+              "product": [
+                "nat",
+                {
+                  "product": [
+                    {
+                      "list": "nat"
+                    },
+                    "nat"
+                  ]
+                }
+              ]
+            },
+            "anchor": {
+              "x": 0,
+              "y": 170
+            }
+          },
+          {
+            "id": "step-result",
+            "role": "result",
+            "type": "nat",
+            "anchor": {
+              "x": 980,
+              "y": 170
+            }
+          }
+        ]
+      }
+    ],
+    "wires": [
+      {
+        "id": "w-unit-drop",
+        "points": [
+          {
+            "x": 0,
+            "y": 108
+          },
+          {
+            "x": 80,
+            "y": 108
+          }
+        ],
+        "sourceHint": {
+          "kind": "boundary_port",
+          "containerId": "entry",
+          "boundaryId": "entry-parameter"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "unit-drop",
+          "port": "input"
+        }
+      },
+      {
+        "id": "w-list-nat-2-head",
+        "points": [
+          {
+            "x": 346,
+            "y": 310
+          },
+          {
+            "x": 400,
+            "y": 348
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "list-nat-2",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "list-cons-2",
+          "port": "head"
+        }
+      },
+      {
+        "id": "w-list-nil-tail-2",
+        "points": [
+          {
+            "x": 176,
+            "y": 278
+          },
+          {
+            "x": 400,
+            "y": 376
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "list-nil",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "list-cons-2",
+          "port": "tail"
+        }
+      },
+      {
+        "id": "w-list-nat-1-head",
+        "points": [
+          {
+            "x": 516,
+            "y": 240
+          },
+          {
+            "x": 570,
+            "y": 278
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "list-nat-1",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "list-cons-1",
+          "port": "head"
+        }
+      },
+      {
+        "id": "w-list-cons-2-tail-1",
+        "points": [
+          {
+            "x": 520,
+            "y": 362
+          },
+          {
+            "x": 570,
+            "y": 306
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "list-cons-2",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "list-cons-1",
+          "port": "tail"
+        }
+      },
+      {
+        "id": "w-list-nat-0-head",
+        "points": [
+          {
+            "x": 686,
+            "y": 170
+          },
+          {
+            "x": 740,
+            "y": 208
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "list-nat-0",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "list-cons-0",
+          "port": "head"
+        }
+      },
+      {
+        "id": "w-list-cons-1-tail-0",
+        "points": [
+          {
+            "x": 690,
+            "y": 292
+          },
+          {
+            "x": 740,
+            "y": 236
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "list-cons-1",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "list-cons-0",
+          "port": "tail"
+        }
+      },
+      {
+        "id": "w-list-rec-list",
+        "points": [
+          {
+            "x": 860,
+            "y": 222
+          },
+          {
+            "x": 830,
+            "y": 174
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "list-cons-0",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "list-rec",
+          "port": "list"
+        }
+      },
+      {
+        "id": "w-list-rec-base",
+        "points": [
+          {
+            "x": 706,
+            "y": 258
+          },
+          {
+            "x": 830,
+            "y": 198
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "base-zero",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "list-rec",
+          "port": "base"
+        }
+      },
+      {
+        "id": "w-list-rec-step",
+        "points": [
+          {
+            "x": 760,
+            "y": 130
+          },
+          {
+            "x": 830,
+            "y": 222
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "step-function",
+          "port": "value"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "list-rec",
+          "port": "step"
+        }
+      },
+      {
+        "id": "w-result",
+        "points": [
+          {
+            "x": 982,
+            "y": 210
+          },
+          {
+            "x": 1180,
+            "y": 210
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "list-rec",
+          "port": "result"
+        },
+        "targetHint": {
+          "kind": "boundary_port",
+          "containerId": "entry",
+          "boundaryId": "entry-result"
+        }
+      },
+      {
+        "id": "s-param-outer",
+        "points": [
+          {
+            "x": 0,
+            "y": 730
+          },
+          {
+            "x": 90,
+            "y": 662
+          }
+        ],
+        "sourceHint": {
+          "kind": "boundary_port",
+          "containerId": "sum-3-step-container",
+          "boundaryId": "step-parameter"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "sum-unpair-outer",
+          "port": "value"
+        }
+      },
+      {
+        "id": "s-inner",
+        "points": [
+          {
+            "x": 210,
+            "y": 676
+          },
+          {
+            "x": 280,
+            "y": 742
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "sum-unpair-outer",
+          "port": "right"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "sum-unpair-inner",
+          "port": "value"
+        }
+      },
+      {
+        "id": "s-drop-tail",
+        "points": [
+          {
+            "x": 400,
+            "y": 728
+          },
+          {
+            "x": 470,
+            "y": 728
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "sum-unpair-inner",
+          "port": "left"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "sum-drop-tail",
+          "port": "input"
+        }
+      },
+      {
+        "id": "s-add-left",
+        "points": [
+          {
+            "x": 210,
+            "y": 648
+          },
+          {
+            "x": 570,
+            "y": 665
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "sum-unpair-outer",
+          "port": "left"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "sum-add",
+          "port": "arg_0"
+        }
+      },
+      {
+        "id": "s-add-right",
+        "points": [
+          {
+            "x": 400,
+            "y": 756
+          },
+          {
+            "x": 570,
+            "y": 701
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "sum-unpair-inner",
+          "port": "right"
+        },
+        "targetHint": {
+          "kind": "element_port",
+          "elementId": "sum-add",
+          "port": "arg_1"
+        }
+      },
+      {
+        "id": "s-result",
+        "points": [
+          {
+            "x": 726,
+            "y": 683
+          },
+          {
+            "x": 980,
+            "y": 730
+          }
+        ],
+        "sourceHint": {
+          "kind": "element_port",
+          "elementId": "sum-add",
+          "port": "result"
+        },
+        "targetHint": {
+          "kind": "boundary_port",
+          "containerId": "sum-3-step-container",
+          "boundaryId": "step-result"
+        }
+      }
+    ],
+    "junctions": []
+  },
+  "surfaceFunctions": [
+    {
+      "name": "sum-3Step",
+      "templateId": "sum-3-step",
+      "bodyContainerId": "sum-3-step-container",
+      "parameters": [
+        {
+          "name": "frame",
+          "type": {
+            "product": [
+              "nat",
+              {
+                "product": [
+                  {
+                    "list": "nat"
+                  },
+                  "nat"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "type": "nat"
+      }
+    }
+  ],
+  "surfaceLibraryCalls": [
+    {
+      "id": "sum-3-add-call",
+      "library": "tilefold.std",
+      "functionId": "nat.add",
+      "templateId": "tilefold.std.nat.add",
+      "version": "v1",
+      "functionElementId": "sum-add",
+      "applyElementIds": []
+    }
+  ]
+}

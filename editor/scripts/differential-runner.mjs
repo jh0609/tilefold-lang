@@ -1028,69 +1028,6 @@ function sumFixture(items) {
   });
 }
 
-function mapSuccFixture(items) {
-  const id = "mapSucc-three";
-  return listRecProject({
-    id,
-    items,
-    resultType: listNat,
-    entryBaseElement: {
-      id: "base-nil",
-      kind: "nil",
-      bounds: { x: 610, y: 230, width: 96, height: 56 },
-      properties: { itemType: "nat" },
-      portAnchors: [{ port: "value", x: 706, y: 258 }],
-    },
-    entryBasePort: "value",
-    stepElements: [
-      {
-        id: "map-unpair-outer",
-        kind: "unpair",
-        bounds: { x: 90, y: 620, width: 120, height: 84 },
-        properties: { leftType: "nat", rightType: { product: [listNat, listNat] } },
-        portAnchors: [
-          { port: "value", x: 90, y: 662 },
-          { port: "left", x: 210, y: 648 },
-          { port: "right", x: 210, y: 676 },
-        ],
-      },
-      {
-        id: "map-unpair-inner",
-        kind: "unpair",
-        bounds: { x: 280, y: 700, width: 120, height: 84 },
-        properties: { leftType: listNat, rightType: listNat },
-        portAnchors: [
-          { port: "value", x: 280, y: 742 },
-          { port: "left", x: 400, y: 728 },
-          { port: "right", x: 400, y: 756 },
-        ],
-      },
-      { id: "map-drop-tail", kind: "drop", bounds: { x: 470, y: 700, width: 88, height: 56 }, properties: { type: listNat }, portAnchors: [{ port: "input", x: 470, y: 728 }] },
-      { id: "map-succ-head", kind: "succ", bounds: { x: 470, y: 615, width: 100, height: 60 }, properties: {}, portAnchors: [{ port: "input", x: 470, y: 645 }, { port: "result", x: 570, y: 645 }] },
-      {
-        id: "map-cons",
-        kind: "cons",
-        bounds: { x: 650, y: 650, width: 120, height: 84 },
-        properties: { itemType: "nat" },
-        portAnchors: [
-          { port: "head", x: 650, y: 678 },
-          { port: "tail", x: 650, y: 706 },
-          { port: "value", x: 770, y: 692 },
-        ],
-      },
-    ],
-    stepWires: [
-      wire("s-param-outer", boundaryPort(`${id}-step-container`, "step-parameter"), elementPort("map-unpair-outer", "value"), [{ x: 0, y: 730 }, { x: 90, y: 662 }]),
-      wire("s-inner", elementPort("map-unpair-outer", "right"), elementPort("map-unpair-inner", "value"), [{ x: 210, y: 676 }, { x: 280, y: 742 }]),
-      wire("s-drop-tail", elementPort("map-unpair-inner", "left"), elementPort("map-drop-tail", "input"), [{ x: 400, y: 728 }, { x: 470, y: 728 }]),
-      wire("s-succ-head", elementPort("map-unpair-outer", "left"), elementPort("map-succ-head", "input"), [{ x: 210, y: 648 }, { x: 470, y: 645 }]),
-      wire("s-cons-head", elementPort("map-succ-head", "result"), elementPort("map-cons", "head"), [{ x: 570, y: 645 }, { x: 650, y: 678 }]),
-      wire("s-cons-tail", elementPort("map-unpair-inner", "right"), elementPort("map-cons", "tail"), [{ x: 400, y: 756 }, { x: 650, y: 706 }]),
-      wire("s-result", elementPort("map-cons", "value"), boundaryPort(`${id}-step-container`, "step-result"), [{ x: 770, y: 692 }, { x: 980, y: 730 }]),
-    ],
-  });
-}
-
 function capturedNatRecStepFixture() {
   const natToNat = { arrow: ["nat", "nat"] };
   return JSON.stringify({
@@ -1415,10 +1352,18 @@ fixtures.set("list-builder-length-three", listBuilderLengthFixture([1, 2, 3]));
 fixtures.set("list-builder-length-three-fast", { mode: "fast", projectJson: listBuilderLengthFixture([1, 2, 3]) });
 fixtures.set("list-sum-empty", sumFixture([]));
 fixtures.set("list-sum-empty-fast", { mode: "fast", projectJson: sumFixture([]) });
-fixtures.set("list-sum-three", sumFixture([1, 2, 3]));
-fixtures.set("list-sum-three-fast", { mode: "fast", projectJson: sumFixture([1, 2, 3]) });
-fixtures.set("list-mapSucc-three", mapSuccFixture([1, 2, 3]));
-fixtures.set("list-mapSucc-three-fast", { mode: "fast", projectJson: mapSuccFixture([1, 2, 3]) });
+const officialListSumThree = await readFile(
+  resolve(repositoryRoot, "examples/list-sum-three.tilefold.json"),
+  "utf8",
+);
+fixtures.set("list-sum-three", officialListSumThree);
+fixtures.set("list-sum-three-fast", { mode: "fast", projectJson: officialListSumThree });
+const officialListMapSuccThree = await readFile(
+  resolve(repositoryRoot, "examples/list-map-succ-three.tilefold.json"),
+  "utf8",
+);
+fixtures.set("list-map-succ-three", officialListMapSuccThree);
+fixtures.set("list-map-succ-three-fast", { mode: "fast", projectJson: officialListMapSuccThree });
 fixtures.set("captured-natrec-step", capturedNatRecStepFixture());
 fixtures.set("captured-natrec-step-fast", { mode: "fast", projectJson: capturedNatRecStepFixture() });
 fixtures.set("standard-library-equal-big-fast", {
@@ -1495,8 +1440,8 @@ const resultExpectations = new Map([
   ["list-sum-empty-fast", "Nat(0)"],
   ["list-sum-three", "Nat(6)"],
   ["list-sum-three-fast", "Nat(6)"],
-  ["list-mapSucc-three", "List[Nat(2), Nat(3), Nat(4)]"],
-  ["list-mapSucc-three-fast", "List[Nat(2), Nat(3), Nat(4)]"],
+  ["list-map-succ-three", "List[Nat(2), Nat(3), Nat(4)]"],
+  ["list-map-succ-three-fast", "List[Nat(2), Nat(3), Nat(4)]"],
   ["captured-natrec-step", "Nat(6)"],
   ["captured-natrec-step-fast", "Nat(6)"],
   ["option-safe-pred-get-or-else", "Nat(4)"],

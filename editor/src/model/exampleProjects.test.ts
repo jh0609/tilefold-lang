@@ -4,14 +4,58 @@ import { EXAMPLE_PROJECTS, exampleProjectById } from "./exampleProjects";
 
 describe("example projects", () => {
   it("lists examples in canonical picker order", () => {
-    expect(EXAMPLE_PROJECTS.map((example) => example.name)).toEqual([
-      "Original — Nat(2) → Succ",
-      "Successor — 2 → 3",
-      "Addition — 2 + 3 = 5",
-      "Multiplication — 3 × 4 = 12",
-      "Option fallback — safePred/getOrElse",
-      "List — [1, 2, 3]",
-      "List Builder — [1, 2, 3]",
+    expect(
+      EXAMPLE_PROJECTS.map(({ id, name, fileName }) => ({
+        id,
+        name,
+        fileName,
+      })),
+    ).toEqual([
+      {
+        id: "original",
+        name: "Original — Nat(2) → Succ",
+        fileName: "nat-succ.tilefold.json",
+      },
+      {
+        id: "successor",
+        name: "Successor — 2 → 3",
+        fileName: "successor.tilefold.json",
+      },
+      {
+        id: "addition",
+        name: "Addition — 2 + 3 = 5",
+        fileName: "addition.tilefold.json",
+      },
+      {
+        id: "multiplication",
+        name: "Multiplication — 3 × 4 = 12",
+        fileName: "multiplication.tilefold.json",
+      },
+      {
+        id: "option-safe-pred-get-or-else",
+        name: "Option fallback — safePred/getOrElse",
+        fileName: "option-safe-pred-get-or-else.tilefold.json",
+      },
+      {
+        id: "list-nat",
+        name: "List — [1, 2, 3]",
+        fileName: "list-nat.tilefold.json",
+      },
+      {
+        id: "list-builder-nat",
+        name: "List Builder — [1, 2, 3]",
+        fileName: "list-builder-nat.tilefold.json",
+      },
+      {
+        id: "list-sum-three",
+        name: "List sum — [1, 2, 3] = 6",
+        fileName: "list-sum-three.tilefold.json",
+      },
+      {
+        id: "list-map-succ-three",
+        name: "List map Succ — [1, 2, 3] = [2, 3, 4]",
+        fileName: "list-map-succ-three.tilefold.json",
+      },
     ]);
     expect(
       exampleProjectById(
@@ -27,6 +71,8 @@ describe("example projects", () => {
     "option-safe-pred-get-or-else",
     "list-nat",
     "list-builder-nat",
+    "list-sum-three",
+    "list-map-succ-three",
   ] as const)(
     "round-trips the %s Project JSON without semantic data loss",
     (id) => {
@@ -107,5 +153,57 @@ describe("example projects", () => {
         (element) => element.id === "multiplication_natrec",
       ),
     ).toMatchObject({ kind: "nat_rec" });
+  });
+
+  it("keeps recursive List examples as editable Surface documents", () => {
+    const sum = parseProjectJson(exampleProjectById("list-sum-three")!.projectJson);
+    expect(sum.geometry.elements.find((element) => element.id === "list-rec")).toMatchObject({
+      kind: "list_rec",
+      properties: { itemType: "nat", resultType: "nat" },
+    });
+    expect(sum.surfaceLibraryCalls).toEqual([
+      {
+        id: "sum-3-add-call",
+        library: "tilefold.std",
+        functionId: "nat.add",
+        templateId: "tilefold.std.nat.add",
+        version: "v1",
+        functionElementId: "sum-add",
+        applyElementIds: [],
+      },
+    ]);
+    expect(
+      sum.geometry.wires.some(
+        (wire) =>
+          wire.sourceHint?.kind === "element_port" &&
+          wire.sourceHint.elementId === "sum-unpair-inner" &&
+          wire.sourceHint.port === "left" &&
+          wire.targetHint?.kind === "element_port" &&
+          wire.targetHint.elementId === "sum-drop-tail",
+      ),
+    ).toBe(true);
+
+    const mapSucc = parseProjectJson(
+      exampleProjectById("list-map-succ-three")!.projectJson,
+    );
+    expect(
+      mapSucc.geometry.elements.find((element) => element.id === "list-rec"),
+    ).toMatchObject({
+      kind: "list_rec",
+      properties: { itemType: "nat", resultType: { list: "nat" } },
+    });
+    expect(
+      mapSucc.geometry.elements.find((element) => element.id === "map-succ-head"),
+    ).toMatchObject({ kind: "succ" });
+    expect(
+      mapSucc.geometry.wires.some(
+        (wire) =>
+          wire.sourceHint?.kind === "element_port" &&
+          wire.sourceHint.elementId === "map-unpair-inner" &&
+          wire.sourceHint.port === "left" &&
+          wire.targetHint?.kind === "element_port" &&
+          wire.targetHint.elementId === "map-drop-tail",
+      ),
+    ).toBe(true);
   });
 });
