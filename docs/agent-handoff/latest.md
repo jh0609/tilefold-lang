@@ -10,7 +10,9 @@ Protocol:
 
 Pending task:
 
-- None. See [docs/agent-tasks/latest.md](../agent-tasks/latest.md).
+- `2026-08-05-list-sum-map-succ-official-examples` - promote the existing List
+  sum and map-Succ differential graphs to generated official picker examples.
+- See [docs/agent-tasks/latest.md](../agent-tasks/latest.md).
 
 Latest archive:
 
