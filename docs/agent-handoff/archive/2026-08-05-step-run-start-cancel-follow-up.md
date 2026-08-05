@@ -8,11 +8,13 @@ Task-ID: `2026-08-05-step-run-start-cancel-follow-up`
 - Queued known starting point: `f987b49ac99321a999036293ac731f321ec05d82`
 - Implementation commit: `f4315739a0cc1bb19b332b5a81f13ce58b9bfe3c`
 - Full validation SHA: `f4315739a0cc1bb19b332b5a81f13ce58b9bfe3c`
-- Handoff commit: pending
-- Final pushed SHA: pending
+- Handoff commit and deployment source SHA:
+  `7d6a0e78e08b87b9371aa7835880e7662dbf7d45`
+- Final pushed SHA before deployment follow-up:
+  `7d6a0e78e08b87b9371aa7835880e7662dbf7d45`
 - Branch: `main`
-- Push: pending
-- Deployment: pending
+- Push: completed to `origin/main`
+- Deployment: completed and Production-verified
 - Pre-existing user changes/stashes: none. Starting working tree was clean and
   `git stash list` was empty.
 
@@ -104,16 +106,37 @@ Validation passed for implementation SHA
 
 ## Deployment
 
-Pending. After the handoff commit is pushed with the implementation commit,
-deploy the final pushed SHA to Production and run:
+GitHub-connected Vercel Production deployment completed automatically after
+push. The Vercel connector deploy call returned `INVALID_ARGUMENT` without
+local project metadata, and local Vercel CLI deployment could not start because
+the saved token was invalid. GitHub deployment metadata supplied the successful
+Production deployment evidence.
 
-```text
-PLAYWRIGHT_BASE_URL=https://tilefold-editor.vercel.app
-npx playwright test e2e/step-run.spec.ts --project=chromium
-```
+- GitHub deployment ID: `5754244396`
+- GitHub deployment status ID: `16364084266`
+- Environment: `Production`
+- Deployment state: `success`
+- Deployment URL:
+  `https://tilefold-editor-kydzmb7nh-draftgame.vercel.app`
+- Production URL: `https://tilefold-editor.vercel.app`
+- Production source SHA:
+  `7d6a0e78e08b87b9371aa7835880e7662dbf7d45`
+- Response evidence from public Production URL: `Status=200`,
+  `Server=Vercel`, `X-Vercel-Cache=HIT`,
+  `X-Vercel-Id=icn1::wtkwj-1785893293228-05492439da18`.
 
-Record deployment ID, public URL, source SHA, console errors, and page errors
-in this archive as a documentation-only follow-up.
+Production Chromium verification against
+`PLAYWRIGHT_BASE_URL=https://tilefold-editor.vercel.app`:
+
+- `npx playwright test e2e/step-run.spec.ts --project=chromium`: passed,
+  1 test.
+- Console errors: none.
+- Page errors: none.
+
+This deployment follow-up is documentation-only. Full local validation remains
+valid for implementation SHA `f4315739a0cc1bb19b332b5a81f13ce58b9bfe3c`;
+deployment source SHA `7d6a0e78e08b87b9371aa7835880e7662dbf7d45` contains the
+validated implementation plus handoff/task documentation only.
 
 ## Known Limitations
 
