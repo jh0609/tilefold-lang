@@ -6,8 +6,8 @@ Task-ID: `2026-08-05-call-result-explicit-drop-ux-v1`
 
 - Local implementation: complete
 - Local validation: passed for implementation SHA `f7fa3a317f8dd46c7109c803e2203512b6525e95`
-- Push: pending at initial handoff write
-- Production deployment: pending at initial handoff write
+- Push: complete
+- Production deployment: complete
 
 ## Git
 
@@ -15,7 +15,10 @@ Task-ID: `2026-08-05-call-result-explicit-drop-ux-v1`
 - Queued known starting point: `95ec9e82b0ce2bc12b0567dc3b4826c80fab6f90`
 - Actual starting HEAD after fetch: `8371b0053f25c758e5611839eb0e4767fc2f837e`
 - Implementation commit: `f7fa3a317f8dd46c7109c803e2203512b6525e95`
-- Final pushed SHA: pending
+- Final pushed SHA before deployment follow-up:
+  `c76cac5821d57b9cba1fcbe62bef37142f01d136`
+- Note: the deployment follow-up commit is documentation-only. Production
+  source SHA is `c76cac5821d57b9cba1fcbe62bef37142f01d136`.
 - Working tree before implementation: clean, `main` matched `origin/main`
 - Pre-existing user changes: none detected
 
@@ -130,6 +133,8 @@ linearity/ownership task from call-result authoring.
 ## Local Validation
 
 Validation SHA: `f7fa3a317f8dd46c7109c803e2203512b6525e95`.
+The deployment follow-up changes handoff documentation only after validation
+and production verification.
 
 Passed:
 
@@ -164,10 +169,29 @@ Passed:
 
 ## Deployment
 
-Pending. After pushing the implementation and handoff commits together, deploy
-the final pushed SHA to Production and rerun the focused call-result Chromium
-flow against the public URL. Update this section with deployment ID, public URL,
-source SHA, production result, and console/page errors.
+Production deployment was created by the GitHub/Vercel integration after the
+push.
+
+- Deployment ID: `dpl_143RitU7mpnXec9HoZkgxAE2wqHj`
+- Project: `tilefold-editor` (`prj_sv8VFJezCyFOp1KyQC5n8r1nIUZi`)
+- Team: `draftgame` (`team_XJ2pKmBL23SYGgxiY5RJdOO6`)
+- Source SHA: `c76cac5821d57b9cba1fcbe62bef37142f01d136`
+- Target: production
+- State: `READY`
+- Public deployment URL:
+  `https://tilefold-editor-e88ijzirn-draftgame.vercel.app`
+- Vercel deployment auth: protected. Created a temporary share URL with
+  `_vercel_share` and stored Playwright auth state at local-only
+  `editor/.tmp/production-storage-state.json`.
+
+Production check passed:
+
+- `PLAYWRIGHT_BASE_URL=https://tilefold-editor-e88ijzirn-draftgame.vercel.app`
+  with `PLAYWRIGHT_STORAGE_STATE=.tmp/production-storage-state.json`
+  `npx playwright test e2e/call-result-explicit-drop.spec.ts --project=chromium`
+  passed, 1 test.
+- Console errors: none recorded by the focused spec.
+- Page errors: none recorded by the focused spec.
 
 ## Unresolved Questions
 
