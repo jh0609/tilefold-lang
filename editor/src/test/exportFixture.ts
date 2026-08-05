@@ -338,17 +338,6 @@ const argumentSource =
   argumentWire?.sourceHint?.kind === "element_port"
     ? argumentWire.sourceHint.elementId
     : "";
-const resultDropWire = namedCall.document.geometry.wires.find(
-  (wire) =>
-    wire.sourceHint?.kind === "element_port" &&
-    wire.sourceHint.elementId === namedCall.functionElement.id &&
-    wire.sourceHint.port === "result" &&
-    wire.targetHint?.kind === "element_port",
-);
-const resultDropId =
-  resultDropWire?.targetHint?.kind === "element_port"
-    ? resultDropWire.targetHint.elementId
-    : "";
 const applyResult = namedCall.functionElement.portAnchors.find(
   (anchor) => anchor.port === "result",
 )!;
@@ -366,7 +355,7 @@ const executableNamedCall = {
     elements: namedCall.document.geometry.elements
       .filter(
         (element) =>
-          !["node_nat_2", "node_succ", resultDropId].includes(element.id),
+          !["node_nat_2", "node_succ"].includes(element.id),
       )
       .map((element) => {
         if (element.id === captureSource && element.kind === "nat_literal") {
@@ -383,7 +372,6 @@ const executableNamedCall = {
           ![
             "wire_nat_succ",
             "wire_result",
-            resultDropWire?.id ?? "",
           ].includes(wire.id),
       ),
       {

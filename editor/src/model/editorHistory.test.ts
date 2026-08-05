@@ -9,6 +9,7 @@ import {
 import { parseProjectJson } from "./importProject";
 import { addElement, updateListItemType } from "./editorOps";
 import { collectConnectablePorts } from "./portConnections";
+import { preflightProjectDiagnostics } from "./sourceDiagnostics";
 import { planTypeAutoMatch } from "./typeAutoMatch";
 import { autoLayoutDocument, stripLayoutForComparison } from "./autoLayout";
 
@@ -171,6 +172,92 @@ describe("editor command history", () => {
       (candidate) => candidate.id === "node_nat_2",
     );
     expect(element?.properties).toEqual({ value: "2" });
+  });
+
+  it("keeps call creation and direct result connection as coherent undoable commands", () => {
+    const initial = parseProjectJson(exampleJson);
+    const authored = executeEditorCommand(createEditorHistory(initial), {
+      type: "add_function_template",
+      hostContainerId: "entry",
+      draft: {
+        templateId: "choose_right",
+        parameters: [
+          { name: "left", type: "nat" },
+          { name: "right", type: "nat" },
+        ],
+        resultType: "nat",
+      },
+    }).history;
+    const withoutEntryResult = executeEditorCommand(authored, {
+      type: "delete_selection",
+      selection: { type: "wire", id: "wire_result" },
+    }).history;
+    const called = executeEditorCommand(withoutEntryResult, {
+      type: "add_function_call",
+      hostContainerId: "entry",
+      templateId: "choose_right",
+    });
+    expect(called.error).toBeUndefined();
+    expect(called.history.past).toHaveLength(3);
+    const call = called.history.present.geometry.elements.find(
+      (element) => element.kind === "project_call",
+    )!;
+    expect(
+      called.history.present.geometry.wires.some(
+        (wire) =>
+          wire.sourceHint?.kind === "element_port" &&
+          wire.sourceHint.elementId === call.id &&
+          wire.sourceHint.port === "result",
+      ),
+    ).toBe(false);
+    expect(
+      preflightProjectDiagnostics(called.history.present).filter(
+        (diagnostic) => diagnostic.code === "surface.unconsumed-call-result",
+      ),
+    ).toHaveLength(1);
+
+    const ports = collectConnectablePorts(called.history.present);
+    const source = ports.find((port) => port.key === `element:${call.id}:result`)!;
+    const target = ports.find(
+      (port) =>
+        port.hint.kind === "boundary_port" &&
+        port.hint.containerId === "entry" &&
+        port.name === "result",
+    )!;
+    const connected = executeEditorCommand(called.history, {
+      type: "add_wire",
+      source,
+      target,
+    });
+    expect(connected.error).toBeUndefined();
+    expect(
+      preflightProjectDiagnostics(connected.history.present).filter(
+        (diagnostic) => diagnostic.code === "surface.unconsumed-call-result",
+      ),
+    ).toHaveLength(0);
+
+    const undoneConnection = undoEditorCommand(connected.history);
+    expect(undoneConnection.present).toBe(called.history.present);
+    expect(
+      preflightProjectDiagnostics(undoneConnection.present).filter(
+        (diagnostic) => diagnostic.code === "surface.unconsumed-call-result",
+      ),
+    ).toHaveLength(1);
+    const redoneConnection = redoEditorCommand(undoneConnection);
+    expect(redoneConnection.present).toBe(connected.history.present);
+    expect(
+      preflightProjectDiagnostics(redoneConnection.present).filter(
+        (diagnostic) => diagnostic.code === "surface.unconsumed-call-result",
+      ),
+    ).toHaveLength(0);
+
+    const undoneCall = undoEditorCommand(called.history);
+    expect(
+      undoneCall.present.geometry.elements.some(
+        (element) => element.kind === "project_call",
+      ),
+    ).toBe(false);
+    expect(redoEditorCommand(undoneCall).present).toBe(called.history.present);
   });
 
   it("undoes and redoes an entry result type edit", () => {

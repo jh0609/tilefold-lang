@@ -50,6 +50,12 @@ function boundaryPort(
   );
 }
 
+function elementPort(page: Page, id: string, name: string, direction: string) {
+  return page.locator(
+    `[data-node-id="${id}"][data-port-name="${name}"][data-port-direction="${direction}"]`,
+  );
+}
+
 async function selectAndDelete(page: Page, locator: Locator) {
   await locator.focus();
   await page.keyboard.press("Enter");
@@ -90,6 +96,25 @@ async function addIdentityCall(page: Page) {
   await expect(
     page.getByText(/Created a call to diagnosticIdentity/),
   ).toBeVisible();
+}
+
+async function explicitlyDropLastApplyResult(page: Page) {
+  const applyId = await page
+    .locator('g.element-node[data-node-kind="apply"]')
+    .last()
+    .getAttribute("data-node-id");
+  expect(applyId).not.toBeNull();
+  await page.getByRole("button", { name: "Add Drop" }).click();
+  const drop = page.locator('g.element-node.selected[data-node-kind="drop"]');
+  await expect(drop).toBeVisible();
+  const dropId = await drop.getAttribute("data-node-id");
+  expect(dropId).not.toBeNull();
+  await page.getByLabel("Value type").selectOption("nat");
+  await dragConnect(
+    page,
+    elementPort(page, applyId!, "result", "output"),
+    elementPort(page, dropId!, "input", "input"),
+  );
 }
 
 async function runAndExpectNat3(page: Page) {
@@ -148,6 +173,7 @@ test("maps an incomplete function result diagnostic back to the function body", 
   );
   await returnToEntry(page);
   await addIdentityCall(page);
+  await explicitlyDropLastApplyResult(page);
 
   await page.getByRole("button", { name: "Run" }).click();
   const diagnostic = page.getByRole("button", {

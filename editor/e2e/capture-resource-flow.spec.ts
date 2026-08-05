@@ -249,14 +249,6 @@ test("fans out a Capture boundary output through managed Copy and Drop materiali
     .last()
     .getAttribute("data-node-id");
   expect(applyId).not.toBeNull();
-  const resultDropWire = page
-    .locator(
-      `polyline[data-source-node-id="${applyId}"][data-source-port-name="result"][data-target-node-kind="drop"]`,
-    )
-    .first();
-  const resultDropId = await resultDropWire.getAttribute("data-target-node-id");
-  expect(resultDropId).not.toBeNull();
-  await selectAndDelete(page, page.locator(`g.element-node[data-node-id="${resultDropId}"]`));
   await dragConnect(
     page,
     elementPort(page, applyId!, "result", "output"),

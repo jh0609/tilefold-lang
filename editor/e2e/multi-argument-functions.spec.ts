@@ -239,7 +239,7 @@ async function addStandardCall(page: Page, name: string, templateId: string) {
   return id!;
 }
 
-async function clearAutoInputsAndResultDrop(page: Page, nodeId: string, arity: number) {
+async function clearAutoInputs(page: Page, nodeId: string, arity: number) {
   for (let index = 0; index < arity; index += 1) {
     const wire = page
       .locator(`polyline[data-target-node-id="${nodeId}"][data-target-port-name="arg_${index}"]`)
@@ -247,11 +247,6 @@ async function clearAutoInputsAndResultDrop(page: Page, nodeId: string, arity: n
     const sourceId = await wire.getAttribute("data-source-node-id");
     if (sourceId) await selectAndDelete(page, element(page, sourceId));
   }
-  const resultDropWire = page
-    .locator(`polyline[data-source-node-id="${nodeId}"][data-source-port-name="result"][data-target-node-kind="drop"]`)
-    .first();
-  const dropId = await resultDropWire.getAttribute("data-target-node-id");
-  if (dropId) await selectAndDelete(page, element(page, dropId));
 }
 
 async function clearFunctionResultLiteral(page: Page, containerId: string) {
@@ -299,8 +294,8 @@ async function buildClamp(page: Page) {
   await openContainer(page, containerId);
   const maxId = await addStandardCall(page, "max", "tilefold.std.nat.max");
   const minId = await addStandardCall(page, "min", "tilefold.std.nat.min");
-  await clearAutoInputsAndResultDrop(page, maxId, 2);
-  await clearAutoInputsAndResultDrop(page, minId, 2);
+  await clearAutoInputs(page, maxId, 2);
+  await clearAutoInputs(page, minId, 2);
   await dragConnect(page, params.nth(0), port(page, maxId, "arg_0", "input"), 0);
   await dragConnect(page, params.nth(1), port(page, maxId, "arg_1", "input"), 0);
   await dragConnect(page, port(page, maxId, "result", "output"), port(page, minId, "arg_0", "input"));
@@ -327,9 +322,9 @@ async function buildBetween(page: Page) {
     "tilefold.std.nat.lessOrEqual",
   );
   const andId = await addStandardCall(page, "and", "tilefold.std.bool.and");
-  await clearAutoInputsAndResultDrop(page, lowerToNId, 2);
-  await clearAutoInputsAndResultDrop(page, nToUpperId, 2);
-  await clearAutoInputsAndResultDrop(page, andId, 2);
+  await clearAutoInputs(page, lowerToNId, 2);
+  await clearAutoInputs(page, nToUpperId, 2);
+  await clearAutoInputs(page, andId, 2);
   await dragConnect(page, params.nth(0), port(page, copyId, "input", "input"), 0);
   await dragConnect(page, params.nth(1), port(page, lowerToNId, "arg_0", "input"), 0);
   await dragConnect(page, port(page, copyId, "left", "output"), port(page, lowerToNId, "arg_1", "input"));
@@ -361,7 +356,7 @@ async function buildFactorialStep(page: Page) {
     "multiply",
     "tilefold.std.nat.multiply",
   );
-  await clearAutoInputsAndResultDrop(page, multiplyId, 2);
+  await clearAutoInputs(page, multiplyId, 2);
   await dragConnect(page, params.nth(0), port(page, succId, "input", "input"), 0);
   await dragConnect(page, params.nth(1), port(page, multiplyId, "arg_0", "input"), 0);
   await dragConnect(
@@ -406,12 +401,6 @@ async function addProjectCall(page: Page, templateId: string) {
 }
 
 async function connectCallToEntry(page: Page, callId: string) {
-  const resultDropWire = page
-    .locator(`polyline[data-source-node-id="${callId}"][data-source-port-name="result"][data-target-node-kind="drop"]`)
-    .first();
-  const dropId = await resultDropWire.getAttribute("data-target-node-id");
-  expect(dropId).not.toBeNull();
-  await selectAndDelete(page, element(page, dropId!));
   await dragConnect(page, port(page, callId, "result", "output"), boundaryPort(page, "entry", "result", "input"));
 }
 
@@ -437,12 +426,6 @@ async function callArgumentSources(page: Page, callId: string, arity = 3) {
 }
 
 async function connectBoolCallToNatEntry(page: Page, callId: string) {
-  const resultDropWire = page
-    .locator(`polyline[data-source-node-id="${callId}"][data-source-port-name="result"][data-target-node-kind="drop"]`)
-    .first();
-  const dropId = await resultDropWire.getAttribute("data-target-node-id");
-  expect(dropId).not.toBeNull();
-  await selectAndDelete(page, element(page, dropId!));
   const boolRecId = await addNodeAndGetId(page, "Add BoolRec", "bool_rec");
   await setValueType(page, boolRecId, "nat");
   const falseId = await addNodeAndGetId(page, "Add Nat", "nat_literal");
@@ -734,7 +717,7 @@ test("creates a compatible function reference from NatRec.step expected type", a
     "multiply",
     "tilefold.std.nat.multiply",
   );
-  await clearAutoInputsAndResultDrop(page, multiplyId, 2);
+  await clearAutoInputs(page, multiplyId, 2);
   await dragConnect(page, params.nth(0), port(page, succId, "input", "input"), 0);
   await dragConnect(page, params.nth(1), port(page, multiplyId, "arg_0", "input"), 0);
   await dragConnect(

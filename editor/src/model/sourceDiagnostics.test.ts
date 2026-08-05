@@ -4,10 +4,12 @@ import {
   addElement,
   addFunctionCall,
   addFunctionTemplate,
+  addWire,
   deleteSelection,
   editSurfaceFunctionSignature,
 } from "./editorOps";
 import { exportProjectJson, parseProjectJson } from "./importProject";
+import { collectConnectablePorts } from "./portConnections";
 import {
   createLoweringSourceMap,
   diagnosticSourceSelection,
@@ -32,7 +34,43 @@ function callableProject() {
   }).document;
   const called = addFunctionCall(withoutStarter, "entry", "choose_right");
   if ("error" in called) throw new Error(called.error);
-  return { ...called, callElement: called.functionElement, container: authored.container };
+  const withoutEntryResult = {
+    ...called.document,
+    geometry: {
+      ...called.document.geometry,
+      wires: called.document.geometry.wires.filter(
+        (wire) =>
+          !(
+            wire.targetHint?.kind === "boundary_port" &&
+            wire.targetHint.containerId === "entry" &&
+            authored.document.geometry.containers[0]?.boundaryPorts.some(
+              (boundary) =>
+                boundary.role === "result" &&
+                wire.targetHint?.kind === "boundary_port" &&
+                wire.targetHint.boundaryId === boundary.id,
+            )
+          ),
+      ),
+    },
+  };
+  const ports = collectConnectablePorts(withoutEntryResult);
+  const source = ports.find(
+    (port) => port.key === `element:${called.functionElement.id}:result`,
+  )!;
+  const target = ports.find(
+    (port) =>
+      port.hint.kind === "boundary_port" &&
+      port.hint.containerId === "entry" &&
+      port.name === "result",
+  )!;
+  const connected = addWire(withoutEntryResult, source, target);
+  if ("error" in connected) throw new Error(connected.error);
+  return {
+    ...called,
+    document: connected.document,
+    callElement: called.functionElement,
+    container: authored.container,
+  };
 }
 
 describe("source-mapped diagnostics", () => {
@@ -136,6 +174,42 @@ describe("source-mapped diagnostics", () => {
         elementId: called.functionElement.id,
         port: "arg_0",
       },
+    });
+  });
+
+  it("maps an unconsumed Call result to the exact visible result port", () => {
+    const project = parseProjectJson(exampleJson);
+    const authored = addFunctionTemplate(project, "entry", {
+      templateId: "choose_right",
+      parameters: [
+        { name: "left", type: "nat" },
+        { name: "right", type: "nat" },
+      ],
+      resultType: "nat",
+    });
+    if ("error" in authored) throw new Error(authored.error);
+    const called = addFunctionCall(authored.document, "entry", "choose_right");
+    if ("error" in called) throw new Error(called.error);
+
+    const diagnostics = preflightProjectDiagnostics(called.document).filter(
+      (diagnostic) => diagnostic.code === "surface.unconsumed-call-result",
+    );
+    expect(diagnostics).toEqual([
+      expect.objectContaining({
+        summary: 'Call "choose_right" result is not connected.',
+        detail:
+          "Connect the call result to a consumer, to the graph result, or to an explicitly added Drop before running.",
+        primarySource: {
+          kind: "element",
+          containerId: "entry",
+          elementId: called.functionElement.id,
+          port: "result",
+        },
+      }),
+    ]);
+    expect(diagnosticSourceSelection(diagnostics[0]?.primarySource)).toEqual({
+      type: "element",
+      id: called.functionElement.id,
     });
   });
 

@@ -153,13 +153,6 @@ async function addCapturedSuccCall(page: Page) {
   await element(page, valueSource!).click();
   await page.getByLabel("Nat value").fill("2");
 
-  const resultDropWire = page.locator(
-    'polyline[data-source-node-kind="apply"][data-source-port-name="result"][data-target-node-kind="drop"]',
-  ).last();
-  const resultDropId = await resultDropWire.getAttribute("data-target-node-id");
-  expect(resultDropId).not.toBeNull();
-  await selectAndDelete(page, element(page, resultDropId!));
-
   const applyId = await page
     .locator('g.element-node[data-node-kind="apply"]')
     .last()

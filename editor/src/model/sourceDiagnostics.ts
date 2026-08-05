@@ -14,6 +14,7 @@ import type {
   Selection,
   StableId,
 } from "./project";
+import { standardLibraryFunction } from "./standardLibrary";
 
 export type DiagnosticPhase =
   | "surface-validation"
@@ -413,7 +414,8 @@ export function preflightProjectDiagnostics(
             phase: "surface-validation",
             severity: "error",
             summary: `Call "${surfaceFunction.name}" result is not connected.`,
-            detail: "Connect the call result to a consumer or to the graph result.",
+            detail:
+              "Connect the call result to a consumer, to the graph result, or to an explicitly added Drop before running.",
             primarySource: {
               kind: "element",
               containerId: callContainerId,
@@ -421,6 +423,65 @@ export function preflightProjectDiagnostics(
               port: "result",
             },
             relatedSources: callRelatedSources(document, templateId),
+            coreReferences: [`surface-port:${element.id}:result`],
+          }),
+        );
+      }
+      continue;
+    }
+    if (element.kind === "library_call") {
+      const definition = standardLibraryFunction(element.properties.templateId);
+      if (!definition) continue;
+      const callContainerId = elementOwnerId(document, element);
+      definition.parameters.forEach((parameter, index) => {
+        const port = `arg_${index}`;
+        const hint: EndpointHint = {
+          kind: "element_port",
+          elementId: element.id,
+          port,
+        };
+        if (!portKeys.has(`element:${element.id}:${port}`)) return;
+        if (hasIncomingWire(document.geometry.wires, hint)) return;
+        diagnostics.push(
+          diagnostic({
+            id: `diag:missing-call-arg:${element.id}:${parameter.name}`,
+            code: "surface.missing-call-argument",
+            phase: "surface-validation",
+            severity: "error",
+            summary: `Call "${definition.displayName}" is missing a value for argument "${parameter.name}".`,
+            detail: "Connect a value to the named argument port before running.",
+            primarySource: {
+              kind: "element",
+              containerId: callContainerId,
+              elementId: element.id,
+              port,
+            },
+            coreReferences: [`surface-port:${element.id}:${port}`],
+          }),
+        );
+      });
+      if (
+        !hasOutgoingWire(document.geometry.wires, {
+          kind: "element_port",
+          elementId: element.id,
+          port: "result",
+        })
+      ) {
+        diagnostics.push(
+          diagnostic({
+            id: `diag:unused-call-result:${element.id}`,
+            code: "surface.unconsumed-call-result",
+            phase: "surface-validation",
+            severity: "error",
+            summary: `Call "${definition.displayName}" result is not connected.`,
+            detail:
+              "Connect the call result to a consumer, to the graph result, or to an explicitly added Drop before running.",
+            primarySource: {
+              kind: "element",
+              containerId: callContainerId,
+              elementId: element.id,
+              port: "result",
+            },
             coreReferences: [`surface-port:${element.id}:result`],
           }),
         );
@@ -520,7 +581,8 @@ export function preflightProjectDiagnostics(
           phase: "surface-validation",
           severity: "error",
           summary: `Call "${functionDisplayName(document, templateId)}" result is not connected.`,
-          detail: "Connect the call result to a consumer or to the graph result.",
+          detail:
+            "Connect the call result to a consumer, to the graph result, or to an explicitly added Drop before running.",
           primarySource: {
             kind: "element",
             containerId: callContainerId,

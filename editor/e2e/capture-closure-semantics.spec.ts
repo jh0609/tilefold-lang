@@ -325,12 +325,6 @@ async function buildPredStepEntry(page: Page, index: number, previous: number) {
   await setElementPosition(page, previousId!, 15, 210);
   await setNatValue(page, indexId!, index);
   await setNatValue(page, previousId!, previous);
-  const resultDropWire = page
-    .locator(`polyline[data-source-node-id="${callId}"][data-source-port-name="result"][data-target-node-kind="drop"]`)
-    .first();
-  const resultDropId = await resultDropWire.getAttribute("data-target-node-id");
-  expect(resultDropId).not.toBeNull();
-  await selectAndDelete(page, element(page, resultDropId!));
   await dragConnectViaMidpoint(
     page,
     port(page, callId!, "result", "output"),
@@ -465,14 +459,6 @@ test.describe("capture closure execution semantics", () => {
       await setElementPosition(page, previousId!, 10, rowY + 175);
       await setNatValue(page, indexId!, index);
       await setNatValue(page, previousId!, previous);
-      const resultDropWire = page
-        .locator(
-          `polyline[data-source-node-id="${callId}"][data-source-port-name="result"][data-target-node-kind="drop"]`,
-        )
-        .first();
-      const resultDropId = await resultDropWire.getAttribute("data-target-node-id");
-      expect(resultDropId).not.toBeNull();
-      await selectAndDelete(page, element(page, resultDropId!));
       return callId!;
     }
 

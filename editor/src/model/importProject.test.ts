@@ -429,6 +429,28 @@ describe("Project JSON v2 import and export", () => {
     expect(roundTripped.surfaceLibraryCalls).toEqual(
       called.document.surfaceLibraryCalls,
     );
+    expect(
+      roundTripped.geometry.wires.some(
+        (wire) =>
+          wire.sourceHint?.kind === "element_port" &&
+          wire.sourceHint.elementId === called.functionElement.id &&
+          wire.sourceHint.port === "result",
+      ),
+    ).toBe(false);
+    expect(
+      roundTripped.geometry.elements.some(
+        (element) =>
+          element.kind === "drop" &&
+          roundTripped.geometry.wires.some(
+            (wire) =>
+              wire.sourceHint?.kind === "element_port" &&
+              wire.sourceHint.elementId === called.functionElement.id &&
+              wire.sourceHint.port === "result" &&
+              wire.targetHint?.kind === "element_port" &&
+              wire.targetHint.elementId === element.id,
+          ),
+      ),
+    ).toBe(false);
 
     const wrongVersion = JSON.parse(exportProjectJson(called.document));
     wrongVersion.surfaceLibraryCalls[0].version = "v999";
@@ -470,6 +492,91 @@ describe("Project JSON v2 import and export", () => {
     });
     expect(() => parseProjectJson(JSON.stringify(extraSyntheticPort))).toThrow(
       "$.geometry.elements",
+    );
+  });
+
+  it("imports and exports legacy provenance-marked call result starter Drops unchanged", () => {
+    const called = addFunctionCall(
+      parseProjectJson(exampleJson),
+      "entry",
+      "tilefold.std.nat.add",
+    );
+    if ("error" in called) throw new Error(called.error);
+    const callResult = called.functionElement.portAnchors.find(
+      (anchor) => anchor.port === "result",
+    )!;
+    const legacy = {
+      ...called.document,
+      geometry: {
+        ...called.document.geometry,
+        elements: [
+          ...called.document.geometry.elements,
+          {
+            id: "legacy_result_drop",
+            kind: "drop" as const,
+            bounds: { x: callResult.x + 80, y: callResult.y - 28, width: 88, height: 56 },
+            properties: {
+              type: "nat" as const,
+              provenance: {
+                kind: "auto_function_output_drop" as const,
+                sourceElementId: called.functionElement.id,
+              },
+            },
+            portAnchors: [{ port: "input", x: callResult.x + 80, y: callResult.y }],
+          },
+        ],
+        wires: [
+          ...called.document.geometry.wires,
+          {
+            id: "legacy_result_drop_wire",
+            points: [
+              { x: callResult.x, y: callResult.y },
+              { x: callResult.x + 80, y: callResult.y },
+            ],
+            sourceHint: {
+              kind: "element_port" as const,
+              elementId: called.functionElement.id,
+              port: "result",
+            },
+            targetHint: {
+              kind: "element_port" as const,
+              elementId: "legacy_result_drop",
+              port: "input",
+            },
+          },
+        ],
+      },
+    };
+
+    const parsed = parseProjectJson(exportProjectJson(legacy));
+
+    expect(parsed.geometry.elements).toContainEqual(
+      expect.objectContaining({
+        id: "legacy_result_drop",
+        kind: "drop",
+        properties: {
+          type: "nat",
+          provenance: {
+            kind: "auto_function_output_drop",
+            sourceElementId: called.functionElement.id,
+          },
+        },
+      }),
+    );
+    expect(parsed.geometry.wires).toContainEqual(
+      expect.objectContaining({
+        id: "legacy_result_drop_wire",
+        sourceHint: {
+          kind: "element_port",
+          elementId: called.functionElement.id,
+          port: "result",
+        },
+        targetHint: {
+          kind: "element_port",
+          elementId: "legacy_result_drop",
+          port: "input",
+        },
+      }),
     );
   });
 

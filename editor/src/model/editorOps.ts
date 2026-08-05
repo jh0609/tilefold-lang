@@ -2354,30 +2354,15 @@ export function addFunctionCall(
         )
       : null;
 
-  const resultDropBounds: Bounds = {
-    x: host.bounds.x + 100,
-    y: argumentBounds.y + argumentBounds.height + 24,
-    width: 88,
-    height: 56,
-  };
-  const resultDrop: ProjectElement = {
-    id: allocate("node_drop_"),
-    kind: "drop",
-    bounds: resultDropBounds,
-    properties: { type: descriptor.resultType },
-    portAnchors: [
-      {
-        port: "input",
-        x: resultDropBounds.x,
-        y: resultDropBounds.y + resultDropBounds.height / 2,
-      },
-    ],
-  };
   const expandedHostBounds: Bounds = {
     ...host.bounds,
     height:
-      resultDropBounds.y +
-      resultDropBounds.height +
+      Math.max(
+        applyBounds.y + applyBounds.height,
+        argument?.bounds.y ?? applyBounds.y,
+        argument ? argument.bounds.y + argument.bounds.height : applyBounds.y,
+        ...captureElements.map((element) => element.bounds.y + element.bounds.height),
+      ) +
       24 -
       host.bounds.y,
   };
@@ -2401,10 +2386,6 @@ export function addFunctionCall(
   const applyArgument = applyElement.portAnchors.find(
     (anchor) => anchor.port === "argument",
   )!;
-  const applyResult = applyElement.portAnchors.find(
-    (anchor) => anchor.port === "result",
-  )!;
-  const resultDropInput = resultDrop.portAnchors[0]!;
   const callWires: ProjectWire[] = [
     {
       id: allocate("wire_"),
@@ -2427,35 +2408,10 @@ export function addFunctionCall(
         port: "function",
       },
     },
-    {
-      id: allocate("wire_"),
-      points: [
-        { x: applyResult.x, y: applyResult.y },
-        {
-          x: host.bounds.x + host.bounds.width - 4,
-          y: applyResult.y,
-        },
-        {
-          x: host.bounds.x + host.bounds.width - 4,
-          y: resultDropInput.y,
-        },
-        { x: resultDropInput.x, y: resultDropInput.y },
-      ],
-      sourceHint: {
-        kind: "element_port",
-        elementId: applyElement.id,
-        port: "result",
-      },
-      targetHint: {
-        kind: "element_port",
-        elementId: resultDrop.id,
-        port: "input",
-      },
-    },
   ];
   if (argument) {
     const argumentOutput = argument.portAnchors[0]!;
-    callWires.splice(1, 0, {
+    callWires.push({
       id: allocate("wire_"),
       points: [
         { x: argumentOutput.x, y: argumentOutput.y },
@@ -2497,7 +2453,6 @@ export function addFunctionCall(
           ...captureElements,
           applyElement,
           ...(argument ? [argument] : []),
-          resultDrop,
         ],
         containers: document.geometry.containers.map((container) =>
           container.id === host.id ? updatedHost : container,
@@ -2596,54 +2551,16 @@ function addProjectFunctionCall(
       },
     });
   });
-  const resultAnchor = callElement.portAnchors.find(
-    (anchor) => anchor.port === "result",
-  )!;
-  const resultDropBounds: Bounds = {
-    x: Math.min(
-      resultAnchor.x + 96,
-      host.bounds.x + host.bounds.width - 92,
-    ),
-    y: resultAnchor.y - 28,
-    width: 88,
-    height: 56,
-  };
-  const resultDrop: ProjectElement = {
-    id: allocate("node_drop_"),
-    kind: "drop",
-    bounds: resultDropBounds,
-    properties: { type: functionInfo.result.type },
-    portAnchors: [
-      {
-        port: "input",
-        x: resultDropBounds.x,
-        y: resultDropBounds.y + resultDropBounds.height / 2,
-      },
-    ],
-  };
-  wires.push({
-    id: allocate("wire_"),
-    points: [
-      { x: resultAnchor.x, y: resultAnchor.y },
-      { x: resultDropBounds.x, y: resultDropBounds.y + resultDropBounds.height / 2 },
-    ],
-    sourceHint: {
-      kind: "element_port",
-      elementId: callElement.id,
-      port: "result",
-    },
-    targetHint: {
-      kind: "element_port",
-      elementId: resultDrop.id,
-      port: "input",
-    },
-  });
+  const createdElements = [callElement, ...arguments_];
+  const createdBottom = Math.max(
+    ...createdElements.map((element) => element.bounds.y + element.bounds.height),
+  );
   const expandedHostBounds: Bounds = {
     ...host.bounds,
     height:
       Math.max(
         host.bounds.y + host.bounds.height,
-        resultDropBounds.y + resultDropBounds.height + 24,
+        createdBottom + 24,
       ) - host.bounds.y,
     width: host.bounds.width,
   };
@@ -2687,7 +2604,6 @@ function addProjectFunctionCall(
           ...document.geometry.elements,
           callElement,
           ...arguments_,
-          resultDrop,
         ],
         containers: document.geometry.containers.map((container) =>
           container.id === host.id ? updatedHost : container,
@@ -2773,10 +2689,11 @@ function addStandardLibraryFunctionCall(
       const inputAnchor = callElement.portAnchors.find(
         (anchor) => anchor.port === `arg_${index}`,
       )!;
+      const argumentWidth = literalWidth(parameter.type);
       const argumentBounds: Bounds = {
-        x: callBounds.x - 144,
+        x: Math.max(host.bounds.x + 4, callBounds.x - argumentWidth - 48),
         y: inputAnchor.y - 28,
-        width: literalWidth(parameter.type),
+        width: argumentWidth,
         height: 56,
       };
       const argument = makeLiteralForType(
@@ -2806,59 +2723,17 @@ function addStandardLibraryFunctionCall(
     }
   });
 
-  const resultAnchor = callElement.portAnchors.find(
-    (anchor) => anchor.port === "result",
-  )!;
-  const resultDropBounds: Bounds = {
-    x: resultAnchor.x + 96,
-    y: resultAnchor.y - 28,
-    width: 88,
-    height: 56,
-  };
-  const resultDrop: ProjectElement = {
-    id: allocate("node_drop_"),
-    kind: "drop",
-    bounds: resultDropBounds,
-    properties: { type: definition.resultType },
-    portAnchors: [
-      {
-        port: "input",
-        x: resultDropBounds.x,
-        y: resultDropBounds.y + resultDropBounds.height / 2,
-      },
-    ],
-  };
-  wires.push({
-    id: allocate("wire_"),
-    points: [
-      { x: resultAnchor.x, y: resultAnchor.y },
-      { x: resultDropBounds.x, y: resultDropBounds.y + resultDropBounds.height / 2 },
-    ],
-    sourceHint: {
-      kind: "element_port",
-      elementId: callElement.id,
-      port: "result",
-    },
-    targetHint: {
-      kind: "element_port",
-      elementId: resultDrop.id,
-      port: "input",
-    },
-  });
-
   const expandedHostBounds: Bounds = {
     ...host.bounds,
     height:
       Math.max(
         host.bounds.y + host.bounds.height,
         callBounds.y + callBounds.height + 24,
-        resultDropBounds.y + resultDropBounds.height + 24,
       ) - host.bounds.y,
     width:
       Math.max(
         host.bounds.x + host.bounds.width,
         callBounds.x + callBounds.width + 24,
-        resultDropBounds.x + resultDropBounds.width + 24,
       ) - host.bounds.x,
   };
   const overlappingContainer = document.geometry.containers.find(
@@ -2892,7 +2767,6 @@ function addStandardLibraryFunctionCall(
           ...document.geometry.elements,
           callElement,
           ...arguments_,
-          resultDrop,
         ],
         containers: document.geometry.containers.map((container) =>
           container.id === host.id ? updatedHost : container,

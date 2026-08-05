@@ -349,14 +349,6 @@ test("authors apply_twice with Arrow capture, Copy, nested Apply, export, and re
     .last()
     .getAttribute("data-node-id");
   expect(callApplyId).not.toBeNull();
-  const resultDropWire = page
-    .locator(
-      'polyline[data-source-node-kind="apply"][data-source-port-name="result"][data-target-node-kind="drop"]',
-    )
-    .last();
-  const resultDropId = await resultDropWire.getAttribute("data-target-node-id");
-  expect(resultDropId).not.toBeNull();
-  await selectAndDelete(page, element(page, resultDropId!));
   await dragConnect(
     page,
     port(page, callApplyId!, "result", "output"),
@@ -411,15 +403,6 @@ test("returns an Arrow value from a Call and re-applies it", async ({
     byTemplate(page, "inc").locator('[data-port-name="value"][data-port-direction="output"]'),
     port(page, callApplyId!, "argument", "input"),
   );
-
-  const resultDropWire = page
-    .locator(
-      `polyline[data-source-node-id="${callApplyId}"][data-source-port-name="result"][data-target-node-kind="drop"]`,
-    )
-    .first();
-  const resultDropId = await resultDropWire.getAttribute("data-target-node-id");
-  expect(resultDropId).not.toBeNull();
-  await selectAndDelete(page, element(page, resultDropId!));
 
   const reapplyId = await addNodeAndGetId(page, "Add Apply", "apply");
   const natId = await addNodeAndGetId(page, "Add Nat", "nat_literal");

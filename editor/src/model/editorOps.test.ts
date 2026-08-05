@@ -1094,7 +1094,7 @@ describe("editor operations", () => {
     });
   });
 
-  it("creates a complete existing-template call with capture and argument defaults", () => {
+  it("creates an existing-template call with capture and argument defaults but no result Drop", () => {
     const project = parseProjectJson(exampleJson);
     const authored = addFunctionTemplate(project, "entry", {
       templateId: "add_offset",
@@ -1154,9 +1154,39 @@ describe("editor operations", () => {
         (wire) =>
           wire.sourceHint?.kind === "element_port" &&
           wire.sourceHint.elementId === result.applyElement!.id &&
-          wire.targetHint?.kind === "element_port",
+          wire.sourceHint.port === "result",
       ),
-    ).toBe(true);
+    ).toBe(false);
+    expect(
+      result.document.geometry.elements.some(
+        (element) =>
+          element.kind === "drop" &&
+          result.document.geometry.wires.some(
+            (wire) =>
+              wire.sourceHint?.kind === "element_port" &&
+              wire.sourceHint.elementId === result.applyElement!.id &&
+              wire.sourceHint.port === "result" &&
+              wire.targetHint?.kind === "element_port" &&
+              wire.targetHint.elementId === element.id,
+          ),
+      ),
+    ).toBe(false);
+    expect(
+      preflightProjectDiagnostics(result.document).filter(
+        (diagnostic) => diagnostic.code === "surface.unconsumed-call-result",
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        primarySource: {
+          kind: "element",
+          containerId: "entry",
+          elementId: result.applyElement!.id,
+          port: "result",
+        },
+        detail:
+          "Connect the call result to a consumer, to the graph result, or to an explicitly added Drop before running.",
+      }),
+    ]);
     expect(() =>
       parseProjectJson(exportProjectJson(result.document)),
     ).not.toThrow();
@@ -1213,6 +1243,42 @@ describe("editor operations", () => {
       ["result", "result"],
     ]);
     expect(called.applyElement).toBeNull();
+    expect(
+      called.document.geometry.wires.some(
+        (wire) =>
+          wire.sourceHint?.kind === "element_port" &&
+          wire.sourceHint.elementId === called.functionElement.id &&
+          wire.sourceHint.port === "result",
+      ),
+    ).toBe(false);
+    expect(
+      called.document.geometry.elements.some(
+        (element) =>
+          element.kind === "drop" &&
+          called.document.geometry.wires.some(
+            (wire) =>
+              wire.sourceHint?.kind === "element_port" &&
+              wire.sourceHint.elementId === called.functionElement.id &&
+              wire.sourceHint.port === "result" &&
+              wire.targetHint?.kind === "element_port" &&
+              wire.targetHint.elementId === element.id,
+          ),
+      ),
+    ).toBe(false);
+    expect(
+      preflightProjectDiagnostics(called.document).filter(
+        (diagnostic) => diagnostic.code === "surface.unconsumed-call-result",
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        primarySource: {
+          kind: "element",
+          containerId: "entry",
+          elementId: called.functionElement.id,
+          port: "result",
+        },
+      }),
+    ]);
     expect(called.document.surfaceProjectCalls).toEqual([
       {
         id: "project_call_1",
@@ -1220,6 +1286,225 @@ describe("editor operations", () => {
         functionElementId: called.functionElement.id,
       },
     ]);
+  });
+
+  it("connects a newly authored project Call result directly to the graph result", () => {
+    const project = parseProjectJson(exampleJson);
+    const authored = addFunctionTemplate(project, "entry", {
+      templateId: "choose_right",
+      parameters: [
+        { name: "left", type: "nat" },
+        { name: "right", type: "nat" },
+      ],
+      resultType: "nat",
+    });
+    if ("error" in authored) throw new Error(authored.error);
+    const withoutEntryResult = deleteSelection(authored.document, {
+      type: "wire",
+      id: "wire_result",
+    }).document;
+    const called = addFunctionCall(withoutEntryResult, "entry", "choose_right");
+    if ("error" in called) throw new Error(called.error);
+    const ports = collectConnectablePorts(called.document);
+    const source = ports.find(
+      (port) => port.key === `element:${called.functionElement.id}:result`,
+    )!;
+    const target = ports.find(
+      (port) =>
+        port.hint.kind === "boundary_port" &&
+        port.hint.containerId === "entry" &&
+        port.name === "result",
+    )!;
+
+    const connected = addWire(called.document, source, target);
+    if ("error" in connected) throw new Error(connected.error);
+
+    expect(
+      connected.document.geometry.wires.some(
+        (wire) =>
+          wire.sourceHint?.kind === "element_port" &&
+          wire.sourceHint.elementId === called.functionElement.id &&
+          wire.sourceHint.port === "result" &&
+          wire.targetHint?.kind === "boundary_port" &&
+          wire.targetHint.containerId === "entry",
+      ),
+    ).toBe(true);
+    expect(
+      preflightProjectDiagnostics(connected.document).filter(
+        (diagnostic) => diagnostic.code === "surface.unconsumed-call-result",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("clears the unconsumed project Call result diagnostic when connected to an explicit Drop", () => {
+    const project = parseProjectJson(exampleJson);
+    const authored = addFunctionTemplate(project, "entry", {
+      templateId: "choose_right",
+      parameters: [
+        { name: "left", type: "nat" },
+        { name: "right", type: "nat" },
+      ],
+      resultType: "nat",
+    });
+    if ("error" in authored) throw new Error(authored.error);
+    const called = addFunctionCall(authored.document, "entry", "choose_right");
+    if ("error" in called) throw new Error(called.error);
+    const dropped = addElement(called.document, "drop", { x: 600, y: 260 });
+    const typedDrop = updateElementType(dropped.document, dropped.element.id, "nat");
+    if (typedDrop.error) throw new Error(typedDrop.error);
+    const ports = collectConnectablePorts(typedDrop.document);
+    const source = ports.find(
+      (port) => port.key === `element:${called.functionElement.id}:result`,
+    )!;
+    const target = ports.find(
+      (port) => port.key === `element:${dropped.element.id}:input`,
+    )!;
+
+    const connected = addWire(typedDrop.document, source, target);
+    if ("error" in connected) throw new Error(connected.error);
+
+    expect(
+      connected.document.geometry.elements.find(
+        (element) => element.id === dropped.element.id,
+      )?.properties,
+    ).toEqual({ type: "nat" });
+    expect(
+      preflightProjectDiagnostics(connected.document).filter(
+        (diagnostic) => diagnostic.code === "surface.unconsumed-call-result",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("rejects an incompatible project Call result connection without changing the raw document", () => {
+    const project = parseProjectJson(exampleJson);
+    const authored = addFunctionTemplate(project, "entry", {
+      templateId: "choose_right",
+      parameters: [
+        { name: "left", type: "nat" },
+        { name: "right", type: "nat" },
+      ],
+      resultType: "nat",
+    });
+    if ("error" in authored) throw new Error(authored.error);
+    const called = addFunctionCall(authored.document, "entry", "choose_right");
+    if ("error" in called) throw new Error(called.error);
+    const ports = collectConnectablePorts(called.document);
+    const source = ports.find(
+      (port) => port.key === `element:${called.functionElement.id}:result`,
+    )!;
+    const target = ports.find((port) => port.key === "element:drop_unit:input")!;
+
+    const result = addWire(called.document, source, target);
+
+    expect("error" in result).toBe(true);
+    expect("document" in result ? result.document : called.document).toBe(
+      called.document,
+    );
+    expect(
+      called.document.geometry.wires.some(
+        (wire) =>
+          wire.sourceHint?.kind === "element_port" &&
+          wire.sourceHint.elementId === called.functionElement.id &&
+          wire.sourceHint.port === "result",
+      ),
+    ).toBe(false);
+  });
+
+  it("replaces a legacy provenance-marked Call result starter Drop when connecting the result", () => {
+    const project = parseProjectJson(exampleJson);
+    const withoutEntryResult = deleteSelection(project, {
+      type: "wire",
+      id: "wire_result",
+    }).document;
+    const called = addFunctionCall(
+      withoutEntryResult,
+      "entry",
+      "tilefold.std.nat.add",
+    );
+    if ("error" in called) throw new Error(called.error);
+    const resultAnchor = called.functionElement.portAnchors.find(
+      (anchor) => anchor.port === "result",
+    )!;
+    const legacy = parseProjectJson(
+      exportProjectJson({
+        ...called.document,
+        geometry: {
+          ...called.document.geometry,
+          elements: [
+            ...called.document.geometry.elements,
+            {
+              id: "legacy_result_drop",
+              kind: "drop",
+              bounds: { x: resultAnchor.x + 80, y: resultAnchor.y - 28, width: 88, height: 56 },
+              properties: {
+                type: "nat",
+                provenance: {
+                  kind: "auto_function_output_drop",
+                  sourceElementId: called.functionElement.id,
+                },
+              },
+              portAnchors: [
+                { port: "input", x: resultAnchor.x + 80, y: resultAnchor.y },
+              ],
+            },
+          ],
+          wires: [
+            ...called.document.geometry.wires,
+            {
+              id: "legacy_result_drop_wire",
+              points: [
+                { x: resultAnchor.x, y: resultAnchor.y },
+                { x: resultAnchor.x + 80, y: resultAnchor.y },
+              ],
+              sourceHint: {
+                kind: "element_port",
+                elementId: called.functionElement.id,
+                port: "result",
+              },
+              targetHint: {
+                kind: "element_port",
+                elementId: "legacy_result_drop",
+                port: "input",
+              },
+            },
+          ],
+        },
+      }),
+    );
+    const ports = collectConnectablePorts(legacy);
+    const source = ports.find(
+      (port) => port.key === `element:${called.functionElement.id}:result`,
+    )!;
+    const target = ports.find(
+      (port) =>
+        port.hint.kind === "boundary_port" &&
+        port.hint.containerId === "entry" &&
+        port.name === "result",
+    )!;
+
+    const connected = addWire(legacy, source, target);
+    if ("error" in connected) throw new Error(connected.error);
+
+    expect(
+      connected.document.geometry.elements.some(
+        (element) => element.id === "legacy_result_drop",
+      ),
+    ).toBe(false);
+    expect(
+      connected.document.geometry.wires.some(
+        (wire) => wire.id === "legacy_result_drop_wire",
+      ),
+    ).toBe(false);
+    expect(
+      connected.document.geometry.wires.some(
+        (wire) =>
+          wire.sourceHint?.kind === "element_port" &&
+          wire.sourceHint.elementId === called.functionElement.id &&
+          wire.sourceHint.port === "result" &&
+          wire.targetHint?.kind === "boundary_port" &&
+          wire.targetHint.containerId === "entry",
+      ),
+    ).toBe(true);
   });
 
   it("derives container dependencies from Function value and Project call references", () => {
@@ -1421,7 +1706,7 @@ describe("editor operations", () => {
     ).toEqual(["step"]);
   });
 
-  it("creates a folded Standard Library call element", () => {
+  it("creates a folded Standard Library call element without a result Drop", () => {
     const project = parseProjectJson(exampleJson);
     const called = addFunctionCall(
       project,
@@ -1449,10 +1734,37 @@ describe("editor operations", () => {
       "result",
     ]);
     expect(
+      called.document.geometry.wires.some(
+        (wire) =>
+          wire.sourceHint?.kind === "element_port" &&
+          wire.sourceHint.elementId === called.functionElement.id &&
+          wire.sourceHint.port === "result",
+      ),
+    ).toBe(false);
+    expect(
+      called.document.geometry.elements.some(
+        (element) =>
+          element.kind === "drop" &&
+          called.document.geometry.wires.some(
+            (wire) =>
+              wire.sourceHint?.kind === "element_port" &&
+              wire.sourceHint.elementId === called.functionElement.id &&
+              wire.sourceHint.port === "result" &&
+              wire.targetHint?.kind === "element_port" &&
+              wire.targetHint.elementId === element.id,
+          ),
+      ),
+    ).toBe(false);
+    expect(
       called.document.geometry.elements.filter(
         (element) => element.kind === "nat_literal",
       ),
     ).toHaveLength(3);
+    expect(
+      preflightProjectDiagnostics(called.document).filter(
+        (diagnostic) => diagnostic.code === "surface.unconsumed-call-result",
+      ),
+    ).toHaveLength(1);
     expect(called.document.surfaceLibraryCalls).toEqual([
       {
         id: "library_call_1",
