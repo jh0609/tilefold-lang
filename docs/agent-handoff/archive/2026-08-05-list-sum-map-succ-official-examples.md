@@ -10,11 +10,15 @@ Task-ID: `2026-08-05-list-sum-map-succ-official-examples`
   `aaddcd7fcb66510b26a37094121ca048224da5f6`
 - Implementation commit: `2aaceb6055af9b68db2f53ee4ed46849fc16d72a`
 - Full validation SHA: `2aaceb6055af9b68db2f53ee4ed46849fc16d72a`
-- Handoff commit: pending
-- Final pushed SHA: pending
+- Handoff commit before deployment follow-up:
+  `d914d98011ca53a5ddeda310d4aadb37355cdfea`
+- Final pushed SHA before deployment follow-up:
+  `d914d98011ca53a5ddeda310d4aadb37355cdfea`
 - Branch: `main`
-- Push: pending
-- Deployment: pending
+- Push: completed to `origin/main`
+- Deployment: completed and Production-verified for pushed SHA
+  `d914d98011ca53a5ddeda310d4aadb37355cdfea`; this archive update is the
+  documentation-only deployment follow-up.
 - Pre-existing user changes/stashes: none observed. Starting working tree was
   clean on `main...origin/main`.
 
@@ -129,16 +133,42 @@ Validation passed for implementation SHA
 
 ## Deployment
 
-Pending. This task changes shipped picker examples, so Production deployment and
-public official-example Chromium verification must be completed after pushing
-the final handoff commit.
+GitHub-connected Vercel Production deployment completed automatically after
+push.
 
-Required follow-up after push:
+- Vercel project: `tilefold-editor`
+- Vercel project ID: `prj_sv8VFJezCyFOp1KyQC5n8r1nIUZi`
+- Vercel team: `draftgame`
+- Vercel team ID: `team_XJ2pKmBL23SYGgxiY5RJdOO6`
+- Production deployment ID: `dpl_Gpbf9kbVS9VB8SDpgEELVDjxUm9o`
+- Deployment state: `READY`
+- Deployment target: `production`
+- Deployment URL:
+  `https://tilefold-editor-kjyqbaf9v-draftgame.vercel.app`
+- Production URL: `https://tilefold-editor.vercel.app`
+- Deployment inspector:
+  `https://vercel.com/draftgame/tilefold-editor/Gpbf9kbVS9VB8SDpgEELVDjxUm9o`
+- Deployment source branch: `main`
+- Deployment source SHA:
+  `d914d98011ca53a5ddeda310d4aadb37355cdfea`
+- Deployment source commit message: `Archive ListRec examples task handoff`
+- Response evidence from public Production URL: `Status=200`,
+  `Server=Vercel`, `X-Vercel-Cache=MISS`,
+  `X-Vercel-Id=icn1::znwcw-1785896279622-74c1d5a379c3`.
 
-- record final pushed SHA and deployment ID/status/source SHA;
-- verify `https://tilefold-editor.vercel.app` serves the final SHA;
-- run the focused public official-example Chromium flow against Production;
-- record console errors and page errors.
+Production Chromium verification against
+`PLAYWRIGHT_BASE_URL=https://tilefold-editor.vercel.app`:
+
+- `npx playwright test e2e/natural-number-examples.spec.ts --project=chromium`:
+  passed, 6 tests.
+- The focused official-example flow opened both new examples through the visible
+  picker, checked filenames and stable graph markers, ran Transparent and Fast,
+  verified exact results, and covered export/import/reload for `list-sum-three`.
+- Console errors: none.
+- Page errors: none.
+
+This deployment follow-up is documentation-only. Full local validation remains
+valid for implementation SHA `2aaceb6055af9b68db2f53ee4ed46849fc16d72a`.
 
 ## Known Limitations
 
