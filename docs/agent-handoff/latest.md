@@ -10,7 +10,9 @@ Protocol:
 
 Pending task:
 
-- None. `docs/agent-tasks/latest.md` is clear.
+- `2026-08-05-step-run-start-cancel-follow-up` - harden cancellation while a
+  Step Run session is starting and correct the final-tree whitespace check.
+- See [docs/agent-tasks/latest.md](../agent-tasks/latest.md).
 
 Latest archive:
 
