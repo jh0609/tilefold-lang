@@ -6,10 +6,12 @@ Task-ID: `2026-08-05-step-run-ui-v1`
 
 - Starting HEAD: `2907f337c13dd07e6e12183d323e41e0ba642e18`
 - Implementation commit: `9d37536` (`Add browser Step Run flow`)
+- Final pushed SHA before deployment follow-up:
+  `dd3c38f0f84c563f521e9d4376d530fc0fb73fa5`
 - Full validation SHA: `9d37536`
 - Branch: `main`
-- Push: pending
-- Deployment: pending
+- Push: completed to `origin/main`
+- Deployment: completed and Production-verified
 - Pre-existing user changes: none; starting working tree and stash were clean.
 
 ## Summary
@@ -105,11 +107,37 @@ name was changed to `Start stepping`, and the full suite passed afterward.
 
 ## Deployment
 
-- Deployment ID: pending
-- Production URL: pending
-- Source SHA: pending
-- Production Step Run E2E: pending
-- Console/page errors: pending
+GitHub-connected Vercel Production deployment completed automatically after
+push.
+
+- GitHub deployment ID: `5754024500`
+- GitHub deployment status ID: `16363455611`
+- Environment: `Production`
+- Deployment state: `success`
+- Deployment URL:
+  `https://tilefold-editor-jyo2pc5w0-draftgame.vercel.app`
+- Production URL: `https://tilefold-editor.vercel.app`
+- Production source SHA:
+  `dd3c38f0f84c563f521e9d4376d530fc0fb73fa5`
+- Response evidence from public Production URL: `Status=200`,
+  `Server=Vercel`, `X-Vercel-Cache=MISS`,
+  `X-Vercel-Id=icn1::m9zhv-1785891690803-82542d85b0dd`.
+- Local Vercel CLI metadata lookup was unavailable because no saved Vercel
+  credentials were present (`No existing credentials found`); GitHub deployment
+  metadata supplied the deployment source SHA and success status.
+
+Production Chromium verification against
+`PLAYWRIGHT_BASE_URL=https://tilefold-editor.vercel.app`:
+
+- `CI=1 npx playwright test e2e/step-run.spec.ts --project=chromium`: passed,
+  1 test.
+- Console errors: none.
+- Page errors: none.
+
+This deployment follow-up is documentation-only. Full local validation remains
+valid for implementation SHA `9d37536`; final deployment source SHA
+`dd3c38f0f84c563f521e9d4376d530fc0fb73fa5` changes handoff/task
+documentation only.
 
 ## Known Limitations
 
