@@ -10,7 +10,8 @@ Protocol:
 
 Pending task:
 
-- None. See [docs/agent-tasks/latest.md](../agent-tasks/latest.md).
+- Call result explicit Drop UX v1 is queued. See
+  [docs/agent-tasks/latest.md](../agent-tasks/latest.md).
 
 Latest archive:
 
