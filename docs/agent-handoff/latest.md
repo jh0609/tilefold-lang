@@ -10,11 +10,11 @@ Protocol:
 
 Pending task:
 
-- Call result explicit Drop UX v1 is queued. See
-  [docs/agent-tasks/latest.md](../agent-tasks/latest.md).
+- None. See [docs/agent-tasks/latest.md](../agent-tasks/latest.md).
 
 Latest archive:
 
+- [2026-08-05-call-result-explicit-drop-ux-v1.md](archive/2026-08-05-call-result-explicit-drop-ux-v1.md)
 - [2026-08-05-trace-breakpoint-v1.md](archive/2026-08-05-trace-breakpoint-v1.md)
 - [2026-08-05-trace-rule-node-filters-v1.md](archive/2026-08-05-trace-rule-node-filters-v1.md)
 - [2026-08-05-list-sum-map-succ-official-examples.md](archive/2026-08-05-list-sum-map-succ-official-examples.md)
