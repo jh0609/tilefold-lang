@@ -10,11 +10,15 @@ Task-ID: `2026-08-05-trace-rule-node-filters-v1`
   `60dd7738550f9e3c57a4f702772c1d5458d7ed9a`
 - Implementation commit: `44d1f34be58ed0b169b45374f230cfbc3f90c5ff`
 - Full validation SHA: `44d1f34be58ed0b169b45374f230cfbc3f90c5ff`
-- Handoff commit before deployment follow-up: pending
-- Final pushed SHA before deployment follow-up: pending
+- Handoff commit before deployment follow-up:
+  `d6fa067a6a1899b40321dec377c470dfa74e13f9`
+- Final pushed SHA before deployment follow-up:
+  `d6fa067a6a1899b40321dec377c470dfa74e13f9`
 - Branch: `main`
-- Push: pending
-- Deployment: pending
+- Push: completed to `origin/main`
+- Deployment: completed and Production-verified for pushed SHA
+  `d6fa067a6a1899b40321dec377c470dfa74e13f9`; this archive update is the
+  documentation-only deployment follow-up.
 - Pre-existing user changes/stashes: none observed. Starting working tree was
   clean on `main...origin/main`.
 
@@ -149,8 +153,40 @@ Validation passed for implementation SHA
 
 ## Deployment
 
-Pending until the handoff commit is pushed and the GitHub-connected Vercel
-Production deployment completes.
+GitHub-connected Vercel Production deployment completed automatically after
+push. Local Vercel CLI metadata lookup was unavailable because no saved Vercel
+credentials were present (`No existing credentials found`); GitHub deployment
+metadata and the public response supplied the deployment evidence.
+
+- GitHub deployment ID: `5755830939`
+- GitHub deployment status ID: `16368468551`
+- Environment: `Production`
+- Deployment state: `success`
+- Deployment URL:
+  `https://tilefold-editor-1d5kfmw8o-draftgame.vercel.app`
+- Production URL: `https://tilefold-editor.vercel.app`
+- Deployment inspector:
+  `https://vercel.com/draftgame/tilefold-editor/C9T345JYynMMRTCZMwadXtdZiTUM`
+- Deployment source branch/ref: `main`
+- Deployment source SHA:
+  `d6fa067a6a1899b40321dec377c470dfa74e13f9`
+- Response evidence from public Production URL: `Status=200`,
+  `Server=Vercel`, `X-Vercel-Cache=MISS`,
+  `X-Vercel-Id=icn1::8h5m9-1785904436712-41943ecb0780`.
+
+Production Chromium verification against
+`PLAYWRIGHT_BASE_URL=https://tilefold-editor.vercel.app`:
+
+- `npx playwright test e2e/trace-filter.spec.ts --project=chromium`:
+  passed, 1 test.
+- `npx playwright test e2e/natural-number-examples.spec.ts --project=chromium`:
+  passed, 6 tests. This includes the actual imported List-sum `page.reload()`
+  assertion and post-reload Transparent/Fast `Nat(6)`.
+- Console errors: none.
+- Page errors: none.
+
+This deployment follow-up is documentation-only. Full local validation remains
+valid for implementation SHA `44d1f34be58ed0b169b45374f230cfbc3f90c5ff`.
 
 ## Known Limitations
 
