@@ -10,11 +10,15 @@ Task-ID: `2026-08-05-trace-breakpoint-v1`
   `9e4f774c34f8adc0a7d7e776f254c227c37cc1f9`
 - Implementation commit: `e8beae0b859378f92aa9334bf36b1ed2e34b8883`
 - Full validation SHA: `e8beae0b859378f92aa9334bf36b1ed2e34b8883`
-- Handoff commit: pending
-- Final pushed SHA: pending
+- Handoff commit before deployment follow-up:
+  `0cfaebff9a428e9a52448328b0c947db81079ba7`
+- Final pushed SHA before deployment follow-up:
+  `0cfaebff9a428e9a52448328b0c947db81079ba7`
 - Branch: `main`
-- Push: pending
-- Deployment: pending Production deploy and public verification
+- Push: completed to `origin/main`
+- Deployment: completed and Production-verified for pushed SHA
+  `0cfaebff9a428e9a52448328b0c947db81079ba7`; this archive update is the
+  documentation-only deployment follow-up.
 - Pre-existing user changes/stashes: none observed. Starting working tree was
   clean on `main...origin/main`; `git stash list` was empty.
 
@@ -162,15 +166,43 @@ final implementation tree.
 
 ## Deployment
 
-Pending. After pushing the implementation and handoff commits together, deploy
-the final pushed SHA to Production and rerun at least:
+GitHub-connected Vercel Production deployment completed automatically after
+push.
 
-- `npx playwright test e2e/trace-breakpoint.spec.ts --project=chromium`
-- `npx playwright test e2e/step-run.spec.ts --project=chromium`
-- `npx playwright test e2e/trace-filter.spec.ts --project=chromium`
+- Vercel project ID: `prj_sv8VFJezCyFOp1KyQC5n8r1nIUZi`
+- Vercel team ID: `team_XJ2pKmBL23SYGgxiY5RJdOO6`
+- Deployment ID: `dpl_8CZLAvrHvArVanZb53z515Li78ws`
+- Deployment state: `READY`
+- Environment/target: `production`
+- Deployment URL:
+  `https://tilefold-editor-btvirs083-draftgame.vercel.app`
+- Production URL: `https://tilefold-editor.vercel.app`
+- Deployment inspector:
+  `https://vercel.com/draftgame/tilefold-editor/8CZLAvrHvArVanZb53z515Li78ws`
+- Deployment source branch/ref: `main`
+- Deployment source SHA:
+  `0cfaebff9a428e9a52448328b0c947db81079ba7`
+- Response evidence from public Production URL: `Status=200`,
+  `Server=Vercel`, `X-Vercel-Cache=HIT`,
+  `X-Vercel-Id=icn1::7xn6p-1785907596450-ee8f59fae30b`.
+- Vercel runtime errors for the project in the last hour: none reported.
 
-Record deployment ID, public URL, source SHA, console errors, and page errors
-in this archive as a documentation-only follow-up.
+Production Chromium verification against
+`PLAYWRIGHT_BASE_URL=https://tilefold-editor.vercel.app`:
+
+- `npx playwright test e2e/trace-breakpoint.spec.ts --project=chromium`:
+  passed, 1 test.
+- `npx playwright test e2e/step-run.spec.ts --project=chromium`: passed,
+  1 test.
+- `npx playwright test e2e/trace-filter.spec.ts --project=chromium`: passed,
+  1 test.
+- Console errors: none.
+- Page errors: none.
+
+This deployment follow-up is documentation-only. Full local validation remains
+valid for implementation SHA `e8beae0b859378f92aa9334bf36b1ed2e34b8883`;
+deployment source SHA `0cfaebff9a428e9a52448328b0c947db81079ba7` contains the
+validated implementation plus handoff/task documentation only.
 
 ## Known Limitations
 
