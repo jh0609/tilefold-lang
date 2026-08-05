@@ -10,7 +10,9 @@ Protocol:
 
 Pending task:
 
-- none
+- `2026-08-05-step-run-ui-v1` — add manual transparent Step Run controls over
+  the existing OCaml trace-session APIs; see
+  [`docs/agent-tasks/latest.md`](../agent-tasks/latest.md).
 
 Latest archive:
 
