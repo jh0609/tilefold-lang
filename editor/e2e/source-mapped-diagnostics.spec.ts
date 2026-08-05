@@ -98,6 +98,14 @@ async function addIdentityCall(page: Page) {
   ).toBeVisible();
 }
 
+async function deleteStandaloneFunctionReference(page: Page, templateId: string) {
+  const functionNode = page
+    .locator(`g.element-node[data-node-kind="function"][data-template-id="${templateId}"]`)
+    .first();
+  await expect(functionNode).toBeVisible();
+  await selectAndDelete(page, functionNode);
+}
+
 async function explicitlyDropLastApplyResult(page: Page) {
   const applyId = await page
     .locator('g.element-node[data-node-kind="apply"]')
@@ -131,6 +139,7 @@ test("maps a missing Call argument diagnostic back to the exact call site", asyn
 
   await addIdentityFunction(page);
   await returnToEntry(page);
+  await deleteStandaloneFunctionReference(page, "diagnosticIdentity");
   await addIdentityCall(page);
 
   const argumentWire = page
@@ -172,6 +181,7 @@ test("maps an incomplete function result diagnostic back to the function body", 
     ),
   );
   await returnToEntry(page);
+  await deleteStandaloneFunctionReference(page, "diagnosticIdentity");
   await addIdentityCall(page);
   await explicitlyDropLastApplyResult(page);
 

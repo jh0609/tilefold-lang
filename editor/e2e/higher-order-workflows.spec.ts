@@ -24,12 +24,20 @@ async function center(locator: Locator) {
 }
 
 async function dragConnect(page: Page, source: Locator, target: Locator) {
+  await page.keyboard.press("Escape");
+  const sourceNodeId = await source.first().getAttribute("data-node-id");
+  if (sourceNodeId) {
+    await element(page, sourceNodeId).click({ force: true, position: { x: 12, y: 12 } });
+  }
   const beforeWireCount = await page.locator('polyline[data-testid^="wire-"]').count();
   const from = await center(source);
   const to = await center(target);
+  const midX = Math.round((from.x + to.x) / 2);
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
-  await page.mouse.move(to.x, to.y, { steps: 16 });
+  await page.mouse.move(midX, from.y, { steps: 8 });
+  await page.mouse.move(midX, to.y, { steps: 8 });
+  await page.mouse.move(to.x, to.y, { steps: 8 });
   await page.mouse.up();
   try {
     await expect
@@ -37,13 +45,14 @@ async function dragConnect(page: Page, source: Locator, target: Locator) {
         timeout: 1200,
       })
       .toBe(beforeWireCount + 1);
-    return;
   } catch {
+    await page.keyboard.press("Escape");
     await source.dragTo(target, { force: true });
+    await expect
+      .poll(() => page.locator('polyline[data-testid^="wire-"]').count())
+      .toBe(beforeWireCount + 1);
   }
-  await expect
-    .poll(() => page.locator('polyline[data-testid^="wire-"]').count())
-    .toBe(beforeWireCount + 1);
+  await page.keyboard.press("Escape");
 }
 
 function element(page: Page, id: string) {
@@ -58,7 +67,7 @@ function byTemplate(page: Page, templateId: string) {
 
 function port(page: Page, id: string, name: string, direction: string) {
   return page.locator(
-    `[data-node-id="${id}"][data-port-name="${name}"][data-port-direction="${direction}"]`,
+    `circle[role="button"][data-node-id="${id}"][data-port-name="${name}"][data-port-direction="${direction}"]`,
   );
 }
 
@@ -68,7 +77,7 @@ function elementPort(page: Page, id: string, name: string) {
 
 function boundaryPort(page: Page, containerId: string, name: string, direction: string) {
   return page.locator(
-    `[data-port-kind="boundary"][data-container-id="${containerId}"][data-port-name="${name}"][data-port-direction="${direction}"]`,
+    `circle[role="button"][data-port-kind="boundary"][data-container-id="${containerId}"][data-port-name="${name}"][data-port-direction="${direction}"]`,
   );
 }
 
@@ -113,6 +122,10 @@ async function selectAndDelete(page: Page, locator: Locator) {
   await page.keyboard.press("Enter");
   await expect(page.getByRole("button", { name: "Delete selected" })).toBeEnabled();
   await page.getByRole("button", { name: "Delete selected" }).click();
+}
+
+async function autoLayoutEntry(page: Page) {
+  await page.getByRole("button", { name: /Auto Layout/ }).click();
 }
 
 async function setNatArrowNat(page: Page, label: string) {
@@ -296,6 +309,7 @@ async function deleteFunctionOutputDrop(page: Page, functionId: string) {
       `polyline[data-source-node-id="${functionId}"][data-source-port-name="value"][data-target-node-kind="drop"]`,
     )
     .first();
+  if ((await outputDropWire.count()) === 0) return;
   const dropId = await outputDropWire.getAttribute("data-target-node-id");
   expect(dropId).not.toBeNull();
   await selectAndDelete(page, element(page, dropId!));
@@ -312,9 +326,11 @@ async function prepareEntryForHigherOrder(page: Page, templatesToDelete: string[
       'polyline[data-source-node-kind="function"][data-source-node-id][data-source-port-name="value"][data-target-node-kind="drop"]',
     )
     .first();
-  const incDropId = await incSafetyDrop.getAttribute("data-target-node-id");
-  expect(incDropId).not.toBeNull();
-  await selectAndDelete(page, element(page, incDropId!));
+  if ((await incSafetyDrop.count()) > 0) {
+    const incDropId = await incSafetyDrop.getAttribute("data-target-node-id");
+    expect(incDropId).not.toBeNull();
+    await selectAndDelete(page, element(page, incDropId!));
+  }
 }
 
 test("authors apply_twice with Arrow capture, Copy, nested Apply, export, and rerun", async ({
@@ -459,6 +475,7 @@ test("copies and drops an Arrow value while one copy is applied", async ({ page 
   await setNatArrowNat(page, "Value type");
   const applyId = await addNodeAndGetId(page, "Add Apply", "apply");
   const natId = await addNodeAndGetId(page, "Add Nat", "nat_literal");
+  await autoLayoutEntry(page);
 
   await dragConnect(
     page,
@@ -536,6 +553,7 @@ test("authors NatRec with an Arrow accumulator and applies the result", async ({
   await element(page, countId).click();
   await page.getByLabel("Nat value").fill("2");
   const argumentId = await addNodeAndGetId(page, "Add Nat", "nat_literal");
+  await autoLayoutEntry(page);
 
   await dragConnect(
     page,

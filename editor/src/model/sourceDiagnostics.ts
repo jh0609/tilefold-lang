@@ -500,8 +500,37 @@ export function preflightProjectDiagnostics(
       continue;
     }
     const apply = findCallApply(document, element);
-    if (!apply) continue;
     const callContainerId = elementOwnerId(document, element);
+    if (!apply) {
+      if (
+        !hasOutgoingWire(document.geometry.wires, {
+          kind: "element_port",
+          elementId: element.id,
+          port: "value",
+        })
+      ) {
+        diagnostics.push(
+          diagnostic({
+            id: `diag:unused-function-value:${element.id}`,
+            code: "surface.unconsumed-function-value",
+            phase: "surface-validation",
+            severity: "error",
+            summary: `Function "${surfaceFunction.name}" value is not connected.`,
+            detail:
+              "Connect the Function value to a consumer, to the graph result, or to an explicitly added Drop before running.",
+            primarySource: {
+              kind: "element",
+              containerId: callContainerId,
+              elementId: element.id,
+              port: "value",
+            },
+            relatedSources: callRelatedSources(document, templateId),
+            coreReferences: [`surface-port:${element.id}:value`],
+          }),
+        );
+      }
+      continue;
+    }
     const captures = element.properties.captures;
     for (const capture of captures) {
       const hint: EndpointHint = {

@@ -37,6 +37,7 @@ import {
   updateListRecTypes,
   updateSumTypes,
   type AddableElementKind,
+  type FunctionTemplateDraft,
 } from "./editorOps";
 import { exportProjectJson, parseProjectJson } from "./importProject";
 import { collectConnectablePorts } from "./portConnections";
@@ -257,7 +258,7 @@ describe("editor operations", () => {
     expect("document" in duplicate ? duplicate.document : project).toBe(project);
   });
 
-  it("creates a complete identity template, closure dependency, and safe Drop", () => {
+  it("creates a complete identity template with an unconnected Function value", () => {
     const project = parseProjectJson(exampleJson);
     expect(nextFunctionTemplateId(project)).toBe("template_1");
     const result = addFunctionTemplate(project, "entry", {
@@ -287,16 +288,23 @@ describe("editor operations", () => {
       resultType: "nat",
       captures: [],
     });
-    const hostDrop = result.document.geometry.elements.find(
-      (element) => element.id === "node_drop_1",
-    );
-    expect(hostDrop?.properties).toEqual({
-      type: { arrow: ["nat", "nat"] },
-      provenance: {
-        kind: "auto_function_output_drop",
-        sourceElementId: "node_function_1",
-      },
-    });
+    expect(
+      result.document.geometry.wires.some(
+        (wire) =>
+          wire.sourceHint?.kind === "element_port" &&
+          wire.sourceHint.elementId === result.element.id &&
+          wire.sourceHint.port === "value",
+      ),
+    ).toBe(false);
+    expect(
+      result.document.geometry.elements.some(
+        (element) =>
+          element.kind === "drop" &&
+          element.properties.provenance?.kind ===
+            "auto_function_output_drop" &&
+          element.properties.provenance.sourceElementId === result.element.id,
+      ),
+    ).toBe(false);
     expect(
       result.document.geometry.wires.filter(
         (wire) =>
@@ -399,19 +407,22 @@ describe("editor operations", () => {
         ["offset", "marker"].includes(wire.targetHint.port),
     );
     expect(captureInputs).toHaveLength(2);
-    const closureWire = result.document.geometry.wires.find(
-      (wire) =>
-        wire.sourceHint?.kind === "element_port" &&
-        wire.sourceHint.elementId === result.element.id &&
-        wire.sourceHint.port === "value",
-    );
     const closureAnchor = result.element.portAnchors.find(
       (anchor) => anchor.port === "value",
     )!;
-    expect(closureWire?.points[0]).toEqual({
+    expect(closureAnchor).toEqual({
+      port: "value",
       x: closureAnchor.x,
       y: closureAnchor.y,
     });
+    expect(
+      result.document.geometry.wires.some(
+        (wire) =>
+          wire.sourceHint?.kind === "element_port" &&
+          wire.sourceHint.elementId === result.element.id &&
+          wire.sourceHint.port === "value",
+      ),
+    ).toBe(false);
     const captureDrops = result.document.geometry.wires.filter(
       (wire) =>
         wire.sourceHint?.kind === "boundary_port" &&
@@ -429,6 +440,105 @@ describe("editor operations", () => {
     expect(() =>
       parseProjectJson(exportProjectJson(result.document)),
     ).not.toThrow();
+  });
+
+  it("does not create host starter Drops for unary, captured, multi-argument, or higher-order Functions", () => {
+    let project = parseProjectJson(exampleJson);
+    const drafts: FunctionTemplateDraft[] = [
+      {
+        templateId: "unary",
+        parameters: [{ name: "value", type: "nat" }],
+        resultType: "nat",
+      },
+      {
+        templateId: "captured",
+        parameters: [{ name: "value", type: "nat" }],
+        resultType: "nat",
+        captures: [{ key: "seed", type: "nat" }],
+      },
+      {
+        templateId: "multi",
+        parameters: [
+          { name: "left", type: "nat" },
+          { name: "right", type: "nat" },
+        ],
+        resultType: "nat",
+      },
+      {
+        templateId: "higher_order",
+        parameters: [
+          { name: "f", type: { arrow: ["nat", "nat"] } },
+          { name: "value", type: "nat" },
+        ],
+        resultType: "nat",
+      },
+    ];
+
+    for (const draft of drafts) {
+      const created = addFunctionTemplate(project, "entry", draft);
+      if ("error" in created) throw new Error(created.error);
+      project = created.document;
+      expect(
+        created.document.geometry.wires.some(
+          (wire) =>
+            wire.sourceHint?.kind === "element_port" &&
+            wire.sourceHint.elementId === created.element.id &&
+            wire.sourceHint.port === "value",
+        ),
+      ).toBe(false);
+      expect(
+        created.document.geometry.elements.some(
+          (element) =>
+            element.kind === "drop" &&
+            element.properties.provenance?.kind ===
+              "auto_function_output_drop" &&
+            element.properties.provenance.sourceElementId === created.element.id,
+        ),
+      ).toBe(false);
+    }
+
+    expect(
+      preflightProjectDiagnostics(project).filter(
+        (diagnostic) => diagnostic.code === "surface.unconsumed-function-value",
+      ),
+    ).toHaveLength(drafts.length);
+  });
+
+  it("clears the unconsumed Function diagnostic when explicitly connected to Drop", () => {
+    let project = parseProjectJson(exampleJson);
+    const created = addFunctionTemplate(project, "entry", {
+      templateId: "discarded",
+      parameters: [{ name: "value", type: "nat" }],
+      resultType: "nat",
+    });
+    if ("error" in created) throw new Error(created.error);
+    project = addElement(created.document, "drop", {
+      x: created.element.bounds.x + 220,
+      y: created.element.bounds.y,
+    }).document;
+    const typedDrop = updateElementType(project, "node_drop_2", {
+      arrow: ["nat", "nat"],
+    });
+    if (typedDrop.error) throw new Error(typedDrop.error);
+    project = typedDrop.document;
+    const ports = collectConnectablePorts(project);
+    const source = ports.find(
+      (port) => port.key === `element:${created.element.id}:value`,
+    )!;
+    const target = ports.find((port) => port.key === "element:node_drop_2:input")!;
+    const connected = addWire(project, source, target);
+    if ("error" in connected) throw new Error(connected.error);
+
+    expect(
+      preflightProjectDiagnostics(connected.document).filter(
+        (diagnostic) => diagnostic.code === "surface.unconsumed-function-value",
+      ),
+    ).toEqual([]);
+    expect(
+      connected.document.geometry.elements.some(
+        (element) => element.kind === "drop" && element.id === "node_drop_2",
+      ),
+    ).toBe(true);
   });
 
   it("authors a named two-argument Surface function and preserves metadata", () => {
@@ -639,7 +749,7 @@ describe("editor operations", () => {
     );
   });
 
-  it("round-trips container geometry and automatic Drop provenance", () => {
+  it("round-trips container geometry and body automatic Drop provenance", () => {
     const project = parseProjectJson(exampleJson);
     const created = addFunctionTemplate(project, "entry", {
       templateId: "keep_drop",
@@ -659,19 +769,28 @@ describe("editor operations", () => {
       )?.bounds.width,
     ).toBe(created.container.bounds.width + 80);
     expect(
+      roundTripped.geometry.elements.some(
+        (element) =>
+          element.kind === "drop" &&
+          element.properties.provenance?.kind ===
+            "auto_function_output_drop" &&
+          element.properties.provenance.sourceElementId === created.element.id,
+      ),
+    ).toBe(false);
+    expect(
       roundTripped.geometry.elements.find(
         (element) => element.kind === "drop" && element.id === "node_drop_1",
       )?.properties,
-    ).toEqual({
-      type: { arrow: ["nat", "nat"] },
+    ).toMatchObject({
+      type: "nat",
       provenance: {
         kind: "auto_function_output_drop",
-        sourceElementId: created.element.id,
+        sourceElementId: "boundary_parameter_1",
       },
     });
   });
 
-  it("atomically replaces an automatic Function output Drop with a valid consumer wire", () => {
+  it("connects a newly authored Function value directly to a valid consumer wire", () => {
     let project = parseProjectJson(exampleJson);
     const created = addFunctionTemplate(project, "entry", {
       templateId: "isZeroStep",
@@ -723,7 +842,7 @@ describe("editor operations", () => {
     expect(preflightProjectDiagnostics(result.document)).toEqual([]);
   });
 
-  it("keeps automatic Drop when a replacement connection is invalid", () => {
+  it("keeps an invalid Function value connection atomic", () => {
     let project = parseProjectJson(exampleJson);
     const created = addFunctionTemplate(project, "entry", {
       templateId: "badStep",
@@ -750,14 +869,13 @@ describe("editor operations", () => {
 
     expect("error" in result).toBe(true);
     expect(
-      project.geometry.elements.some(
-        (element) =>
-          element.kind === "drop" &&
-          element.properties.provenance?.kind ===
-            "auto_function_output_drop" &&
-          element.properties.provenance?.sourceElementId === created.element.id,
+      project.geometry.wires.some(
+        (wire) =>
+          wire.sourceHint?.kind === "element_port" &&
+          wire.sourceHint.elementId === created.element.id &&
+          wire.sourceHint.port === "value",
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("does not replace a user-created Drop", () => {
@@ -771,25 +889,48 @@ describe("editor operations", () => {
       resultType: "nat",
     });
     if ("error" in created) throw new Error(created.error);
-    const autoDrop = created.document.geometry.elements.find(
-      (element): element is Extract<ProjectElement, { kind: "drop" }> =>
-        element.kind === "drop" &&
-        element.properties.provenance?.kind ===
-          "auto_function_output_drop" &&
-        element.properties.provenance?.sourceElementId === created.element.id,
+    const functionAnchor = created.element.portAnchors.find(
+      (anchor) => anchor.port === "value",
     )!;
+    const userDrop: ProjectElement = {
+      id: "user_function_drop",
+      kind: "drop",
+      bounds: {
+        x: functionAnchor.x + 80,
+        y: functionAnchor.y - 28,
+        width: 88,
+        height: 56,
+      },
+      properties: { type: { arrow: ["nat", { arrow: ["nat", "nat"] }] } },
+      portAnchors: [
+        { port: "input", x: functionAnchor.x + 80, y: functionAnchor.y },
+      ],
+    };
     project = {
       ...created.document,
       geometry: {
         ...created.document.geometry,
-        elements: created.document.geometry.elements.map((element) =>
-          element.id === autoDrop.id && element.kind === "drop"
-            ? {
-                ...element,
-                properties: { type: autoDrop.properties.type },
-              }
-            : element,
-        ),
+        elements: [...created.document.geometry.elements, userDrop],
+        wires: [
+          ...created.document.geometry.wires,
+          {
+            id: "user_function_drop_wire",
+            points: [
+              { x: functionAnchor.x, y: functionAnchor.y },
+              { x: functionAnchor.x + 80, y: functionAnchor.y },
+            ],
+            sourceHint: {
+              kind: "element_port",
+              elementId: created.element.id,
+              port: "value",
+            },
+            targetHint: {
+              kind: "element_port",
+              elementId: userDrop.id,
+              port: "input",
+            },
+          },
+        ],
       },
     };
     project = addElement(project, "nat_rec", {
@@ -811,7 +952,10 @@ describe("editor operations", () => {
 
     expect("error" in result).toBe(true);
     expect(
-      project.geometry.elements.some((element) => element.id === autoDrop.id),
+      project.geometry.elements.some((element) => element.id === userDrop.id),
+    ).toBe(true);
+    expect(
+      project.geometry.wires.some((wire) => wire.id === "user_function_drop_wire"),
     ).toBe(true);
   });
 
@@ -949,7 +1093,17 @@ describe("editor operations", () => {
         port.hint.boundaryId === outerResult.id,
     )!;
     expect(resultPort.type).toEqual("nat");
-    expect(preflightProjectDiagnostics(result.document)).toEqual([]);
+    expect(preflightProjectDiagnostics(result.document)).toEqual([
+      expect.objectContaining({
+        code: "surface.unconsumed-function-value",
+        primarySource: {
+          kind: "element",
+          containerId: "entry",
+          elementId: result.element.id,
+          port: "value",
+        },
+      }),
+    ]);
 
     expect(
       result.document.surfaceFunctions?.[0]?.parameters.map(
@@ -965,7 +1119,17 @@ describe("editor operations", () => {
     ).toHaveLength(1);
 
     const imported = parseProjectJson(exportProjectJson(result.document));
-    expect(preflightProjectDiagnostics(imported)).toEqual([]);
+    expect(preflightProjectDiagnostics(imported)).toEqual([
+      expect.objectContaining({
+        code: "surface.unconsumed-function-value",
+        primarySource: {
+          kind: "element",
+          containerId: "entry",
+          elementId: result.element.id,
+          port: "value",
+        },
+      }),
+    ]);
     expect(
       imported.surfaceFunctions?.[0]?.parameters.map(
         (parameter) => parameter.name,
@@ -973,7 +1137,7 @@ describe("editor operations", () => {
     ).toEqual(["index", "previous"]);
   });
 
-  it("connects generated isZeroStep Function.value to NatRec.step", () => {
+  it("connects generated isZeroStep Function.value directly to NatRec.step", () => {
     const project = parseProjectJson(exampleJson);
     const result = addFunctionTemplate(project, "entry", {
       templateId: "isZeroStep",
@@ -985,30 +1149,7 @@ describe("editor operations", () => {
       resultType: "nat",
     });
     if ("error" in result) throw new Error(result.error);
-    const hostDropWire = result.document.geometry.wires.find(
-      (wire) =>
-        wire.sourceHint?.kind === "element_port" &&
-        wire.sourceHint.elementId === result.element.id &&
-        wire.sourceHint.port === "value" &&
-        wire.targetHint?.kind === "element_port" &&
-        result.document.geometry.elements.some(
-          (element) =>
-            wire.targetHint?.kind === "element_port" &&
-            element.id === wire.targetHint.elementId &&
-            element.kind === "drop",
-        ),
-    );
-    expect(hostDropWire).toBeDefined();
-    const hostDropHint = hostDropWire!.targetHint;
-    if (hostDropHint?.kind !== "element_port") {
-      throw new Error("expected host Drop target");
-    }
-    const withoutStarter = deleteSelection(result.document, {
-      type: "element",
-      id: hostDropHint.elementId,
-    });
-    if ("error" in withoutStarter) throw new Error(withoutStarter.error);
-    const natRec = addElement(withoutStarter.document, "nat_rec", {
+    const natRec = addElement(result.document, "nat_rec", {
       x: 500,
       y: 180,
     });
@@ -2654,7 +2795,17 @@ describe("template capture authoring", () => {
           element.properties.provenance.sourceElementId === sourceBoundaryId,
       ),
     ).toBe(false);
-    expect(preflightProjectDiagnostics(project)).toEqual([]);
+    expect(preflightProjectDiagnostics(project)).toEqual([
+      expect.objectContaining({
+        code: "surface.unconsumed-function-value",
+        primarySource: {
+          kind: "element",
+          containerId: "entry",
+          elementId: created.element.id,
+          port: "value",
+        },
+      }),
+    ]);
     const reparsed = parseProjectJson(exportProjectJson(project));
     expect(templateCaptureDrafts(reparsed, "predStep")).toEqual([
       { key: "seed", type: "nat" },

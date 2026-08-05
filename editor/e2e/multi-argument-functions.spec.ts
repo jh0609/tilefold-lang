@@ -117,6 +117,20 @@ async function setElementPosition(page: Page, nodeId: string, x: number, y: numb
   await page.locator("#inspector-y").blur();
 }
 
+async function setContainerPosition(page: Page, containerId: string, x: number, y: number) {
+  const container = page.locator(`g.container-shape[data-container-id="${containerId}"]`);
+  const bounds = await container.locator("rect").first().evaluate((rect) => {
+    if (!(rect instanceof SVGRectElement)) throw new Error("container rect is not an SVG rect");
+    return { x: rect.x.baseVal.value, y: rect.y.baseVal.value };
+  });
+  await dragBy(
+    page,
+    page.getByTestId(`container-${containerId}-move-handle`),
+    x - bounds.x,
+    y - bounds.y,
+  );
+}
+
 async function setNatValue(page: Page, nodeId: string, value: number) {
   await element(page, nodeId).focus();
   await page.keyboard.press("Enter");
@@ -139,6 +153,33 @@ async function removeInitialEntryGraph(page: Page) {
   await selectAndDelete(page, page.getByTestId("wire-wire_result"));
   await selectAndDelete(page, element(page, "node_succ"));
   await selectAndDelete(page, element(page, "node_nat_2"));
+}
+
+async function deleteStandaloneFunctionReference(page: Page, templateId: string) {
+  const functionNode = page
+    .locator(`g.element-node[data-node-kind="function"][data-template-id="${templateId}"]`)
+    .first();
+  await expect(functionNode).toBeVisible();
+  await selectAndDelete(page, functionNode);
+}
+
+async function dropNat2FunctionValue(page: Page, functionId: string) {
+  const dropId = await addNodeAndGetId(page, "Add Drop", "drop");
+  await setElementPosition(page, dropId, 115, 40);
+  await element(page, dropId).focus();
+  await page.keyboard.press("Enter");
+  await page.getByLabel("Value type", { exact: true }).selectOption("function");
+  await page.getByLabel("Value type output", { exact: true }).selectOption("function");
+  await expect(page.getByLabel("Value type input", { exact: true })).toHaveValue("nat");
+  await expect(page.getByLabel("Value type output input", { exact: true })).toHaveValue("nat");
+  await expect(page.getByLabel("Value type output output", { exact: true })).toHaveValue("nat");
+  await page.getByRole("button", { name: "Fit view" }).click();
+  await dragConnect(
+    page,
+    port(page, functionId, "value", "output"),
+    port(page, dropId, "input", "input"),
+  );
+  return dropId;
 }
 
 async function enlargeEntryForMultiArgumentCall(page: Page) {
@@ -462,6 +503,7 @@ test("authors flat multi-argument clamp and calls it as one node", async ({
   await buildClamp(page);
   await enlargeEntryForMultiArgumentCall(page);
   await removeInitialEntryGraph(page);
+  await deleteStandaloneFunctionReference(page, "clamp");
   const callId = await addProjectCall(page, "clamp");
   await setElementPosition(page, callId, 72, 118);
   const [nId, lowerId, upperId] = await callArgumentSources(page, callId);
@@ -499,6 +541,7 @@ test("authors flat multi-argument between with explicit Copy", async ({
   await buildBetween(page);
   await enlargeEntryForMultiArgumentCall(page);
   await removeInitialEntryGraph(page);
+  await deleteStandaloneFunctionReference(page, "between");
   const callId = await addProjectCall(page, "between");
   await setElementPosition(page, callId, 72, 118);
   const [nId, lowerId, upperId] = await callArgumentSources(page, callId);
@@ -537,12 +580,24 @@ test("passes a flat multi-argument Surface function value to NatRec.step", async
 }, testInfo) => {
   const issues = watchBrowserIssues(page);
   await page.goto("/");
-  await buildFactorialStep(page);
+  const stepContainerId = await buildFactorialStep(page);
   await enlargeEntryForMultiArgumentCall(page);
   await removeInitialEntryGraph(page);
+  const functionNode = page
+    .locator('g.element-node[data-node-kind="function"][data-template-id="factorialStep"]')
+    .first();
+  await expect(functionNode).toBeVisible();
+  const functionNodeId = await functionNode.getAttribute("data-node-id");
+  expect(functionNodeId).not.toBeNull();
+  await setElementPosition(page, functionNodeId!, 24, 180);
+  const functionDropId = await dropNat2FunctionValue(page, functionNodeId!);
 
   const directCallId = await addProjectCall(page, "factorialStep");
-  await setElementPosition(page, directCallId, 72, 252);
+  await setElementPosition(page, directCallId, 96, 252);
+  await setContainerPosition(page, stepContainerId, 760, 40);
+  await page.locator('g.container-shape[data-container-id="entry"]').focus();
+  await page.keyboard.press("Enter");
+  await dragBy(page, page.getByTestId("container-entry-resize-south-east"), 120, 220);
   const [indexId, previousId] = await callArgumentSources(page, directCallId, 2);
   await setNatValue(page, indexId, 2);
   await setNatValue(page, previousId, 3);
@@ -551,22 +606,19 @@ test("passes a flat multi-argument Surface function value to NatRec.step", async
 
   await disconnectEntryResult(page);
   const directDropId = await addNodeAndGetId(page, "Add Drop", "drop");
-  await setElementPosition(page, directDropId, 0, 376);
+  await setElementPosition(page, directDropId, 24, 376);
   await dragConnect(
     page,
     port(page, directCallId, "result", "output"),
     port(page, directDropId, "input", "input"),
   );
-
-  const functionNode = page
-    .locator('g.element-node[data-node-kind="function"][data-template-id="factorialStep"]')
-    .first();
-  await expect(functionNode).toBeVisible();
-  const functionNodeId = await functionNode.getAttribute("data-node-id");
-  expect(functionNodeId).not.toBeNull();
+  await selectAndDelete(page, element(page, functionDropId));
   await setElementPosition(page, functionNodeId!, 24, 314);
+
   const starterDropWire = page
-    .locator(`polyline[data-source-node-id="${functionNodeId}"][data-source-port-name="value"]`)
+    .locator(
+      `polyline[data-source-node-id="${functionNodeId}"][data-source-port-name="value"][data-target-node-kind="drop"]`,
+    )
     .first();
   if ((await starterDropWire.count()) > 0) {
     const starterDropId = await starterDropWire.getAttribute("data-target-node-id");

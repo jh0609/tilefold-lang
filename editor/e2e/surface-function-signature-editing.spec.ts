@@ -120,6 +120,27 @@ async function removeInitialEntryResultGraph(page: Page) {
   await selectAndDelete(page, element(page, "node_nat_2"));
 }
 
+async function explicitlyDropStandaloneFunctionValue(page: Page, templateId: string) {
+  const functionNode = page
+    .locator(`g.element-node[data-node-kind="function"][data-template-id="${templateId}"]`)
+    .first();
+  const functionId = await functionNode.getAttribute("data-node-id");
+  expect(functionId).not.toBeNull();
+  await page.getByRole("button", { name: "Add Drop" }).click();
+  const drop = page.locator('g.element-node.selected[data-node-kind="drop"]');
+  await expect(drop).toBeVisible();
+  const dropId = await drop.getAttribute("data-node-id");
+  expect(dropId).not.toBeNull();
+  await page.getByLabel("Value type").selectOption("function");
+  await expect(page.getByLabel("Value type input")).toHaveValue("nat");
+  await expect(page.getByLabel("Value type output")).toHaveValue("nat");
+  await dragConnect(
+    page,
+    elementPort(page, functionId!, "value", "output"),
+    elementPort(page, dropId!, "input", "input"),
+  );
+}
+
 async function addCapturedSuccCall(page: Page) {
   await page.getByRole("button", { name: "Add Call" }).click();
   await expect(page.getByText("1. value: Nat")).toBeVisible();
@@ -181,6 +202,7 @@ test("edits, undoes, redoes, exports, and reloads a referenced Surface function 
   await page.getByRole("button", { name: "Return to entry graph" }).click();
 
   await removeInitialEntryResultGraph(page);
+  await explicitlyDropStandaloneFunctionValue(page, "capturedSucc");
   await addCapturedSuccCall(page);
   await runAndExpectNat3(page);
 
@@ -257,6 +279,7 @@ test("blocks unsafe signature edits and keeps the function runnable", async ({
   await openTemplate(page, templateContainerId);
   await page.getByRole("button", { name: "Return to entry graph" }).click();
   await removeInitialEntryResultGraph(page);
+  await explicitlyDropStandaloneFunctionValue(page, "capturedSucc");
   await addCapturedSuccCall(page);
 
   await openTemplate(page, templateContainerId);

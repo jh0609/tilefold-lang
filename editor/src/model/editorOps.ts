@@ -850,8 +850,6 @@ function addFlatSurfaceFunctionTemplate(
     captures,
   } = normalized;
   const functionId = allocate("node_function_");
-  const hostDropId = allocate("node_drop_");
-  const hostWireId = allocate("wire_");
   const containerId = allocate("container_template_");
 
   const hostExtensionTop = host.bounds.y + host.bounds.height;
@@ -862,16 +860,9 @@ function addFlatSurfaceFunctionTemplate(
     width: 128,
     height: functionHeight,
   };
-  const hostDropBounds: Bounds = {
-    x: host.bounds.x + 100,
-    y: functionBounds.y + functionBounds.height + 24,
-    width: 88,
-    height: 56,
-  };
   const expandedHostBounds: Bounds = {
     ...host.bounds,
-    height:
-      hostDropBounds.y + hostDropBounds.height + 24 - host.bounds.y,
+    height: functionBounds.y + functionBounds.height + 24 - host.bounds.y,
   };
   const parent = containerParent(document.geometry.containers, host);
   if (parent && !boundsInside(expandedHostBounds, parent.bounds)) {
@@ -953,49 +944,6 @@ function addFlatSurfaceFunctionTemplate(
       },
     });
   });
-  const functionType: CoreType = {
-    arrow: [parameterType, templateResultType],
-  };
-  const hostDrop: ProjectElement = {
-    id: hostDropId,
-    kind: "drop",
-    bounds: hostDropBounds,
-    properties: {
-      type: functionType,
-      provenance: {
-        kind: "auto_function_output_drop",
-        sourceElementId: functionElement.id,
-      },
-    },
-    portAnchors: [
-      {
-        port: "input",
-        x: hostDropBounds.x,
-        y: hostDropBounds.y + hostDropBounds.height / 2,
-      },
-    ],
-  };
-  const functionAnchor = functionElement.portAnchors[0]!;
-  const hostDropAnchor = hostDrop.portAnchors[0]!;
-  const hostWire: ProjectWire = {
-    id: hostWireId,
-    points: [
-      { x: functionAnchor.x, y: functionAnchor.y },
-      { x: host.bounds.x + host.bounds.width - 4, y: hostDropAnchor.y },
-      { x: hostDropAnchor.x, y: hostDropAnchor.y },
-    ],
-    sourceHint: {
-      kind: "element_port",
-      elementId: functionElement.id,
-      port: "value",
-    },
-    targetHint: {
-      kind: "element_port",
-      elementId: hostDrop.id,
-      port: "input",
-    },
-  };
-
   const rightmost = Math.max(
     ...document.geometry.containers.map(
       (container) => container.bounds.x + container.bounds.width,
@@ -1155,7 +1103,6 @@ function addFlatSurfaceFunctionTemplate(
           ...document.geometry.elements,
           functionElement,
           ...hostCaptureElements,
-          hostDrop,
           ...templateElements,
         ],
         containers: [
@@ -1167,7 +1114,6 @@ function addFlatSurfaceFunctionTemplate(
         wires: [
           ...document.geometry.wires,
           ...hostCaptureWires,
-          hostWire,
           ...templateWires,
         ],
       },
@@ -1295,8 +1241,6 @@ export function addFunctionTemplate(
   }
 
   const functionId = allocate("node_function_");
-  const hostDropId = allocate("node_drop_");
-  const hostWireId = allocate("wire_");
   const containerId = allocate("container_template_");
   const parameterBoundaryId = allocate("boundary_parameter_");
   const resultBoundaryId = allocate("boundary_result_");
@@ -1309,14 +1253,8 @@ export function addFunctionTemplate(
     width: 128,
     height: functionHeight,
   };
-  const hostDropBounds: Bounds = {
-    x: host.bounds.x + 100,
-    y: functionBounds.y + functionBounds.height + 24,
-    width: 88,
-    height: 56,
-  };
   const hostExtensionHeight =
-    hostDropBounds.y + hostDropBounds.height + 24 - hostExtensionTop;
+    functionBounds.y + functionBounds.height + 24 - hostExtensionTop;
   const expandedHostBounds: Bounds = {
     ...host.bounds,
     height: host.bounds.height + hostExtensionHeight,
@@ -1402,54 +1340,6 @@ export function addFunctionTemplate(
       },
     });
   });
-  const functionType: CoreType = {
-    arrow: [parameterType, templateResultType],
-  };
-  const hostDrop: ProjectElement = {
-    id: hostDropId,
-    kind: "drop",
-    bounds: hostDropBounds,
-    properties: {
-      type: functionType,
-      provenance: {
-        kind: "auto_function_output_drop",
-        sourceElementId: functionElement.id,
-      },
-    },
-    portAnchors: [
-      {
-        port: "input",
-        x: hostDropBounds.x,
-        y: hostDropBounds.y + hostDropBounds.height / 2,
-      },
-    ],
-  };
-  const functionAnchor = functionElement.portAnchors.find(
-    (anchor) => anchor.port === "value",
-  )!;
-  const hostDropAnchor = hostDrop.portAnchors[0]!;
-  const hostWire: ProjectWire = {
-    id: hostWireId,
-    points: [
-      { x: functionAnchor.x, y: functionAnchor.y },
-      {
-        x: host.bounds.x + host.bounds.width - 4,
-        y: hostDropAnchor.y,
-      },
-      { x: hostDropAnchor.x, y: hostDropAnchor.y },
-    ],
-    sourceHint: {
-      kind: "element_port",
-      elementId: functionElement.id,
-      port: "value",
-    },
-    targetHint: {
-      kind: "element_port",
-      elementId: hostDrop.id,
-      port: "input",
-    },
-  };
-
   const rightmost = Math.max(
     ...document.geometry.containers.map(
       (container) => container.bounds.x + container.bounds.width,
@@ -2141,7 +2031,6 @@ export function addFunctionTemplate(
           ...document.geometry.elements,
           functionElement,
           ...hostCaptureElements,
-          hostDrop,
           ...templateElements,
         ],
         containers: [
@@ -2154,7 +2043,6 @@ export function addFunctionTemplate(
         wires: [
           ...document.geometry.wires,
           ...hostCaptureWires,
-          hostWire,
           ...templateWires,
         ],
       },

@@ -76,6 +76,11 @@ async function setSelectedBounds(page: Page, x: string, y: string) {
   await page.locator("#inspector-y").blur();
 }
 
+async function enlargeEntry(page: Page) {
+  await page.getByRole("button", { name: "entry container entry" }).click();
+  await page.getByRole("button", { name: "Auto Layout entry" }).click();
+}
+
 test("authors and round-trips a function type parameter through the UI", async ({
   page,
 }, testInfo) => {
@@ -180,8 +185,9 @@ test("keeps Apply signature arguments separate from captures for NatRec step fun
   await expect(functionNode.locator("text.element-signature")).toContainText(
     /Nat -> \(?Nat -> Nat\)?/,
   );
+  await enlargeEntry(page);
   await functionNode.click();
-  await setSelectedBounds(page, "0", "180");
+  await setSelectedBounds(page, "24", "220");
   await expect(
     functionNode.locator('[data-port-direction="input"]'),
   ).toHaveCount(0);
@@ -194,15 +200,13 @@ test("keeps Apply signature arguments separate from captures for NatRec step fun
   const starterDropWire = page.locator(
     `polyline[data-source-node-id="${functionNodeId}"][data-source-port-name="value"][data-target-node-kind="drop"]`,
   );
-  await expect(starterDropWire).toBeVisible();
-  const starterDropId = await starterDropWire.getAttribute("data-target-node-id");
-  expect(starterDropId).not.toBeNull();
+  await expect(starterDropWire).toHaveCount(0);
   await page.getByRole("button", { name: "Add NatRec" }).click();
   const natRecNode = page.locator('g.element-node.selected[data-node-kind="nat_rec"]');
   await expect(natRecNode).toBeVisible();
   const natRecId = await natRecNode.getAttribute("data-node-id");
   expect(natRecId).not.toBeNull();
-  await setSelectedBounds(page, "100", "60");
+  await setSelectedBounds(page, "220", "100");
   await dragTo(
     page,
     port(page, functionNodeId!, "value", "output"),
@@ -213,8 +217,6 @@ test("keeps Apply signature arguments separate from captures for NatRec step fun
       `polyline[data-source-node-id="${functionNodeId}"][data-source-port-name="value"][data-target-node-id="${natRecId}"][data-target-port-name="step"]`,
     ),
   ).toHaveCount(1);
-  await expect(page.locator(`[data-node-id="${starterDropId}"]`)).toHaveCount(0);
-  await expect(starterDropWire).toHaveCount(0);
 
   await selectAndDelete(page, page.locator('[data-node-id="node_succ"].element-node'));
   await dragTo(
@@ -227,7 +229,7 @@ test("keeps Apply signature arguments separate from captures for NatRec step fun
   await expect(baseNat).toBeVisible();
   const baseNatId = await baseNat.getAttribute("data-node-id");
   expect(baseNatId).not.toBeNull();
-  await setSelectedBounds(page, "4", "200");
+  await setSelectedBounds(page, "10", "130");
   await page.getByLabel("Nat value").fill("1");
   await dragTo(
     page,

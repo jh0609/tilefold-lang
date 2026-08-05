@@ -298,13 +298,37 @@ async function deleteFunctionOutputDrop(page: Page, functionId: string) {
       `polyline[data-source-node-id="${functionId}"][data-source-port-name="value"][data-target-node-kind="drop"]`,
     )
     .first();
+  if ((await outputDropWire.count()) === 0) return;
   const dropId = await outputDropWire.getAttribute("data-target-node-id");
   expect(dropId).not.toBeNull();
   await selectAndDelete(page, element(page, dropId!));
 }
 
+async function dropNat2FunctionValue(page: Page, templateId: string) {
+  const functionNode = byTemplate(page, templateId).first();
+  await expect(functionNode).toBeVisible();
+  const functionId = await functionNode.getAttribute("data-node-id");
+  expect(functionId).not.toBeNull();
+  const dropId = await addNodeAndGetId(page, "Add Drop", "drop");
+  await setElementPosition(page, dropId, 115, 40);
+  await element(page, dropId).focus();
+  await page.keyboard.press("Enter");
+  await page.getByLabel("Value type", { exact: true }).selectOption("function");
+  await page.getByLabel("Value type output", { exact: true }).selectOption("function");
+  await expect(page.getByLabel("Value type input", { exact: true })).toHaveValue("nat");
+  await expect(page.getByLabel("Value type output input", { exact: true })).toHaveValue("nat");
+  await expect(page.getByLabel("Value type output output", { exact: true })).toHaveValue("nat");
+  await page.getByRole("button", { name: "Fit view" }).click();
+  await dragConnect(
+    page,
+    port(page, functionId!, "value", "output"),
+    port(page, dropId, "input", "input"),
+  );
+}
+
 async function buildPredStepEntry(page: Page, index: number, previous: number) {
   await removeInitialEntryGraph(page);
+  await enlargeEntryContainer(page);
   await page.getByRole("button", { name: "Add Call" }).click();
   await page.getByLabel("Template to call").selectOption("predStep");
   await page.getByRole("button", { name: "Create call" }).click();
@@ -341,6 +365,7 @@ async function buildPredStepEntry(page: Page, index: number, previous: number) {
 async function createAndRunPredStep(page: Page, index: number, previous: number) {
   await page.goto("/");
   await createPredStep(page);
+  await dropNat2FunctionValue(page, "predStep");
   await buildPredStepEntry(page, index, previous);
   await runAndExpect(page, index);
 }
@@ -423,6 +448,7 @@ test.describe("capture closure execution semantics", () => {
     const issues = watchBrowserIssues(page);
     await page.goto("/");
     await createPredStep(page);
+    await dropNat2FunctionValue(page, "predStep");
     await removeInitialEntryGraph(page);
 
     async function addPredStepApplication(index: number, previous: number) {
@@ -453,7 +479,7 @@ test.describe("capture closure execution semantics", () => {
       const previousId = await previousWire.getAttribute("data-source-node-id");
       expect(indexId).not.toBeNull();
       expect(previousId).not.toBeNull();
-      const rowY = index === 1 ? 55 : 245;
+      const rowY = index === 1 ? 55 : 135;
       await setElementPosition(page, indexId!, 10, rowY + 15);
       await setElementPosition(page, callId!, 72, rowY + 70);
       await setElementPosition(page, previousId!, 10, rowY + 175);
@@ -467,7 +493,7 @@ test.describe("capture closure execution semantics", () => {
     await page.locator('g.container-shape[data-container-id="entry"]').focus();
     await page.keyboard.press("Enter");
     await dragBy(page, page.getByTestId("container-entry-resize-south-east"), 0, 300);
-    let inactiveDrop = await addNatDropAt(page, 125, 430);
+    let inactiveDrop = await addNatDropAt(page, 125, 320);
     await dragConnect(
       page,
       port(page, applyB, "result", "output"),
@@ -484,6 +510,7 @@ test.describe("capture closure execution semantics", () => {
       port(page, applyA, "result", "output"),
       boundaryPort(page, "entry", "result", "input"),
     );
+    await fitContainerToContent(page, "entry");
     await runAndExpect(page, 1);
     await selectAndDelete(
       page,
@@ -506,13 +533,14 @@ test.describe("capture closure execution semantics", () => {
       port(page, applyB, "result", "output"),
       boundaryPort(page, "entry", "result", "input"),
     );
+    await fitContainerToContent(page, "entry");
     await runAndExpect(page, 5);
     await selectAndDelete(
       page,
       page.locator(`polyline[data-source-node-id="${applyB}"][data-target-container-id="entry"]`),
     );
     await selectAndDelete(page, element(page, inactiveDrop));
-    inactiveDrop = await addNatDropAt(page, 125, 430);
+    inactiveDrop = await addNatDropAt(page, 125, 320);
     await dragConnect(
       page,
       port(page, applyB, "result", "output"),
@@ -528,6 +556,7 @@ test.describe("capture closure execution semantics", () => {
       port(page, applyA, "result", "output"),
       boundaryPort(page, "entry", "result", "input"),
     );
+    await fitContainerToContent(page, "entry");
     await runAndExpect(page, 1);
     await expectNoBrowserIssues(issues);
   });
