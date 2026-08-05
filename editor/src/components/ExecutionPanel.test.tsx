@@ -20,6 +20,7 @@ function renderPanel(state: ExecutionState, onViewTrace = vi.fn()) {
       onViewTrace={onViewTrace}
       onStepNext={vi.fn()}
       onStepContinue={vi.fn()}
+      onStepContinueToMatch={vi.fn()}
       onStepStop={vi.fn()}
       onDiagnosticSelect={vi.fn()}
     />,
@@ -102,6 +103,7 @@ describe("ExecutionPanel trace replay", () => {
         onViewTrace={vi.fn()}
         onStepNext={onNext}
         onStepContinue={vi.fn()}
+        onStepContinueToMatch={vi.fn()}
         onStepStop={vi.fn()}
         onDiagnosticSelect={vi.fn()}
       />,
@@ -131,6 +133,7 @@ describe("ExecutionPanel trace replay", () => {
         onViewTrace={vi.fn()}
         onStepNext={onNext}
         onStepContinue={vi.fn()}
+        onStepContinueToMatch={vi.fn()}
         onStepStop={vi.fn()}
         onDiagnosticSelect={vi.fn()}
       />,
@@ -138,6 +141,9 @@ describe("ExecutionPanel trace replay", () => {
 
     expect(screen.getByRole("button", { name: "Next Rewrite" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Continue to Match" }),
+    ).toBeDisabled();
   });
 
   it("keeps only Stop available while Step Run is starting", () => {
@@ -160,6 +166,7 @@ describe("ExecutionPanel trace replay", () => {
         onViewTrace={vi.fn()}
         onStepNext={vi.fn()}
         onStepContinue={vi.fn()}
+        onStepContinueToMatch={vi.fn()}
         onStepStop={onStop}
         onDiagnosticSelect={vi.fn()}
       />,
@@ -168,9 +175,90 @@ describe("ExecutionPanel trace replay", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Starting Step Run...");
     expect(screen.getByRole("button", { name: "Next Rewrite" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Continue to Match" }),
+    ).toBeDisabled();
     expect(screen.getByRole("button", { name: "Stop" })).toBeEnabled();
 
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
     expect(onStop).toHaveBeenCalledOnce();
+  });
+
+  it("requires an active Trace filter before continuing to a match", () => {
+    const traceStore = new TraceStore();
+    render(
+      <ExecutionPanel
+        state={{
+          status: "stepping",
+          phase: "paused",
+          traceStore,
+          traceCount: 0,
+          traceVersion: 0,
+          selectedTraceIndex: null,
+        }}
+        document={document}
+        traceSourceElementId={null}
+        traceFilters={EMPTY_TRACE_FILTERS}
+        onTraceFilterChange={vi.fn()}
+        onTraceSelect={vi.fn()}
+        onViewTrace={vi.fn()}
+        onStepNext={vi.fn()}
+        onStepContinue={vi.fn()}
+        onStepContinueToMatch={vi.fn()}
+        onStepStop={vi.fn()}
+        onDiagnosticSelect={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Continue to Match" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText(
+        "Continue to Match needs an active rule or Surface node filter.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("disables conflicting controls and filter mutation while seeking", () => {
+    const traceStore = new TraceStore();
+    traceStore.appendBatch([
+      { index: 0, rule: "Drop", subject: "drop_unit" },
+    ]);
+    render(
+      <ExecutionPanel
+        state={{
+          status: "stepping",
+          phase: "seeking",
+          traceStore,
+          traceCount: 1,
+          traceVersion: 1,
+          selectedTraceIndex: 0,
+        }}
+        document={document}
+        traceSourceElementId="drop_unit"
+        traceFilters={{ rule: "Drop", surfaceNode: "" }}
+        onTraceFilterChange={vi.fn()}
+        onTraceSelect={vi.fn()}
+        onViewTrace={vi.fn()}
+        onStepNext={vi.fn()}
+        onStepContinue={vi.fn()}
+        onStepContinueToMatch={vi.fn()}
+        onStepStop={vi.fn()}
+        onDiagnosticSelect={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Continuing to next match...",
+    );
+    expect(screen.getByRole("button", { name: "Next Rewrite" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Continue to Match" }),
+    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Stop" })).toBeEnabled();
+    expect(screen.getByLabelText("Rule filter")).toBeDisabled();
+    expect(screen.getByLabelText("Surface node filter")).toBeDisabled();
   });
 });

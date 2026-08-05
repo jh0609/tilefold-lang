@@ -45,6 +45,13 @@ advances that same session with a single-rewrite batch; the returned event is
 selected in the Trace inspector and highlighted through the normal exact source
 mapping. **Continue** resumes the same session in bounded asynchronous batches
 until completion. **Stop** disposes the session and shows a stopped state.
+While paused, **Continue to Match** advances the same session one canonical
+rewrite at a time until a newly appended event matches the active exact Trace
+filters, then pauses on that original event index. The v1 breakpoint condition
+is only the existing rule and Surface-node filters combined with AND. It is
+disabled until a filter is active, has a deterministic 512-rewrite per-command
+safety limit, and remains transient UI state outside Project JSON, autosave,
+undo/redo, and trace serialization.
 
 Explicit Cancel is shown as a neutral `Execution canceled` state. A semantic
 Project JSON edit, import, Undo, or Redo automatically cancels active work and
@@ -76,8 +83,10 @@ selection and camera-only changes preserve it.
 Trace inspection after completion is read-only navigation and does not mutate
 Project JSON. Step Run is a control flow over the same OCaml trace-session APIs
 used by streamed Transparent Run; it does not slice a completed trace or add a
-TypeScript evaluator. Autoplay, filtering, search, breakpoints, reverse
-stepping, and persisted sessions remain unsupported.
+TypeScript evaluator. Trace filtering and the paused-Step-Run
+Continue-to-Match control are inspection/debugger UI only. Autoplay, free-text
+search, persisted breakpoints, reverse stepping, and persisted sessions remain
+unsupported.
 
 Failed runs use structured editor diagnostics instead of parsing error strings
 back into graph locations. Before sending a project to the Worker, the editor

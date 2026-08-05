@@ -4,8 +4,12 @@ import type {
 import type { ProjectDocument } from "../model/project";
 import type { SourceDiagnostic } from "../model/sourceDiagnostics";
 import type { TraceStore } from "../model/traceStore";
-import type { TraceFilters } from "../model/traceInspector";
+import { traceFiltersActive, type TraceFilters } from "../model/traceInspector";
 import { TraceInspector } from "./TraceInspector";
+
+// Four ordinary Step Continue worker batches keeps the bounded seek generous for
+// official examples while making the per-command limit deterministic.
+export const STEP_CONTINUE_TO_MATCH_REWRITE_LIMIT = 128 * 4;
 
 export type ExecutionState =
   | { status: "idle" }
@@ -20,11 +24,12 @@ export type ExecutionState =
     }
   | {
       status: "stepping";
-      phase: "starting" | "paused" | "nexting" | "continuing";
+      phase: "starting" | "paused" | "nexting" | "continuing" | "seeking";
       traceStore: TraceStore;
       traceCount: number;
       traceVersion: number;
       selectedTraceIndex: number | null;
+      message?: string;
     }
   | {
       status: "completed";
@@ -48,6 +53,7 @@ interface ExecutionPanelProps {
   onViewTrace: () => void;
   onStepNext: () => void;
   onStepContinue: () => void;
+  onStepContinueToMatch: () => void;
   onStepStop: () => void;
   onDiagnosticSelect: (diagnostic: SourceDiagnostic) => void;
 }
@@ -62,6 +68,7 @@ export function ExecutionPanel({
   onViewTrace,
   onStepNext,
   onStepContinue,
+  onStepContinueToMatch,
   onStepStop,
   onDiagnosticSelect,
 }: ExecutionPanelProps) {
@@ -79,10 +86,15 @@ export function ExecutionPanel({
       ? state.selectedTraceIndex
       : null;
   const stepPending =
-    state.status === "stepping" &&
+      state.status === "stepping" &&
     (state.phase === "starting" ||
       state.phase === "nexting" ||
-      state.phase === "continuing");
+      state.phase === "continuing" ||
+      state.phase === "seeking");
+  const canContinueToMatch =
+    state.status === "stepping" &&
+    state.phase === "paused" &&
+    traceFiltersActive(traceFilters);
   const diagnostics =
     state.status === "failed" ? (state.diagnostics ?? []) : [];
   return (
@@ -131,8 +143,15 @@ export function ExecutionPanel({
                 ? `Step Run active · advancing rewrite ${state.traceCount + 1}...`
                 : state.phase === "continuing"
                   ? `Step Run active · continuing from ${state.traceCount} rewrites...`
+                  : state.phase === "seeking"
+                    ? "Continuing to next match..."
                   : `Step Run paused · ${state.traceCount} rewrites`}
           </p>
+          {state.message && (
+            <p className="trace-empty" role="status" aria-live="polite">
+              {state.message}
+            </p>
+          )}
           <div className="step-run-controls" aria-label="Step Run controls">
             <button
               type="button"
@@ -148,10 +167,27 @@ export function ExecutionPanel({
             >
               Continue
             </button>
+            <button
+              type="button"
+              onClick={onStepContinueToMatch}
+              disabled={!canContinueToMatch}
+              title={
+                traceFiltersActive(traceFilters)
+                  ? `Advance up to ${STEP_CONTINUE_TO_MATCH_REWRITE_LIMIT} rewrites until the active Trace filters match.`
+                  : "Select a rule or Surface node filter first."
+              }
+            >
+              Continue to Match
+            </button>
             <button type="button" onClick={onStepStop}>
               Stop
             </button>
           </div>
+          {state.phase === "paused" && !traceFiltersActive(traceFilters) && (
+            <p className="trace-empty">
+              Continue to Match needs an active rule or Surface node filter.
+            </p>
+          )}
           {runningTraceStore && runningTraceCount > 0 ? (
             <TraceInspector
               document={document}
@@ -160,6 +196,7 @@ export function ExecutionPanel({
               selectedIndex={runningSelectedTraceIndex}
               sourceElementId={traceSourceElementId}
               filters={traceFilters}
+              filtersDisabled={state.phase === "seeking"}
               onFilterChange={onTraceFilterChange}
               onSelect={onTraceSelect}
             />

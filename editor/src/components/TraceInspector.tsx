@@ -15,6 +15,7 @@ interface TraceInspectorProps {
   selectedIndex: number | null;
   sourceElementId: string | null;
   filters: TraceFilters;
+  filtersDisabled?: boolean;
   onFilterChange: (filters: TraceFilters) => void;
   onSelect: (index: number) => void;
 }
@@ -26,6 +27,7 @@ export function TraceInspector({
   selectedIndex,
   sourceElementId,
   filters,
+  filtersDisabled = false,
   onFilterChange,
   onSelect,
 }: TraceInspectorProps) {
@@ -50,6 +52,7 @@ export function TraceInspector({
           <select
             aria-label="Rule filter"
             value={filters.rule}
+            disabled={filtersDisabled}
             onChange={(event) =>
               onFilterChange({ ...filters, rule: event.currentTarget.value })
             }
@@ -67,6 +70,7 @@ export function TraceInspector({
           <select
             aria-label="Surface node filter"
             value={filters.surfaceNode}
+            disabled={filtersDisabled}
             onChange={(event) =>
               onFilterChange({
                 ...filters,
@@ -90,7 +94,7 @@ export function TraceInspector({
               surfaceNode: ALL_TRACE_SURFACE_NODES,
             })
           }
-          disabled={!view.hasActiveFilters}
+          disabled={filtersDisabled || !view.hasActiveFilters}
         >
           Clear filters
         </button>

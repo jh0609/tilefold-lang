@@ -68,7 +68,7 @@ test("manual Step Run advances and continues the Addition example", async ({
   }
   await expect(page.locator('[data-testid^="trace-highlight-"]')).toHaveCount(1);
 
-  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
   const stepResult = page.getByText(/Trace Run .* Result:/);
   await expect(stepResult).toContainText("Result: Nat(5)");
   const stepRewriteCount = parseRewriteCount(await stepResult.textContent() ?? "");

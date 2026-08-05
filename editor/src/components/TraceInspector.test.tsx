@@ -169,4 +169,31 @@ describe("TraceInspector", () => {
     expect(screen.getAllByRole("button", { name: /^Event / })).toHaveLength(80);
     expect(screen.getAllByText("...")).toHaveLength(2);
   });
+
+  it("can lock filter mutation while keeping trace navigation available", () => {
+    const traceStore = new TraceStore();
+    traceStore.appendBatch([
+      { index: 0, rule: "Drop", subject: "drop_unit" },
+      { index: 1, rule: "Succ", subject: "node_succ" },
+    ]);
+    const onSelect = vi.fn();
+    render(
+      <TraceInspector
+        document={document}
+        traceStore={traceStore}
+        traceCount={traceStore.length}
+        selectedIndex={0}
+        sourceElementId="drop_unit"
+        filters={EMPTY_TRACE_FILTERS}
+        filtersDisabled
+        onFilterChange={vi.fn()}
+        onSelect={onSelect}
+      />,
+    );
+
+    expect(screen.getByLabelText("Rule filter")).toBeDisabled();
+    expect(screen.getByLabelText("Surface node filter")).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Last trace event" }));
+    expect(onSelect).toHaveBeenCalledWith(1);
+  });
 });

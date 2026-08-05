@@ -7,6 +7,7 @@ import { Toolbar } from "./components/Toolbar";
 import type { ThemePreference } from "./components/Toolbar";
 import {
   ExecutionPanel,
+  STEP_CONTINUE_TO_MATCH_REWRITE_LIMIT,
   type ExecutionState,
 } from "./components/ExecutionPanel";
 import {
@@ -69,7 +70,9 @@ import {
   initialTraceIndex,
   selectedTraceIndexForFilters,
   type TraceFilters,
+  traceEventMatchesFilters,
   traceEventAt,
+  traceFiltersActive,
 } from "./model/traceInspector";
 import { TraceStore } from "./model/traceStore";
 import {
@@ -412,7 +415,7 @@ export function App() {
         return current;
       }
       if (events.length === 0) {
-        return { ...current, phase: "paused" };
+        return { ...current, phase: "paused", message: undefined };
       }
       const previousView = buildTraceFilterView(
         document,
@@ -431,6 +434,7 @@ export function App() {
       return {
         ...current,
         phase: "paused",
+        message: undefined,
         traceCount,
         traceVersion: current.traceVersion + 1,
         selectedTraceIndex: selectionAfterTraceChange(
@@ -441,6 +445,40 @@ export function App() {
         ),
       };
     });
+  }
+
+  function applySeekStepEvents(
+    request: number,
+    events: ExecutionTraceEvent[],
+    matchedIndex: number | null,
+  ) {
+    setExecutionState((current) => {
+      if (executionRequest.current !== request || current.status !== "stepping") {
+        return current;
+      }
+      if (events.length === 0) {
+        return { ...current, phase: "paused", message: undefined };
+      }
+      current.traceStore.appendBatch(events);
+      const traceCount = current.traceStore.length;
+      return {
+        ...current,
+        phase: matchedIndex === null ? current.phase : "paused",
+        message: matchedIndex === null ? current.message : undefined,
+        traceCount,
+        traceVersion: current.traceVersion + 1,
+        selectedTraceIndex:
+          matchedIndex === null ? current.selectedTraceIndex : matchedIndex,
+      };
+    });
+  }
+
+  function pauseStepSeekWithMessage(request: number, message: string) {
+    setExecutionState((current) =>
+      executionRequest.current === request && current.status === "stepping"
+        ? { ...current, phase: "paused", message }
+        : current,
+    );
   }
 
   function completeTransparentExecution(
@@ -686,7 +724,7 @@ export function App() {
       stepSession.current = started as ExecutionStepSession;
       setExecutionState((current) =>
         current.status === "stepping"
-          ? { ...current, phase: "paused" }
+          ? { ...current, phase: "paused", message: undefined }
           : current,
       );
     } catch (error) {
@@ -718,7 +756,9 @@ export function App() {
     const controller = new AbortController();
     executionAbort.current = controller;
     setExecutionState((current) =>
-      current.status === "stepping" ? { ...current, phase: "nexting" } : current,
+      current.status === "stepping"
+        ? { ...current, phase: "nexting", message: undefined }
+        : current,
     );
     try {
       const response: StepRunResponse = await session.next({
@@ -768,7 +808,7 @@ export function App() {
     executionAbort.current = controller;
     setExecutionState((current) =>
       current.status === "stepping"
-        ? { ...current, phase: "continuing" }
+        ? { ...current, phase: "continuing", message: undefined }
         : current,
     );
     try {
@@ -787,6 +827,87 @@ export function App() {
       } else {
         completeTransparentExecution(request, response);
       }
+    } catch (error) {
+      if (executionRequest.current !== request) return;
+      stepSession.current = null;
+      if (isExecutionCanceledError(error)) {
+        setExecutionState({ status: "canceled", message: "Step Run stopped." });
+      } else {
+        setExecutionState({
+          status: "failed",
+          message:
+            error instanceof Error ? error.message : "Unknown Step Run failure.",
+          diagnostics: [
+            runnerErrorDiagnostic(
+              error instanceof Error ? error.message : "Unknown Step Run failure.",
+            ),
+          ],
+        });
+      }
+    } finally {
+      if (executionRequest.current === request) executionAbort.current = null;
+    }
+  }
+
+  async function stepContinueToMatch() {
+    const session = stepSession.current;
+    if (
+      !session ||
+      executionAbort.current ||
+      !traceFiltersActive(traceFiltersRef.current)
+    ) {
+      return;
+    }
+    const request = executionRequest.current + 1;
+    executionRequest.current = request;
+    const controller = new AbortController();
+    executionAbort.current = controller;
+    const filters = traceFiltersRef.current;
+    setExecutionState((current) =>
+      current.status === "stepping"
+        ? { ...current, phase: "seeking", message: undefined }
+        : current,
+    );
+    try {
+      for (
+        let stepCount = 0;
+        stepCount < STEP_CONTINUE_TO_MATCH_REWRITE_LIMIT;
+        stepCount += 1
+      ) {
+        if (executionRequest.current !== request || controller.signal.aborted) {
+          return;
+        }
+        const response: StepRunResponse = await session.next({
+          signal: controller.signal,
+        });
+        if (executionRequest.current !== request) return;
+        if (response.status === "error") {
+          stepSession.current = null;
+          failFromRunner(
+            response.stage,
+            response.messages,
+            "The browser OCaml runner rejected the Step Run.",
+          );
+          return;
+        }
+        if (response.status === "completed") {
+          completeTransparentExecution(request, response);
+          return;
+        }
+        const event = response.trace[0] ?? null;
+        const matched =
+          event !== null && traceEventMatchesFilters(document, event, filters);
+        applySeekStepEvents(
+          request,
+          response.trace,
+          matched && event ? event.index : null,
+        );
+        if (matched) return;
+      }
+      pauseStepSeekWithMessage(
+        request,
+        `No matching rewrite found within ${STEP_CONTINUE_TO_MATCH_REWRITE_LIMIT} rewrites. The Step Run is still paused.`,
+      );
     } catch (error) {
       if (executionRequest.current !== request) return;
       stepSession.current = null;
@@ -838,6 +959,12 @@ export function App() {
   }
 
   function changeTraceFilters(nextFilters: TraceFilters) {
+    if (
+      executionState.status === "stepping" &&
+      executionState.phase === "seeking"
+    ) {
+      return;
+    }
     traceFiltersRef.current = nextFilters;
     setTraceFilters(nextFilters);
     setExecutionState((current) => {
@@ -2017,6 +2144,7 @@ export function App() {
           onViewTrace={viewTraceForFastResult}
           onStepNext={stepNextRewrite}
           onStepContinue={stepContinue}
+          onStepContinueToMatch={stepContinueToMatch}
           onStepStop={stopStepRun}
           onDiagnosticSelect={focusDiagnostic}
         />

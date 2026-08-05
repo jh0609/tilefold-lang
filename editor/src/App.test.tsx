@@ -1358,6 +1358,492 @@ describe("Tilefold editor UI", () => {
     expect(screen.getByText(/Event 3 of 3/)).toBeInTheDocument();
   });
 
+  it("continues a paused Step Run to the next future rule match only", async () => {
+    const user = userEvent.setup();
+    const workers: Array<{
+      onmessage: ((event: MessageEvent) => void) | null;
+      postMessage: ReturnType<typeof vi.fn>;
+      terminate: ReturnType<typeof vi.fn>;
+    }> = [];
+    class WorkerMock {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+      onmessageerror: ((event: MessageEvent) => void) | null = null;
+      postMessage = vi.fn();
+      terminate = vi.fn();
+      constructor() {
+        workers.push(this);
+      }
+    }
+    vi.stubGlobal("Worker", WorkerMock);
+    render(<App />);
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Execution mode" }),
+      "transparent",
+    );
+    await user.click(screen.getByRole("button", { name: "Start stepping" }));
+    workers[0].onmessage?.({
+      data: { requestId: 1, output: JSON.stringify({ status: "started" }) },
+    } as MessageEvent);
+    await screen.findByText(/Step Run paused · 0 rewrites/);
+
+    await user.click(screen.getByRole("button", { name: "Next Rewrite" }));
+    workers[0].onmessage?.({
+      data: {
+        requestId: 2,
+        output: JSON.stringify({
+          status: "trace_batch",
+          rewriteCount: 1,
+          trace: [{ index: 0, rule: "Function", subject: "entry-function" }],
+        }),
+      },
+    } as MessageEvent);
+    await screen.findByText("Event 1 of 1");
+    await user.selectOptions(screen.getByLabelText("Rule filter"), "Function");
+
+    await user.click(screen.getByRole("button", { name: "Continue to Match" }));
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Continuing to next match...",
+    );
+    workers[0].onmessage?.({
+      data: {
+        requestId: 3,
+        output: JSON.stringify({
+          status: "trace_batch",
+          rewriteCount: 2,
+          trace: [{ index: 1, rule: "Drop", subject: "drop_unit" }],
+        }),
+      },
+    } as MessageEvent);
+    await screen.findByText("1 of 2 events");
+    expect(screen.getByText(/Event 1 of 2/)).toBeInTheDocument();
+
+    workers[0].onmessage?.({
+      data: {
+        requestId: 4,
+        output: JSON.stringify({
+          status: "trace_batch",
+          rewriteCount: 3,
+          trace: [{ index: 2, rule: "Function", subject: "entry-function" }],
+        }),
+      },
+    } as MessageEvent);
+    await screen.findByText("2 of 3 events");
+    expect(screen.getByText(/Event 3 of 3/)).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Step Run paused · 3 rewrites",
+    );
+    expect(workers[0].postMessage.mock.calls.map(([message]) => message.kind)).toEqual([
+      "startStep",
+      "stepNext",
+      "stepNext",
+      "stepNext",
+    ]);
+
+    await user.click(screen.getByRole("button", { name: "Continue to Match" }));
+    workers[0].onmessage?.({
+      data: {
+        requestId: 5,
+        output: JSON.stringify({
+          status: "trace_batch",
+          rewriteCount: 4,
+          trace: [{ index: 3, rule: "Function", subject: "entry-function" }],
+        }),
+      },
+    } as MessageEvent);
+    await screen.findByText("3 of 4 events");
+    expect(screen.getByText(/Event 4 of 4/)).toBeInTheDocument();
+  });
+
+  it("continues to an exact mapped Surface-node match and highlights it", async () => {
+    const user = userEvent.setup();
+    const workers: Array<{
+      onmessage: ((event: MessageEvent) => void) | null;
+      postMessage: ReturnType<typeof vi.fn>;
+      terminate: ReturnType<typeof vi.fn>;
+    }> = [];
+    class WorkerMock {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+      onmessageerror: ((event: MessageEvent) => void) | null = null;
+      postMessage = vi.fn();
+      terminate = vi.fn();
+      constructor() {
+        workers.push(this);
+      }
+    }
+    vi.stubGlobal("Worker", WorkerMock);
+    render(<App />);
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Execution mode" }),
+      "transparent",
+    );
+    await user.click(screen.getByRole("button", { name: "Start stepping" }));
+    workers[0].onmessage?.({
+      data: { requestId: 1, output: JSON.stringify({ status: "started" }) },
+    } as MessageEvent);
+    await screen.findByText(/Step Run paused · 0 rewrites/);
+
+    await user.click(screen.getByRole("button", { name: "Next Rewrite" }));
+    workers[0].onmessage?.({
+      data: {
+        requestId: 2,
+        output: JSON.stringify({
+          status: "trace_batch",
+          rewriteCount: 1,
+          trace: [{ index: 0, rule: "Drop", subject: "drop_unit" }],
+        }),
+      },
+    } as MessageEvent);
+    await screen.findByText("Element drop_unit");
+    await user.selectOptions(
+      screen.getByLabelText("Surface node filter"),
+      "drop_unit",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Continue to Match" }));
+    workers[0].onmessage?.({
+      data: {
+        requestId: 3,
+        output: JSON.stringify({
+          status: "trace_batch",
+          rewriteCount: 2,
+          trace: [{ index: 1, rule: "Succ", subject: "node_succ" }],
+        }),
+      },
+    } as MessageEvent);
+    await screen.findByText("1 of 2 events");
+    expect(screen.getByText(/Event 1 of 2/)).toBeInTheDocument();
+
+    workers[0].onmessage?.({
+      data: {
+        requestId: 4,
+        output: JSON.stringify({
+          status: "trace_batch",
+          rewriteCount: 3,
+          trace: [{ index: 2, rule: "Drop", subject: "drop_unit" }],
+        }),
+      },
+    } as MessageEvent);
+    await screen.findByText("2 of 3 events");
+    expect(screen.getByText(/Event 3 of 3/)).toBeInTheDocument();
+    expect(screen.getByTestId("trace-highlight-drop_unit")).toBeInTheDocument();
+  });
+
+  it("pauses at the Continue-to-Match safety limit and recovers with Next Rewrite", async () => {
+    const user = userEvent.setup();
+    const workers: Array<{
+      onmessage: ((event: MessageEvent) => void) | null;
+      postMessage: ReturnType<typeof vi.fn>;
+      terminate: ReturnType<typeof vi.fn>;
+    }> = [];
+    let nextIndex = 0;
+    class WorkerMock {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+      onmessageerror: ((event: MessageEvent) => void) | null = null;
+      postMessage = vi.fn((message: { requestId: number; kind?: string }) => {
+        if (message.kind === "stepNext") {
+          const event =
+            nextIndex === 0
+              ? { index: 0, rule: "Function", subject: "entry-function" }
+              : { index: nextIndex, rule: "Drop", subject: "drop_unit" };
+          nextIndex += 1;
+          queueMicrotask(() =>
+            this.onmessage?.({
+              data: {
+                requestId: message.requestId,
+                output: JSON.stringify({
+                  status: "trace_batch",
+                  rewriteCount: nextIndex,
+                  trace: [event],
+                }),
+              },
+            } as MessageEvent),
+          );
+        }
+      });
+      terminate = vi.fn();
+      constructor() {
+        workers.push(this);
+      }
+    }
+    vi.stubGlobal("Worker", WorkerMock);
+    render(<App />);
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Execution mode" }),
+      "transparent",
+    );
+    await user.click(screen.getByRole("button", { name: "Start stepping" }));
+    workers[0].onmessage?.({
+      data: { requestId: 1, output: JSON.stringify({ status: "started" }) },
+    } as MessageEvent);
+    await screen.findByText(/Step Run paused · 0 rewrites/);
+
+    await user.click(screen.getByRole("button", { name: "Next Rewrite" }));
+    await screen.findByText("Event 1 of 1");
+    await user.selectOptions(screen.getByLabelText("Rule filter"), "Function");
+
+    await user.click(screen.getByRole("button", { name: "Continue to Match" }));
+    await screen.findByText(/No matching rewrite found within \d+ rewrites/);
+    expect(screen.getAllByRole("status")[0]).toHaveTextContent(
+      "Step Run paused · 513 rewrites",
+    );
+    expect(screen.getByText(/Event 1 of 513/)).toBeInTheDocument();
+    expect(workers[0].terminate).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Next Rewrite" }));
+    await screen.findByText(/Step Run paused · 514 rewrites/);
+  });
+
+  it("stops a pending Continue-to-Match next request and ignores stale responses", async () => {
+    const user = userEvent.setup();
+    const workers: Array<{
+      onmessage: ((event: MessageEvent) => void) | null;
+      postMessage: ReturnType<typeof vi.fn>;
+      terminate: ReturnType<typeof vi.fn>;
+    }> = [];
+    class WorkerMock {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+      onmessageerror: ((event: MessageEvent) => void) | null = null;
+      postMessage = vi.fn();
+      terminate = vi.fn();
+      constructor() {
+        workers.push(this);
+      }
+    }
+    vi.stubGlobal("Worker", WorkerMock);
+    render(<App />);
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Execution mode" }),
+      "transparent",
+    );
+    await user.click(screen.getByRole("button", { name: "Start stepping" }));
+    workers[0].onmessage?.({
+      data: { requestId: 1, output: JSON.stringify({ status: "started" }) },
+    } as MessageEvent);
+    await screen.findByText(/Step Run paused · 0 rewrites/);
+    await user.click(screen.getByRole("button", { name: "Next Rewrite" }));
+    workers[0].onmessage?.({
+      data: {
+        requestId: 2,
+        output: JSON.stringify({
+          status: "trace_batch",
+          rewriteCount: 1,
+          trace: [{ index: 0, rule: "Drop", subject: "drop_unit" }],
+        }),
+      },
+    } as MessageEvent);
+    await screen.findByText("Event 1 of 1");
+    await user.selectOptions(screen.getByLabelText("Rule filter"), "Drop");
+
+    await user.click(screen.getByRole("button", { name: "Continue to Match" }));
+    expect(workers[0].postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ kind: "stepNext", requestId: 3 }),
+    );
+    const staleMessage = workers[0].onmessage;
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+    expect(workers[0].terminate).toHaveBeenCalledOnce();
+    expect(screen.getByRole("status")).toHaveTextContent("Step Run stopped.");
+
+    staleMessage?.({
+      data: {
+        requestId: 3,
+        output: JSON.stringify({
+          status: "trace_batch",
+          rewriteCount: 2,
+          trace: [{ index: 1, rule: "Drop", subject: "drop_unit" }],
+        }),
+      },
+    } as MessageEvent);
+    staleMessage?.({
+      data: { requestId: 3, workerError: "late failure" },
+    } as MessageEvent);
+    expect(screen.getByRole("status")).toHaveTextContent("Step Run stopped.");
+    expect(screen.queryByText(/Event 2 of/)).not.toBeInTheDocument();
+    expect(workers[0].postMessage).toHaveBeenCalledTimes(3);
+
+    await user.click(screen.getByRole("button", { name: "Start stepping" }));
+    expect(workers).toHaveLength(2);
+    workers[1].onmessage?.({
+      data: { requestId: 4, output: JSON.stringify({ status: "started" }) },
+    } as MessageEvent);
+    await screen.findByText(/Step Run paused · 0 rewrites/);
+  });
+
+  it("invalidates a pending Continue-to-Match request on semantic edits", async () => {
+    const user = userEvent.setup();
+    const workers: Array<{
+      onmessage: ((event: MessageEvent) => void) | null;
+      postMessage: ReturnType<typeof vi.fn>;
+      terminate: ReturnType<typeof vi.fn>;
+    }> = [];
+    class WorkerMock {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+      onmessageerror: ((event: MessageEvent) => void) | null = null;
+      postMessage = vi.fn();
+      terminate = vi.fn();
+      constructor() {
+        workers.push(this);
+      }
+    }
+    vi.stubGlobal("Worker", WorkerMock);
+    render(<App />);
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Execution mode" }),
+      "transparent",
+    );
+    await user.click(screen.getByRole("button", { name: "Start stepping" }));
+    workers[0].onmessage?.({
+      data: { requestId: 1, output: JSON.stringify({ status: "started" }) },
+    } as MessageEvent);
+    await screen.findByText(/Step Run paused · 0 rewrites/);
+    await user.click(screen.getByRole("button", { name: "Next Rewrite" }));
+    workers[0].onmessage?.({
+      data: {
+        requestId: 2,
+        output: JSON.stringify({
+          status: "trace_batch",
+          rewriteCount: 1,
+          trace: [{ index: 0, rule: "Drop", subject: "drop_unit" }],
+        }),
+      },
+    } as MessageEvent);
+    await screen.findByText("Event 1 of 1");
+    await user.selectOptions(screen.getByLabelText("Rule filter"), "Drop");
+    await user.click(screen.getByRole("button", { name: "Continue to Match" }));
+    const staleMessage = workers[0].onmessage;
+
+    await user.click(screen.getByRole("button", { name: "Add Nat" }));
+    expect(workers[0].terminate).toHaveBeenCalledOnce();
+    expect(screen.queryByText(/Step Run paused/)).not.toBeInTheDocument();
+    staleMessage?.({
+      data: {
+        requestId: 3,
+        output: JSON.stringify({
+          status: "trace_batch",
+          rewriteCount: 2,
+          trace: [{ index: 1, rule: "Drop", subject: "drop_unit" }],
+        }),
+      },
+    } as MessageEvent);
+    expect(screen.queryByRole("list", { name: "Rewrite trace" })).not.toBeInTheDocument();
+  });
+
+  it("completes normally when Continue to Match reaches program completion first", async () => {
+    const user = userEvent.setup();
+    const workers: Array<{
+      onmessage: ((event: MessageEvent) => void) | null;
+      postMessage: ReturnType<typeof vi.fn>;
+      terminate: ReturnType<typeof vi.fn>;
+    }> = [];
+    class WorkerMock {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+      onmessageerror: ((event: MessageEvent) => void) | null = null;
+      postMessage = vi.fn();
+      terminate = vi.fn();
+      constructor() {
+        workers.push(this);
+      }
+    }
+    vi.stubGlobal("Worker", WorkerMock);
+    render(<App />);
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Execution mode" }),
+      "transparent",
+    );
+    await user.click(screen.getByRole("button", { name: "Start stepping" }));
+    workers[0].onmessage?.({
+      data: { requestId: 1, output: JSON.stringify({ status: "started" }) },
+    } as MessageEvent);
+    await screen.findByText(/Step Run paused · 0 rewrites/);
+    await user.click(screen.getByRole("button", { name: "Next Rewrite" }));
+    workers[0].onmessage?.({
+      data: {
+        requestId: 2,
+        output: JSON.stringify({
+          status: "trace_batch",
+          rewriteCount: 1,
+          trace: [{ index: 0, rule: "Function", subject: "entry-function" }],
+        }),
+      },
+    } as MessageEvent);
+    await screen.findByText("Event 1 of 1");
+    await user.selectOptions(screen.getByLabelText("Rule filter"), "Function");
+
+    await user.click(screen.getByRole("button", { name: "Continue to Match" }));
+    workers[0].onmessage?.({
+      data: {
+        requestId: 3,
+        output: JSON.stringify({
+          status: "completed",
+          mode: "transparent",
+          result: "Nat(3)",
+          rewriteCount: 1,
+          trace: [],
+        }),
+      },
+    } as MessageEvent);
+    expect(await screen.findByText(/Result:/)).toHaveTextContent(
+      "Result: Nat(3) · 1 rewrites",
+    );
+  });
+
+  it("reports runner failures during Continue to Match and closes the session", async () => {
+    const user = userEvent.setup();
+    const workers: Array<{
+      onmessage: ((event: MessageEvent) => void) | null;
+      postMessage: ReturnType<typeof vi.fn>;
+      terminate: ReturnType<typeof vi.fn>;
+    }> = [];
+    class WorkerMock {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+      onmessageerror: ((event: MessageEvent) => void) | null = null;
+      postMessage = vi.fn();
+      terminate = vi.fn();
+      constructor() {
+        workers.push(this);
+      }
+    }
+    vi.stubGlobal("Worker", WorkerMock);
+    render(<App />);
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Execution mode" }),
+      "transparent",
+    );
+    await user.click(screen.getByRole("button", { name: "Start stepping" }));
+    workers[0].onmessage?.({
+      data: { requestId: 1, output: JSON.stringify({ status: "started" }) },
+    } as MessageEvent);
+    await screen.findByText(/Step Run paused · 0 rewrites/);
+    await user.click(screen.getByRole("button", { name: "Next Rewrite" }));
+    workers[0].onmessage?.({
+      data: {
+        requestId: 2,
+        output: JSON.stringify({
+          status: "trace_batch",
+          rewriteCount: 1,
+          trace: [{ index: 0, rule: "Function", subject: "entry-function" }],
+        }),
+      },
+    } as MessageEvent);
+    await screen.findByText("Event 1 of 1");
+    await user.selectOptions(screen.getByLabelText("Rule filter"), "Function");
+
+    await user.click(screen.getByRole("button", { name: "Continue to Match" }));
+    workers[0].onmessage?.({
+      data: { requestId: 3, workerError: "seek failed" },
+    } as MessageEvent);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Browser runner failed: seek failed",
+    );
+    expect(screen.queryByText(/Step Run paused/)).not.toBeInTheDocument();
+  });
+
   it("cancels execution, ignores a late result, and reruns with a new worker", async () => {
     const user = userEvent.setup();
     const workers: Array<{

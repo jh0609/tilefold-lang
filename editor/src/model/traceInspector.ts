@@ -163,6 +163,16 @@ function eventMatchesFilters(
   return elementId === filters.surfaceNode;
 }
 
+export function traceEventMatchesFilters(
+  document: ProjectDocument,
+  event: ExecutionTraceEvent,
+  filters: TraceFilters,
+): boolean {
+  const sourceMap = createLoweringSourceMap(document);
+  const elementId = exactTraceElementIdFromSourceMap(document, sourceMap, event);
+  return eventMatchesFilters(event, elementId, filters);
+}
+
 export function buildTraceFilterView(
   document: ProjectDocument,
   traceStore: TraceStore,

@@ -9,6 +9,7 @@ import {
   exactTraceElementId,
   initialTraceIndex,
   selectedTraceIndexForFilters,
+  traceEventMatchesFilters,
   traceEventAt,
   traceWindowForSelection,
   UNMAPPED_TRACE_SURFACE_NODE,
@@ -149,6 +150,43 @@ describe("trace inspector state", () => {
         surfaceNode: "drop_unit",
       }).matchingIndexes,
     ).toEqual([]);
+  });
+
+  it("uses the same exact predicate for breakpoint-style filter matches", () => {
+    const document = parseProjectJson(exampleJson);
+    const mapped = { index: 1, rule: "Drop", subject: "drop_unit" };
+    const unmapped = { index: 2, rule: "Function", subject: "entry-function" };
+
+    expect(
+      traceEventMatchesFilters(document, mapped, {
+        rule: "Drop",
+        surfaceNode: "",
+      }),
+    ).toBe(true);
+    expect(
+      traceEventMatchesFilters(document, mapped, {
+        rule: "",
+        surfaceNode: "drop_unit",
+      }),
+    ).toBe(true);
+    expect(
+      traceEventMatchesFilters(document, unmapped, {
+        rule: "",
+        surfaceNode: UNMAPPED_TRACE_SURFACE_NODE,
+      }),
+    ).toBe(true);
+    expect(
+      traceEventMatchesFilters(document, mapped, {
+        rule: "Succ",
+        surfaceNode: "drop_unit",
+      }),
+    ).toBe(false);
+    expect(
+      traceEventMatchesFilters(document, mapped, {
+        rule: "Drop",
+        surfaceNode: "node_succ",
+      }),
+    ).toBe(false);
   });
 
   it("retains or moves selection based on filtered matches", () => {
