@@ -589,7 +589,9 @@ test("authors NatRec with an Arrow accumulator and applies the result", async ({
   await page.getByLabel("Execution mode").selectOption("transparent");
   await page.getByRole("button", { name: "Run" }).click();
   await expect(page.getByText(/Result:/)).toContainText("Nat(0)");
-  await expect(page.getByText(/NatRecStart/)).toBeVisible();
+  await expect(
+    page.locator(".trace-event-button", { hasText: "NatRecStart" }),
+  ).toBeVisible();
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export JSON" }).click();
@@ -604,7 +606,9 @@ test("authors NatRec with an Arrow accumulator and applies the result", async ({
   await reloaded.getByLabel("Execution mode").selectOption("transparent");
   await reloaded.getByRole("button", { name: "Run" }).click();
   await expect(reloaded.getByText(/Result:/)).toContainText("Nat(0)");
-  await expect(reloaded.getByText(/NatRecStart/)).toBeVisible();
+  await expect(
+    reloaded.locator(".trace-event-button", { hasText: "NatRecStart" }),
+  ).toBeVisible();
   await expectNoBrowserIssues(issues);
   await expectNoBrowserIssues(reloadIssues);
 });

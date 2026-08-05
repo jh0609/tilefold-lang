@@ -227,6 +227,19 @@ test("exports and reloads a natural-number example through the UI", async ({
   await runModeAndExpect(reloaded, "transparent", recursiveExample.result);
   await runModeAndExpect(reloaded, "fast", recursiveExample.result);
 
+  await reloaded.reload();
+  await expect(reloaded.getByText(recursiveExample.fileName)).toBeVisible();
+  await expect(reloaded.getByTestId(recursiveExample.marker)).toBeVisible();
+  await expect(reloaded.getByTestId("element-list-rec")).toContainText(
+    "ListRec<Nat, Nat>",
+  );
+  await expect(reloaded.getByTestId("element-sum-add")).toHaveAttribute(
+    "data-library-function-id",
+    "nat.add",
+  );
+  await runModeAndExpect(reloaded, "transparent", recursiveExample.result);
+  await runModeAndExpect(reloaded, "fast", recursiveExample.result);
+
   await expectNoBrowserIssues(issues);
   await expectNoBrowserIssues(reloadIssues);
 });

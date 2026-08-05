@@ -1,8 +1,10 @@
 import type {
   ExecutionResponse,
 } from "../model/executionApi";
+import type { ProjectDocument } from "../model/project";
 import type { SourceDiagnostic } from "../model/sourceDiagnostics";
 import type { TraceStore } from "../model/traceStore";
+import type { TraceFilters } from "../model/traceInspector";
 import { TraceInspector } from "./TraceInspector";
 
 export type ExecutionState =
@@ -38,7 +40,10 @@ export type ExecutionState =
 
 interface ExecutionPanelProps {
   state: ExecutionState;
+  document: ProjectDocument;
   traceSourceElementId: string | null;
+  traceFilters: TraceFilters;
+  onTraceFilterChange: (filters: TraceFilters) => void;
   onTraceSelect: (index: number) => void;
   onViewTrace: () => void;
   onStepNext: () => void;
@@ -49,7 +54,10 @@ interface ExecutionPanelProps {
 
 export function ExecutionPanel({
   state,
+  document,
   traceSourceElementId,
+  traceFilters,
+  onTraceFilterChange,
   onTraceSelect,
   onViewTrace,
   onStepNext,
@@ -98,12 +106,15 @@ export function ExecutionPanel({
               Fast result: <strong>{state.replayFastResult}</strong>
             </p>
           )}
-          {runningSelectedTraceIndex !== null && runningTraceStore && runningTraceCount > 0 ? (
+          {runningTraceStore && runningTraceCount > 0 ? (
             <TraceInspector
+              document={document}
               traceStore={runningTraceStore}
               traceCount={runningTraceCount}
               selectedIndex={runningSelectedTraceIndex}
               sourceElementId={traceSourceElementId}
+              filters={traceFilters}
+              onFilterChange={onTraceFilterChange}
               onSelect={onTraceSelect}
             />
           ) : state.mode === "transparent" ? (
@@ -141,12 +152,15 @@ export function ExecutionPanel({
               Stop
             </button>
           </div>
-          {runningSelectedTraceIndex !== null && runningTraceStore && runningTraceCount > 0 ? (
+          {runningTraceStore && runningTraceCount > 0 ? (
             <TraceInspector
+              document={document}
               traceStore={runningTraceStore}
               traceCount={runningTraceCount}
               selectedIndex={runningSelectedTraceIndex}
               sourceElementId={traceSourceElementId}
+              filters={traceFilters}
+              onFilterChange={onTraceFilterChange}
               onSelect={onTraceSelect}
             />
           ) : (
@@ -225,13 +239,15 @@ export function ExecutionPanel({
               Trace 보기
             </button>
           )}
-          {state.status === "completed" &&
-          state.selectedTraceIndex !== null ? (
+          {state.status === "completed" && state.traceCount > 0 ? (
             <TraceInspector
+              document={document}
               traceStore={state.traceStore}
               traceCount={state.traceCount}
               selectedIndex={state.selectedTraceIndex}
               sourceElementId={traceSourceElementId}
+              filters={traceFilters}
+              onFilterChange={onTraceFilterChange}
               onSelect={onTraceSelect}
             />
           ) : (

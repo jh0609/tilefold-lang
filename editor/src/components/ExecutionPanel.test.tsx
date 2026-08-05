@@ -1,13 +1,21 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import exampleJson from "../../../examples/nat-succ.tilefold.json?raw";
+import { EMPTY_TRACE_FILTERS } from "../model/traceInspector";
+import { parseProjectJson } from "../model/importProject";
 import { TraceStore } from "../model/traceStore";
 import { ExecutionPanel, type ExecutionState } from "./ExecutionPanel";
+
+const document = parseProjectJson(exampleJson);
 
 function renderPanel(state: ExecutionState, onViewTrace = vi.fn()) {
   render(
     <ExecutionPanel
       state={state}
+      document={document}
       traceSourceElementId={null}
+      traceFilters={EMPTY_TRACE_FILTERS}
+      onTraceFilterChange={vi.fn()}
       onTraceSelect={vi.fn()}
       onViewTrace={onViewTrace}
       onStepNext={vi.fn()}
@@ -86,7 +94,10 @@ describe("ExecutionPanel trace replay", () => {
           traceVersion: 0,
           selectedTraceIndex: null,
         }}
+        document={document}
         traceSourceElementId={null}
+        traceFilters={EMPTY_TRACE_FILTERS}
+        onTraceFilterChange={vi.fn()}
         onTraceSelect={vi.fn()}
         onViewTrace={vi.fn()}
         onStepNext={onNext}
@@ -112,7 +123,10 @@ describe("ExecutionPanel trace replay", () => {
           traceVersion: 0,
           selectedTraceIndex: null,
         }}
+        document={document}
         traceSourceElementId={null}
+        traceFilters={EMPTY_TRACE_FILTERS}
+        onTraceFilterChange={vi.fn()}
         onTraceSelect={vi.fn()}
         onViewTrace={vi.fn()}
         onStepNext={onNext}
@@ -138,7 +152,10 @@ describe("ExecutionPanel trace replay", () => {
           traceVersion: 0,
           selectedTraceIndex: null,
         }}
+        document={document}
         traceSourceElementId={null}
+        traceFilters={EMPTY_TRACE_FILTERS}
+        onTraceFilterChange={vi.fn()}
         onTraceSelect={vi.fn()}
         onViewTrace={vi.fn()}
         onStepNext={vi.fn()}

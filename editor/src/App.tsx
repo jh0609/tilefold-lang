@@ -63,8 +63,12 @@ import {
   type StepRunResponse,
 } from "./model/executionApi";
 import {
+  buildTraceFilterView,
+  EMPTY_TRACE_FILTERS,
   exactTraceElementId,
   initialTraceIndex,
+  selectedTraceIndexForFilters,
+  type TraceFilters,
   traceEventAt,
 } from "./model/traceInspector";
 import { TraceStore } from "./model/traceStore";
@@ -91,9 +95,14 @@ import {
 } from "./model/editorSpatialIndex";
 
 const initialExample = EXAMPLE_PROJECTS[0];
-const initialDocument = parseProjectJson(initialExample.projectJson);
 const THEME_STORAGE_KEY = "tilefold.editor.theme";
 const EXECUTION_MODE_STORAGE_KEY = "tilefold.editor.executionMode";
+const PROJECT_STORAGE_KEY = "tilefold.editor.project";
+
+interface StoredProjectState {
+  document: ProjectDocument;
+  projectName: string;
+}
 
 function readStoredThemePreference(): ThemePreference {
   if (typeof window === "undefined") return "system";
@@ -107,6 +116,39 @@ function readStoredExecutionMode(): ExecutionMode {
   if (typeof window === "undefined") return "fast";
   const stored = window.localStorage.getItem(EXECUTION_MODE_STORAGE_KEY);
   return stored === "transparent" || stored === "fast" ? stored : "fast";
+}
+
+function defaultProjectState(): StoredProjectState {
+  return {
+    document: parseProjectJson(initialExample.projectJson),
+    projectName: initialExample.fileName,
+  };
+}
+
+function readStoredProjectState(): StoredProjectState {
+  if (typeof window === "undefined") return defaultProjectState();
+  const stored = window.localStorage.getItem(PROJECT_STORAGE_KEY);
+  if (!stored) return defaultProjectState();
+  try {
+    const parsed = JSON.parse(stored) as unknown;
+    if (typeof parsed !== "object" || parsed === null) {
+      throw new Error("Stored project is not an object.");
+    }
+    const record = parsed as Record<string, unknown>;
+    if (
+      typeof record.projectName !== "string" ||
+      typeof record.projectJson !== "string"
+    ) {
+      throw new Error("Stored project is missing required fields.");
+    }
+    return {
+      document: parseProjectJson(record.projectJson),
+      projectName: record.projectName,
+    };
+  } catch {
+    window.localStorage.removeItem(PROJECT_STORAGE_KEY);
+    return defaultProjectState();
+  }
 }
 
 function readFileText(file: File): Promise<string> {
@@ -139,12 +181,13 @@ function isTextEditingTarget(target: EventTarget | null): boolean {
 }
 
 export function App() {
+  const initialProject = useMemo(readStoredProjectState, []);
   const [history, setHistory] = useState(() =>
-    createEditorHistory(initialDocument),
+    createEditorHistory(initialProject.document),
   );
   const document = history.present;
   const [projectName, setProjectName] = useState<string>(
-    initialExample.fileName,
+    initialProject.projectName,
   );
   const [selectedExampleId, setSelectedExampleId] =
     useState<ExampleProjectId>(initialExample.id);
@@ -157,6 +200,9 @@ export function App() {
   const [executionState, setExecutionState] = useState<ExecutionState>({
     status: "idle",
   });
+  const [traceFilters, setTraceFilters] =
+    useState<TraceFilters>(EMPTY_TRACE_FILTERS);
+  const traceFiltersRef = useRef<TraceFilters>(EMPTY_TRACE_FILTERS);
   const [executionMode, setExecutionMode] =
     useState<ExecutionMode>(readStoredExecutionMode);
   const [themePreference, setThemePreference] = useState<ThemePreference>(
@@ -175,7 +221,7 @@ export function App() {
   const executionBackend = useRef<ExecutionBackend | null>(null);
   const executionAbort = useRef<AbortController | null>(null);
   const stepSession = useRef<ExecutionStepSession | null>(null);
-  const [viewBox, setViewBox] = useState(savedViewBox(initialDocument.view));
+  const [viewBox, setViewBox] = useState(savedViewBox(initialProject.document.view));
   const referenceViewBox = savedViewBox(document.view);
   const spatialIndex = useMemo(
     () => buildEditorSpatialIndex(document),
@@ -273,8 +319,14 @@ export function App() {
     );
   }, [document, functionHost, selection]);
 
+  function resetTraceFilters() {
+    traceFiltersRef.current = EMPTY_TRACE_FILTERS;
+    setTraceFilters(EMPTY_TRACE_FILTERS);
+  }
+
   function resetDocument(next: ProjectDocument) {
     invalidateExecution();
+    resetTraceFilters();
     setHistory(createEditorHistory(next));
     setSelection(null);
     setStandardLibraryDefinition(null);
@@ -297,7 +349,22 @@ export function App() {
   }
 
   function invalidateExecution() {
+    resetTraceFilters();
     stopExecution({ status: "idle" });
+  }
+
+  function selectionAfterTraceChange(
+    traceStore: TraceStore,
+    traceCount: number,
+    currentSelectedIndex: number | null,
+    followLatest: boolean,
+  ): number | null {
+    const currentFilters = traceFiltersRef.current;
+    return selectedTraceIndexForFilters(
+      buildTraceFilterView(document, traceStore, traceCount, currentFilters),
+      currentSelectedIndex,
+      { followLatest },
+    );
   }
 
   function appendTraceEvents(request: number, events: ExecutionTraceEvent[]) {
@@ -310,17 +377,26 @@ export function App() {
         return current;
       }
       const previousLength = current.traceCount;
+      const previousView = buildTraceFilterView(
+        document,
+        current.traceStore,
+        previousLength,
+        traceFiltersRef.current,
+      );
+      const previousLastMatch =
+        previousView.matchingIndexes[previousView.matchingIndexes.length - 1] ??
+        null;
       current.traceStore.appendBatch(events);
       const traceCount = current.traceStore.length;
       const wasFollowing =
         current.selectedTraceIndex !== null &&
-        current.selectedTraceIndex === previousLength - 1;
-      const selectedTraceIndex =
-        current.selectedTraceIndex === null
-          ? 0
-          : wasFollowing
-            ? traceCount - 1
-            : current.selectedTraceIndex;
+        current.selectedTraceIndex === previousLastMatch;
+      const selectedTraceIndex = selectionAfterTraceChange(
+        current.traceStore,
+        traceCount,
+        current.selectedTraceIndex,
+        wasFollowing,
+      );
       return {
         ...current,
         traceCount,
@@ -338,14 +414,31 @@ export function App() {
       if (events.length === 0) {
         return { ...current, phase: "paused" };
       }
+      const previousView = buildTraceFilterView(
+        document,
+        current.traceStore,
+        current.traceCount,
+        traceFiltersRef.current,
+      );
+      const previousLastMatch =
+        previousView.matchingIndexes[previousView.matchingIndexes.length - 1] ??
+        null;
       current.traceStore.appendBatch(events);
       const traceCount = current.traceStore.length;
+      const wasFollowing =
+        current.selectedTraceIndex !== null &&
+        current.selectedTraceIndex === previousLastMatch;
       return {
         ...current,
         phase: "paused",
         traceCount,
         traceVersion: current.traceVersion + 1,
-        selectedTraceIndex: traceCount - 1,
+        selectedTraceIndex: selectionAfterTraceChange(
+          current.traceStore,
+          traceCount,
+          current.selectedTraceIndex,
+          wasFollowing,
+        ),
       };
     });
   }
@@ -363,6 +456,12 @@ export function App() {
         traceStore.appendBatch(response.trace);
       }
       const traceCount = traceStore.length;
+      const selectedTraceIndex = selectedTraceIndexAfterRun(
+        current.status === "running" || current.status === "stepping"
+          ? { ...current, status: "running" as const, mode: "transparent" as const, traceCount }
+          : current,
+        response,
+      );
       return {
         status: "completed",
         response,
@@ -372,11 +471,14 @@ export function App() {
           current.status === "running" || current.status === "stepping"
             ? current.traceVersion + 1
             : 0,
-        selectedTraceIndex: selectedTraceIndexAfterRun(
-          current.status === "running" || current.status === "stepping"
-            ? { ...current, status: "running" as const, mode: "transparent" as const, traceCount }
-            : current,
-          response,
+        selectedTraceIndex: selectedTraceIndexForFilters(
+          buildTraceFilterView(
+            document,
+            traceStore,
+            traceCount,
+            traceFiltersRef.current,
+          ),
+          selectedTraceIndex,
         ),
       };
     });
@@ -394,6 +496,7 @@ export function App() {
         id: `diag:runner:${stage}:${index}`,
       })),
     });
+    resetTraceFilters();
   }
 
   function selectedTraceIndexAfterRun(
@@ -420,6 +523,7 @@ export function App() {
     const controller = new AbortController();
     executionAbort.current = controller;
     const mode = executionMode;
+    resetTraceFilters();
     setExecutionState({
       status: "running",
       mode,
@@ -470,6 +574,12 @@ export function App() {
           traceStore.appendBatch(response.trace);
         }
         const traceCount = traceStore.length;
+        const selectedTraceIndex = selectedTraceIndexAfterRun(
+          current.status === "running"
+            ? { ...current, traceCount }
+            : current,
+          response,
+        );
         return {
           status: "completed",
           response,
@@ -477,11 +587,14 @@ export function App() {
           traceCount,
           traceVersion:
             current.status === "running" ? current.traceVersion + 1 : 0,
-          selectedTraceIndex: selectedTraceIndexAfterRun(
-            current.status === "running"
-              ? { ...current, traceCount }
-              : current,
-            response,
+          selectedTraceIndex: selectedTraceIndexForFilters(
+            buildTraceFilterView(
+              document,
+              traceStore,
+              traceCount,
+              traceFiltersRef.current,
+            ),
+            selectedTraceIndex,
           ),
           traceReplayProjectJson:
             response.status === "completed" && response.mode === "fast"
@@ -540,6 +653,7 @@ export function App() {
       traceVersion: 0,
       selectedTraceIndex: null,
     });
+    resetTraceFilters();
     try {
       const diagnostics = preflightProjectDiagnostics(document);
       if (diagnostics.length > 0) {
@@ -723,6 +837,31 @@ export function App() {
     });
   }
 
+  function changeTraceFilters(nextFilters: TraceFilters) {
+    traceFiltersRef.current = nextFilters;
+    setTraceFilters(nextFilters);
+    setExecutionState((current) => {
+      if (
+        current.status !== "completed" &&
+        current.status !== "running" &&
+        current.status !== "stepping"
+      ) {
+        return current;
+      }
+      const selectedTraceIndex = selectedTraceIndexForFilters(
+        buildTraceFilterView(
+          document,
+          current.traceStore,
+          current.traceCount,
+          nextFilters,
+        ),
+        current.selectedTraceIndex,
+      );
+      if (selectedTraceIndex === current.selectedTraceIndex) return current;
+      return { ...current, selectedTraceIndex };
+    });
+  }
+
   function selectionExists(
     nextDocument: ProjectDocument,
     current: Selection | null,
@@ -881,6 +1020,7 @@ export function App() {
     executionRequest.current = request;
     const controller = new AbortController();
     executionAbort.current = controller;
+    resetTraceFilters();
     setExecutionState({
       status: "running",
       mode: "transparent",
@@ -890,6 +1030,7 @@ export function App() {
       selectedTraceIndex: null,
       replayFastResult: fastResult,
     });
+    setTraceFilters(EMPTY_TRACE_FILTERS);
     try {
       executionBackend.current ??= createBrowserExecutionBackend();
       const response = await executionBackend.current.run(projectJson, {
@@ -929,6 +1070,12 @@ export function App() {
           traceStore.appendBatch(response.trace);
         }
         const traceCount = traceStore.length;
+        const selectedTraceIndex = selectedTraceIndexAfterRun(
+          current.status === "running"
+            ? { ...current, traceCount }
+            : current,
+          response,
+        );
         return {
           status: "completed",
           response,
@@ -936,11 +1083,14 @@ export function App() {
           traceCount,
           traceVersion:
             current.status === "running" ? current.traceVersion + 1 : 0,
-          selectedTraceIndex: selectedTraceIndexAfterRun(
-            current.status === "running"
-              ? { ...current, traceCount }
-              : current,
-            response,
+          selectedTraceIndex: selectedTraceIndexForFilters(
+            buildTraceFilterView(
+              document,
+              traceStore,
+              traceCount,
+              traceFiltersRef.current,
+            ),
+            selectedTraceIndex,
           ),
         };
       });
@@ -1451,6 +1601,16 @@ export function App() {
     window.localStorage.setItem(EXECUTION_MODE_STORAGE_KEY, executionMode);
   }, [executionMode]);
 
+  useEffect(() => {
+    window.localStorage.setItem(
+      PROJECT_STORAGE_KEY,
+      JSON.stringify({
+        projectName,
+        projectJson: exportProjectJson(document),
+      }),
+    );
+  }, [document, projectName]);
+
   return (
     <div className="editor-app" data-theme={themePreference}>
       <Toolbar
@@ -1849,7 +2009,10 @@ export function App() {
         />
         <ExecutionPanel
           state={executionState}
+          document={document}
           traceSourceElementId={traceHighlightedElementId}
+          traceFilters={traceFilters}
+          onTraceFilterChange={changeTraceFilters}
           onTraceSelect={selectTraceEvent}
           onViewTrace={viewTraceForFastResult}
           onStepNext={stepNextRewrite}

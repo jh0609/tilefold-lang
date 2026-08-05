@@ -4,9 +4,14 @@ import { describe, expect, it } from "vitest";
 import { parseProjectJson } from "./importProject";
 import type { ExecutionResponse } from "./executionApi";
 import {
+  buildTraceFilterView,
+  EMPTY_TRACE_FILTERS,
   exactTraceElementId,
   initialTraceIndex,
+  selectedTraceIndexForFilters,
   traceEventAt,
+  traceWindowForSelection,
+  UNMAPPED_TRACE_SURFACE_NODE,
 } from "./traceInspector";
 import { TraceStore } from "./traceStore";
 
@@ -80,5 +85,100 @@ describe("trace inspector state", () => {
         subject: "__list_builder_not-a-builder_cons_item-1",
       }),
     ).toBeNull();
+  });
+
+  it("derives unique rule and exact Surface-node options including unmapped events", () => {
+    const document = parseProjectJson(exampleJson);
+    const traceStore = new TraceStore();
+    traceStore.appendBatch([
+      { index: 0, rule: "Function", subject: "entry-function" },
+      { index: 1, rule: "Drop", subject: "drop_unit" },
+      { index: 2, rule: "Drop", subject: "drop_unit" },
+      { index: 3, rule: "Succ", subject: "node_succ" },
+    ]);
+
+    const view = buildTraceFilterView(
+      document,
+      traceStore,
+      traceStore.length,
+      EMPTY_TRACE_FILTERS,
+    );
+
+    expect(view.ruleOptions).toEqual(["Drop", "Function", "Succ"]);
+    expect(view.surfaceNodeOptions.map((option) => option.value)).toEqual([
+      "drop_unit",
+      "node_succ",
+      UNMAPPED_TRACE_SURFACE_NODE,
+    ]);
+    expect(
+      view.surfaceNodeOptions.find((option) => option.value === "drop_unit"),
+    ).toMatchObject({ label: "Drop<Unit> (drop_unit)", count: 2 });
+  });
+
+  it("filters by rule, node, unmapped, and combined AND without renumbering", () => {
+    const document = parseProjectJson(exampleJson);
+    const traceStore = new TraceStore();
+    traceStore.appendBatch([
+      { index: 0, rule: "Function", subject: "entry-function" },
+      { index: 1, rule: "Drop", subject: "drop_unit" },
+      { index: 2, rule: "Succ", subject: "node_succ" },
+      { index: 3, rule: "Drop", subject: "drop_unit" },
+    ]);
+
+    expect(
+      buildTraceFilterView(document, traceStore, traceStore.length, {
+        rule: "Drop",
+        surfaceNode: "",
+      }).matchingIndexes,
+    ).toEqual([1, 3]);
+    expect(
+      buildTraceFilterView(document, traceStore, traceStore.length, {
+        rule: "",
+        surfaceNode: "node_succ",
+      }).matchingIndexes,
+    ).toEqual([2]);
+    expect(
+      buildTraceFilterView(document, traceStore, traceStore.length, {
+        rule: "",
+        surfaceNode: UNMAPPED_TRACE_SURFACE_NODE,
+      }).matchingIndexes,
+    ).toEqual([0]);
+    expect(
+      buildTraceFilterView(document, traceStore, traceStore.length, {
+        rule: "Succ",
+        surfaceNode: "drop_unit",
+      }).matchingIndexes,
+    ).toEqual([]);
+  });
+
+  it("retains or moves selection based on filtered matches", () => {
+    const document = parseProjectJson(exampleJson);
+    const traceStore = new TraceStore();
+    traceStore.appendBatch([
+      { index: 0, rule: "Function", subject: "entry-function" },
+      { index: 1, rule: "Drop", subject: "drop_unit" },
+      { index: 2, rule: "Succ", subject: "node_succ" },
+      { index: 3, rule: "Drop", subject: "drop_unit" },
+    ]);
+    const dropView = buildTraceFilterView(document, traceStore, traceStore.length, {
+      rule: "Drop",
+      surfaceNode: "",
+    });
+    expect(selectedTraceIndexForFilters(dropView, 3)).toBe(3);
+    expect(selectedTraceIndexForFilters(dropView, 2)).toBe(1);
+    expect(selectedTraceIndexForFilters(dropView, 1, { followLatest: true })).toBe(3);
+    const emptyView = buildTraceFilterView(document, traceStore, traceStore.length, {
+      rule: "Succ",
+      surfaceNode: "drop_unit",
+    });
+    expect(selectedTraceIndexForFilters(emptyView, 2)).toBeNull();
+  });
+
+  it("windows filtered indexes without exceeding the Trace render bound", () => {
+    const indexes = Array.from({ length: 150 }, (_value, index) => index * 2);
+    const window = traceWindowForSelection(indexes, 200);
+    expect(window.indexes).toHaveLength(80);
+    expect(window.indexes[0]).toBe(120);
+    expect(window.indexes.at(-1)).toBe(278);
   });
 });

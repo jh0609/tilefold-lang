@@ -1,7 +1,7 @@
 import exampleJson from "../../examples/nat-succ.tilefold.json?raw";
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
 interface WorkerMockShape {
@@ -41,9 +41,14 @@ beforeAll(() => {
   });
 });
 
+beforeEach(() => {
+  window.localStorage.removeItem("tilefold.editor.project");
+});
+
 afterEach(() => {
   vi.unstubAllGlobals();
   window.localStorage.removeItem("tilefold.editor.executionMode");
+  window.localStorage.removeItem("tilefold.editor.project");
 });
 function getFunctionResultTypeEditor(): HTMLElement {
   const [editor] = screen.getAllByLabelText("Result type");
@@ -1182,6 +1187,10 @@ describe("Tilefold editor UI", () => {
 
     await user.click(screen.getByRole("button", { name: "Export JSON" }));
     await user.click(screen.getByRole("button", { name: "Run" }));
+    await user.selectOptions(screen.getByLabelText("Rule filter"), "Succ");
+    expect(screen.getByLabelText("Trace filter match count")).toHaveTextContent(
+      "1 of 2 events",
+    );
     await user.click(screen.getByRole("button", { name: "Next trace event" }));
     await user.click(screen.getByRole("button", { name: "Export JSON" }));
 
@@ -1189,6 +1198,164 @@ describe("Tilefold editor UI", () => {
     expect(await readBlobText(blobs[1])).toBe(await readBlobText(blobs[0]));
     expect(screen.getByText("0 undo · 0 redo")).toBeInTheDocument();
     click.mockRestore();
+  });
+
+  it("keeps active filters while streamed batches add options and respects manual inspection", async () => {
+    const user = userEvent.setup();
+    const workers: Array<{
+      onmessage: ((event: MessageEvent) => void) | null;
+      postMessage: ReturnType<typeof vi.fn>;
+      terminate: ReturnType<typeof vi.fn>;
+    }> = [];
+    class WorkerMock {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+      onmessageerror: ((event: MessageEvent) => void) | null = null;
+      postMessage = vi.fn();
+      terminate = vi.fn();
+      constructor() {
+        workers.push(this);
+      }
+    }
+    vi.stubGlobal("Worker", WorkerMock);
+    render(<App />);
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Execution mode" }),
+      "transparent",
+    );
+    await user.click(screen.getByRole("button", { name: "Run" }));
+    workers[0].onmessage?.({
+      data: {
+        requestId: 1,
+        traceBatch: JSON.stringify({
+          status: "trace_batch",
+          trace: [
+            { index: 0, rule: "Function", subject: "entry-function" },
+            { index: 1, rule: "Drop", subject: "drop_unit" },
+          ],
+        }),
+      },
+    } as MessageEvent);
+    await screen.findByText("2 of 2 events");
+
+    await user.selectOptions(screen.getByLabelText("Rule filter"), "Drop");
+    expect(screen.getByLabelText("Trace filter match count")).toHaveTextContent(
+      "1 of 2 events",
+    );
+    expect(screen.getByText(/Event 2 of 2/)).toBeInTheDocument();
+    expect(screen.getByTestId("trace-highlight-drop_unit")).toBeInTheDocument();
+
+    workers[0].onmessage?.({
+      data: {
+        requestId: 1,
+        traceBatch: JSON.stringify({
+          status: "trace_batch",
+          trace: [{ index: 2, rule: "Drop", subject: "drop_unit" }],
+        }),
+      },
+    } as MessageEvent);
+    await screen.findByText("2 of 3 events");
+    expect(screen.getByText(/Event 3 of 3/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Event 2: Drop" }));
+    workers[0].onmessage?.({
+      data: {
+        requestId: 1,
+        traceBatch: JSON.stringify({
+          status: "trace_batch",
+          trace: [{ index: 3, rule: "Drop", subject: "drop_unit" }],
+        }),
+      },
+    } as MessageEvent);
+    await screen.findByText("3 of 4 events");
+    expect(screen.getByText(/Event 2 of 4/)).toBeInTheDocument();
+  });
+
+  it("applies active filters across Step Run Next Rewrite and Continue", async () => {
+    const user = userEvent.setup();
+    const workers: Array<{
+      onmessage: ((event: MessageEvent) => void) | null;
+      postMessage: ReturnType<typeof vi.fn>;
+      terminate: ReturnType<typeof vi.fn>;
+    }> = [];
+    class WorkerMock {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: ErrorEvent) => void) | null = null;
+      onmessageerror: ((event: MessageEvent) => void) | null = null;
+      postMessage = vi.fn();
+      terminate = vi.fn();
+      constructor() {
+        workers.push(this);
+      }
+    }
+    vi.stubGlobal("Worker", WorkerMock);
+    render(<App />);
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Execution mode" }),
+      "transparent",
+    );
+    await user.click(screen.getByRole("button", { name: "Start stepping" }));
+    workers[0].onmessage?.({
+      data: { requestId: 1, output: JSON.stringify({ status: "started" }) },
+    } as MessageEvent);
+    await screen.findByText(/Step Run paused · 0 rewrites/);
+
+    await user.click(screen.getByRole("button", { name: "Next Rewrite" }));
+    workers[0].onmessage?.({
+      data: {
+        requestId: 2,
+        output: JSON.stringify({
+          status: "trace_batch",
+          rewriteCount: 1,
+          trace: [{ index: 0, rule: "Function", subject: "entry-function" }],
+        }),
+      },
+    } as MessageEvent);
+    await screen.findByText("Event 1 of 1");
+    await user.selectOptions(
+      screen.getByLabelText("Surface node filter"),
+      "__unmapped__",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Next Rewrite" }));
+    workers[0].onmessage?.({
+      data: {
+        requestId: 3,
+        output: JSON.stringify({
+          status: "trace_batch",
+          rewriteCount: 2,
+          trace: [{ index: 1, rule: "Drop", subject: "drop_unit" }],
+        }),
+      },
+    } as MessageEvent);
+    await screen.findByText("1 of 2 events");
+    expect(screen.getByText(/Event 1 of 2/)).toBeInTheDocument();
+    expect(screen.queryByTestId("trace-highlight-drop_unit")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    workers[0].onmessage?.({
+      data: {
+        requestId: 4,
+        traceBatch: JSON.stringify({
+          status: "trace_batch",
+          trace: [{ index: 2, rule: "Function", subject: "entry-function" }],
+        }),
+      },
+    } as MessageEvent);
+    workers[0].onmessage?.({
+      data: {
+        requestId: 4,
+        output: JSON.stringify({
+          status: "completed",
+          mode: "transparent",
+          result: "Nat(3)",
+          rewriteCount: 3,
+          trace: [],
+        }),
+      },
+    } as MessageEvent);
+    await screen.findByText("2 of 3 events");
+    expect(screen.getByText(/Event 3 of 3/)).toBeInTheDocument();
   });
 
   it("cancels execution, ignores a late result, and reruns with a new worker", async () => {
