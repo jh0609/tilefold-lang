@@ -9,7 +9,8 @@ Task-ID: `2026-08-05-function-value-explicit-drop-ux-v1`
 - Actual starting HEAD: `8aa4ca8eb903fe2dd3d15d0eac7d256e6d243668`
 - Starting tree state: clean, local `main` matched `origin/main`
 - Implementation commit / validation SHA: `bb06a33515c8d299315849ff9e5ee2e90d5fc443`
-- Final handoff commit / final pushed SHA: pending until handoff commit and push
+- Implementation + handoff pushed SHA: `6c1cb51198da5a0d6818b0802e6a2aa71b7c2a8a`
+- Final pushed SHA after deployment-blocker follow-up: pending until this documentation-only follow-up is pushed
 - Pre-existing user changes: none observed
 
 ## Summary
@@ -96,10 +97,13 @@ Commands run:
 ## Deployment
 
 - Deployment target: Vercel, inferred from `vercel.json`
-- Production deployment: pending until final handoff commit is pushed
-- Public URL: pending
-- Production focused Chromium: pending
-- Console/page errors on production: pending
+- Production deployment: blocked
+- Deployment attempts:
+  - Vercel connector `_deploy_to_vercel` returned `INVALID_ARGUMENT`
+  - `npx vercel --prod --yes` failed with `Error: The specified token is not valid. Use vercel login to generate a new token.`
+- Public URL: unavailable
+- Production focused Chromium: not run because no production deployment URL was available
+- Console/page errors on production: not collected because no production deployment URL was available
 
 ## Remaining Automatic Drop Inventory
 
@@ -114,6 +118,6 @@ Recommended next smallest usability slice: review function-body parameter/captur
 
 ## Known Limitations And Follow-Up
 
-- Production deployment and production focused Chromium verification still need to be recorded after the final SHA is pushed.
+- Production deployment and production focused Chromium verification remain blocked until Vercel authentication/project access is repaired.
 - No schema/version change was made.
 - No unresolved semantics questions.
